@@ -149,9 +149,67 @@ export const AXIS_SECOND_ARG = new Set(
     .map((f) => f.name)
 );
 
+/**
+ * Explains a layer parameter of the MapKey family.
+ *
+ * The headers name these `keyIU`, `keyOM`, `keyID` and so on, which says nothing
+ * unless you already know the scheme. From the manual: the main layers are Up, Middle
+ * and Down, selected by a three-position switch, and "by default, you program the
+ * Middle layer". Each has an In/Out sub-layer, "traditionally used as a momentary
+ * layer, activated from a button used as a kind of Shift" - the one named by
+ * SetShiftButton.
+ */
+export function describeParam(fnName: string, paramName: string): string | null {
+  const SHIFT_IN = 'shift button held';
+  const SHIFT_OUT = 'shift button not held';
+  const MAIN: Record<string, string> = {
+    U: 'Up layer',
+    M: 'Middle layer (the default)',
+    D: 'Down layer',
+  };
+
+  const m = /^key([IO])?([UMD])?$/.exec(paramName);
+  if (m && (m[1] || m[2])) {
+    const io = m[1] ? `In (${SHIFT_IN})` : '';
+    const ioOut = m[1] === 'O' ? `Out (${SHIFT_OUT})` : io;
+    const parts = [m[1] ? (m[1] === 'I' ? `In (${SHIFT_IN})` : ioOut) : '', m[2] ? MAIN[m[2]] : ''].filter(Boolean);
+    return parts.join(' \u00b7 ');
+  }
+
+  if (fnName === 'SetShiftButton') {
+    switch (paramName) {
+      case 'devI':
+        return 'Device carrying the In/Out shift button.';
+      case 'indexI':
+        return 'Button that selects the In sub-layer. Momentary unless IOTOGGLE is set.';
+      case 'devUMD':
+        return 'Device carrying the Up/Down layer switch.';
+      case 'indexU':
+        return 'Button that selects the Up layer. Middle is the layer when neither is held.';
+      case 'indexD':
+        return 'Button that selects the Down layer.';
+      case 'flag':
+        return 'IOTOGGLE and/or UDTOGGLE to make those layers latch instead of being momentary.';
+      default:
+        return null;
+    }
+  }
+
+  if (paramName === 'layer' && fnName.startsWith('MapKey')) {
+    return "Layer bits, as a character constant such as 'i', 'o' or 'iu'.";
+  }
+  return null;
+}
+
 export function describeFunction(f: BuiltinFunction): string {
   const parts = ['```c', f.signature, '```'];
   if (f.doc) parts.push('', f.doc);
+  const layered = f.params
+    .map((p) => ({ p, d: describeParam(f.name, p.name) }))
+    .filter((x) => x.d);
+  if (layered.length) {
+    parts.push('', ...layered.map((x) => `- \`${x.p.name}\` \u2014 ${x.d}`));
+  }
   const arity = f.minArgs === f.maxArgs ? `${f.minArgs}` : `${f.minArgs}–${f.maxArgs}`;
   parts.push('', `*${arity} argument${f.maxArgs === 1 ? '' : 's'} · declared in \`${f.source}\`*`);
   return parts.join('\n');

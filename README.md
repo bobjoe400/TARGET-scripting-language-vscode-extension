@@ -30,6 +30,12 @@ MapKeyUMD(&MyJoystick, TS1, ...);
 
 Axis functions (`MapAxis`, `SetSCurve`, …) rank that device's axes first instead.
 
+**Layer parameters explained.** `MapKeyIOUMD(&Joystick, TG1, ...)` takes six keys named
+`keyIU`, `keyOU`, `keyIM`, `keyOM`, `keyID`, `keyOD`. Signature help says which is
+which: Up, Middle (the default) and Down are the main layers, and In/Out is the
+sub-layer driven by the `SetShiftButton` button - In while it is held, Out while it is
+not.
+
 **USB scancodes by name.** `USB[0x2C]` is Space, `USB[0x18]` is U. Hover says so, and
 typing inside `USB[` lists every code by key name. Nothing in `target.tmh` or
 `defines.tmh` says what these mean - it only declares `short USB[256]` - so the names

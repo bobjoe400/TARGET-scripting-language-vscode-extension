@@ -14,6 +14,7 @@ import {
   constantsByName,
   controlLabel,
   describeConstant,
+  describeParam,
   describeDevice,
   describeFunction,
   Device,
@@ -319,12 +320,15 @@ export class TargetSignatureProvider implements vscode.SignatureHelpProvider {
     const fn = functionsByName.get(ctx.call.name);
     if (fn) {
       const sig = new vscode.SignatureInformation(fn.signature, new vscode.MarkdownString(fn.doc || ''));
-      sig.parameters = fn.params.map(
-        (p) =>
-          new vscode.ParameterInformation(
-            `${p.type ? p.type + ' ' : ''}${p.name}${p.default ? ' = ' + p.default : ''}`
-          )
-      );
+      sig.parameters = fn.params.map((p) => {
+        const label = `${p.type ? p.type + ' ' : ''}${p.name}${p.default ? ' = ' + p.default : ''}`;
+        // `keyIU` and friends mean nothing without the layer scheme spelled out.
+        const explained = describeParam(fn.name, p.name);
+        return new vscode.ParameterInformation(
+          label,
+          explained ? new vscode.MarkdownString(explained) : undefined
+        );
+      });
       help.signatures = [sig];
       help.activeParameter = Math.min(ctx.argIndex, Math.max(0, fn.params.length - 1));
       return help;

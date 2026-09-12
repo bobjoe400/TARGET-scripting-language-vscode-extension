@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.9.0
+
+- **The layer parameters are explained.** The headers name them `keyIU`, `keyOM`,
+  `keyID`, which says nothing unless you already know the scheme. Signature help and
+  hover now spell it out: the main layers are Up, Middle and Down, "by default, you
+  program the Middle layer", and each has an In/Out sub-layer driven by the button
+  named in `SetShiftButton` - In meaning that shift button held, Out meaning not held.
+  So `keyOM` reads "Out (shift button not held) - Middle layer (the default)".
+- `SetShiftButton`'s own six arguments are described too: which device and button
+  selects the In sub-layer, which selects Up and Down, and what `IOTOGGLE`/`UDTOGGLE`
+  change.
+
 ## 0.8.0
 
 - **USB scancodes are named.** Hovering `USB[0x2C]` says "Space"; typing inside

@@ -266,6 +266,28 @@ for (const [label, src, needle] of [
   } else fail('banner as doc', `got ${JSON.stringify((h3 || '').slice(0, 100))}`);
 }
 
+// ---- layer parameters ------------------------------------------------------
+// The headers call these keyIU, keyOM, keyID, which says nothing on its own. The
+// manual's scheme - Up/Middle/Down main layers with an In/Out shift sub-layer - is
+// what makes the MapKey family readable.
+{
+  const { doc, pos } = FakeDocument.withCursor(scratch(), 'int f() { MapKeyIOUMD(&Joystick, TG1, 0, 0, |); }');
+  stub.workspace.textDocuments = [doc];
+  const sh = signature.provideSignatureHelp(doc, pos);
+  const active = sh?.signatures?.[0]?.parameters?.[sh.activeParameter];
+  const docText = active?.documentation?.value ?? '';
+  if (/Middle layer/.test(docText) && /In \(shift button held\)/.test(docText)) {
+    ok('layer param');
+    console.log(`  ok    signature help explains a layer parameter ("${docText}")`);
+  } else failures.push(`layer param: active=${sh?.activeParameter} label=${active?.label} doc=${JSON.stringify(docText)}`);
+
+  const h = hoverAt('int f() { MapKeyIO|UMD(&Joystick, TG1, 0,0,0,0,0,0); }');
+  if (h && /Up layer/.test(h) && /Down layer/.test(h)) {
+    ok('hover layers');
+    console.log('  ok    hover lists every layer parameter');
+  } else failures.push(`hover layers: ${JSON.stringify((h || '').slice(0, 160))}`);
+}
+
 // ---- USB scancodes ---------------------------------------------------------
 // Neither target.tmh nor defines.tmh says what USB[0x2C] is; the corpus uses 123
 // distinct codes across 318 references, so naming them is the difference between

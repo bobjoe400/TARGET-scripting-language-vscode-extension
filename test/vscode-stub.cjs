@@ -28,7 +28,7 @@ class SignatureInformation {
   constructor(label, documentation) { this.label = label; this.documentation = documentation; this.parameters = []; }
 }
 class ParameterInformation {
-  constructor(label) { this.label = label; }
+  constructor(label, documentation) { this.label = label; this.documentation = documentation; }
 }
 class DocumentSymbol {
   constructor(name, detail, kind, range, selectionRange) {
