@@ -71,6 +71,8 @@ module.exports = {
     executeCommand: async () => undefined,
   },
   workspace: {
+    // A normal workspace is trusted; the untrusted case is exercised explicitly.
+    isTrusted: true,
     textDocuments: [],
     getConfiguration: () => ({ get: (key, dflt) => (config.has(key) ? config.get(key) : dflt) }),
     getWorkspaceFolder: () => undefined,
@@ -126,6 +128,7 @@ module.exports = {
     module.exports.window.activeTextEditor = undefined;
     module.exports.window.visibleTextEditors = [];
     module.exports.workspace.textDocuments = [];
+    module.exports.workspace.isTrusted = true;
   },
   __setQuickPickAnswer: (a) => { quickPickAnswer = a; },
   __setWarningAnswer: (a) => { warningAnswer = a; },

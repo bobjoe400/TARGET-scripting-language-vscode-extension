@@ -533,6 +533,10 @@ export class TargetDefinitionProvider implements vscode.DefinitionProvider {
     for (const { file, model: m } of this.index.includeClosure(doc.uri.fsPath, model)) {
       for (const d of m.decls) {
         if (d.name !== word) continue;
+        // A local in some other file's function is not a definition of this name.
+        // Without this, any short name - i, x, temp, counter - opened a peek list of
+        // unrelated locals instead of jumping.
+        if (!d.global && file !== doc.uri.fsPath) continue;
         const uri = vscode.Uri.file(file);
         out.push(new vscode.Location(uri, locateRange(m, d)));
       }

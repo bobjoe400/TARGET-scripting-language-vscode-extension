@@ -22,6 +22,7 @@ Module._load = function (request, parent, isMain) {
 const { FakeDocument } = require('./fake-document.cjs');
 const { TargetIndex, MAX_INCLUDE_DEPTH } = require(path.join(repoRoot, 'out/index.js'));
 const { decode } = await import('./decode.mjs');
+const vscode_uri = (p) => stub.Uri.file(p);
 
 let pass = 0;
 const failures = [];
@@ -132,6 +133,32 @@ const entry = path.join(repoRoot, 'test/fixtures/ED_ENHANCED_T16000.tmc');
   } else {
     failures.push(`corpus: ${r.problems.map((p) => p.code + ': ' + p.message.slice(0, 90)).join(' | ')} dupSymbols=${dupNames.slice(0, 5)}`);
   }
+}
+
+// A cached resolution must not outlive the file. Deleting a header that is still
+// included used to leave the stale success in place, so closureComplete stayed true
+// while the file had dropped out of the closure - and the entry script filled with
+// "not defined" for every symbol that lived in it.
+{
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gone-'));
+  fs.writeFileSync(path.join(dir, 'h.tmh'), 'int helperFn() { return 1; }\n');
+  fs.writeFileSync(path.join(dir, 'a.tmc'), 'include "h.tmh"\nint main() { return helperFn(); }\n');
+  const doc = new FakeDocument(path.join(dir, 'a.tmc'), fs.readFileSync(path.join(dir, 'a.tmc'), 'utf8'));
+  stub.workspace.textDocuments = [doc];
+  const idx = new TargetIndex();
+
+  const before = idx.symbolTable(doc);
+  fs.rmSync(path.join(dir, 'h.tmh'), { force: true });
+  idx.invalidate(vscode_uri(path.join(dir, 'h.tmh')));
+  const after = idx.symbolTable(doc);
+
+  if (before.complete && before.symbols.has('helperFn') && !after.complete) {
+    pass++;
+    console.log('  ok    deleting an included header is noticed, not papered over');
+  } else {
+    failures.push(`stale resolution: before(complete=${before.complete}) after(complete=${after.complete}, knows helperFn=${after.symbols.has('helperFn')})`);
+  }
+  fs.rmSync(dir, { recursive: true, force: true });
 }
 
 // The corpus swept the way the extension actually refreshes: with the cross-file

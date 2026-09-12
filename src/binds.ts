@@ -9,8 +9,8 @@
 // game action name, and the game calls "deploy hardpoints" DeployHardpointToggle -
 // so matching by name would be mostly wrong. Keys are unambiguous.
 
-import * as fs from 'fs';
 import * as path from 'path';
+import { readTextFile } from './encoding';
 import { own, usbKeyName } from './builtins';
 
 export interface BindingRef {
@@ -135,12 +135,10 @@ export function usbCodeForEdKey(edKey: string): string | null {
 
 /** Parses one .binds file into its action bindings. */
 export function parseBinds(file: string): BindingRef[] {
-  let xml: string;
-  try {
-    xml = fs.readFileSync(file, 'utf8');
-  } catch {
-    return [];
-  }
+  // Through the same BOM sniffing as every other read: this was the one place that
+  // assumed UTF-8, and Windows tools write UTF-16 often enough to matter.
+  const xml = readTextFile(file);
+  if (xml === null) return [];
   const out: BindingRef[] = [];
   const base = path.basename(file);
   // <ActionName> ... <Primary Device="Keyboard" Key="Key_U"><Modifier .../></Primary>

@@ -170,7 +170,16 @@ export class TargetIndex {
     // stat is milliseconds. The graph is walked several times per refresh.
     const key = `${path.dirname(fromFile)}\u0000${includePath}`;
     const cached = this.resolveCache.get(key);
-    if (cached !== undefined) return cached;
+    // Confirm the cached path is still there. One stat, against the up-to-twelve the
+    // full search costs. Without it, deleting or renaming a header left the stale
+    // success in place: closureComplete stayed true while the file had dropped out of
+    // the closure, so the entry script filled with "not defined" for every symbol that
+    // lived in it - the exact false positive the cache was meant to avoid.
+    if (cached !== undefined) {
+      if (cached === null || fs.existsSync(cached)) return cached;
+      this.resolveCache.delete(key);
+      this.closureCache.clear();
+    }
     const resolved = this.resolveIncludeUncached(fromFile, includePath);
     // Only successes are cached. A failure is a file that does not exist *yet* - the
     // ordinary workflow is to write the include and then create the file - and caching

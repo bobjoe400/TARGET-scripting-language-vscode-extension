@@ -424,7 +424,15 @@ function runTool(
   });
 }
 
+/** Cached: this shells out to cmd.exe and wslpath, and the answer does not change. */
+let stagingRootCache: string | undefined;
 async function defaultStagingRoot(): Promise<string> {
+  if (stagingRootCache) return stagingRootCache;
+  stagingRootCache = await defaultStagingRootUncached();
+  return stagingRootCache;
+}
+
+async function defaultStagingRootUncached(): Promise<string> {
   if (process.platform === 'win32') return os.tmpdir();
   // Under WSL the tool is a Windows process, so it must be able to see the staging
   // directory: use the Windows temp directory rather than the Linux one.
@@ -520,9 +528,35 @@ const IMAGE_EDITOR = 'TARGETScriptEditor.exe';
 /** Guards against a slow tasklist piling up behind an interval timer. */
 let processListInFlight: Promise<TargetProcesses> | null = null;
 
-/** Whether just TARGETGUI is running. Half the cost of listTargetProcesses. */
+/**
+ * Whether TARGETGUI is running, asking about that image alone.
+ *
+ * This used to delegate to listTargetProcesses, which queries both images - so the
+ * three-second poll was still spawning two processes per tick for a value only one of
+ * which was read.
+ */
+let guiCheckInFlight: Promise<boolean> | null = null;
 export async function isGuiRunning(): Promise<boolean> {
-  return (await listTargetProcesses()).gui;
+  if (guiCheckInFlight) return guiCheckInFlight;
+  guiCheckInFlight = imageRunning(IMAGE_GUI).finally(() => {
+    guiCheckInFlight = null;
+  });
+  return guiCheckInFlight;
+}
+
+/** Is one Windows image running? */
+async function imageRunning(image: string): Promise<boolean> {
+  const host = detectHost();
+  try {
+    const { stdout } = await execFileAsync(systemTool('tasklist.exe'), ['/FI', `IMAGENAME eq ${image}`], {
+      cwd: host === 'windows' ? undefined : windowsSystemRoot() ?? '/mnt/c',
+      timeout: 10_000,
+    });
+    return stdout.toLowerCase().includes(image.toLowerCase());
+  } catch {
+    // Unable to ask: assume nothing is running rather than block the user.
+    return false;
+  }
 }
 
 export async function listTargetProcesses(): Promise<TargetProcesses> {
@@ -534,22 +568,7 @@ export async function listTargetProcesses(): Promise<TargetProcesses> {
 }
 
 async function listTargetProcessesUncached(): Promise<TargetProcesses> {
-  const running = async (image: string): Promise<boolean> => {
-    const host = detectHost();
-    const tasklist = systemTool('tasklist.exe');
-    try {
-      const { stdout } = await execFileAsync(tasklist, ['/FI', `IMAGENAME eq ${image}`], {
-        cwd: host === 'windows' ? undefined : windowsSystemRoot() ?? '/mnt/c',
-        // Without this a stalled tasklist would hang the poll indefinitely.
-        timeout: 10_000,
-      });
-      return stdout.toLowerCase().includes(image.toLowerCase());
-    } catch {
-      // Unable to ask: assume nothing is running rather than block the user.
-      return false;
-    }
-  };
-  const [gui, editor] = await Promise.all([running(IMAGE_GUI), running(IMAGE_EDITOR)]);
+  const [gui, editor] = await Promise.all([imageRunning(IMAGE_GUI), imageRunning(IMAGE_EDITOR)]);
   return { gui, editor };
 }
 

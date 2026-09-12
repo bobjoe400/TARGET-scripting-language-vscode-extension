@@ -176,7 +176,7 @@ const noScriptError = () =>
 
   // The repo fixtures live in the Linux filesystem, which is the failing case.
   let r = await attemptRun(entry, 'Cancel');
-  if (r.warnings.some((w) => /WSL filesystem/i.test(w)) && r.ranWith === null) {
+  if (r.warnings.some((w) => /not on a local Windows drive/i.test(w)) && r.ranWith === null) {
     pass++;
     console.log('  ok    run warns before handing TARGET a WSL path, and cancels');
   } else {
@@ -195,7 +195,7 @@ const noScriptError = () =>
   const winScript = '/mnt/c/Thrustmaster/ED_TargetScript_T16000/ScriptFiles/ED_ENHANCED_T16000.tmc';
   if (fs.existsSync(winScript)) {
     r = await attemptRun(winScript, 'Cancel');
-    if (!r.staged && r.ranWith === winScript && !r.warnings.some((w) => /WSL filesystem/i.test(w))) {
+    if (!r.staged && r.ranWith === winScript && !r.warnings.some((w) => /not on a local Windows drive/i.test(w))) {
       pass++;
       console.log('  ok    a script on a Windows drive runs directly, unstaged');
     } else {
@@ -284,6 +284,39 @@ const noScriptError = () =>
   runner.runScript = realRun;
   runner.stopScript = realStop;
   runner.stageProjectForRun = realStage;
+}
+
+// The manifest declares untrustedWorkspaces: "limited", which VS Code does not
+// enforce - the extension is loaded normally and has to gate itself. TARGET scripts
+// are not inert: the builtin table includes system, LoadLibrary and WriteFile, so
+// running a stranger's .tmc runs their code.
+{
+  const runner = require(path.join(repoRoot, 'out/runner.js'));
+  const realRun = runner.runScript;
+  let ranWith = null;
+  runner.runScript = async (p) => { ranWith = p; return { ok: true, command: 'fake' }; };
+
+  stub.__reset();
+  stub.workspace.isTrusted = false;
+  stub.workspace.textDocuments = [mkDoc(entry)];
+  await commands.get('targetScript.run')();
+  const refusedRun = ranWith === null && stub.__recorded.warnings.some((w) => /not trusted/i.test(w));
+
+  stub.__reset();
+  stub.workspace.isTrusted = false;
+  stub.workspace.textDocuments = [mkDoc(entry)];
+  await commands.get('targetScript.compile')();
+  const refusedCompile = stub.__recorded.warnings.some((w) => /not trusted/i.test(w));
+
+  stub.workspace.isTrusted = true;
+  runner.runScript = realRun;
+
+  if (refusedRun && refusedCompile) {
+    pass++;
+    console.log('  ok    run and compile refuse to execute in an untrusted workspace');
+  } else {
+    failures.push(`trust gate: run refused=${refusedRun} compile refused=${refusedCompile}`);
+  }
 }
 
 for (const f of failures) console.log(`  FAIL  ${f}`);

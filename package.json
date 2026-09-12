@@ -112,7 +112,7 @@
         },
         {
           "command": "targetScript.stop",
-          "when": "editorLangId == target"
+          "when": "editorLangId == target || targetScript.running"
         }
       ],
       "editor/title": [
@@ -136,7 +136,7 @@
     "gen": "node tools/gen-builtins.mjs && node tools/gen-grammar.mjs && node tools/gen-device-labels.mjs && node tools/gen-usb-codes.mjs",
     "test:grammar": "node test/run-grammar-test.mjs",
     "test": "npm run compile && node test/run-grammar-test.mjs && node test/run-diagnostics-test.mjs && node test/run-provider-test.mjs && node test/run-include-test.mjs && node test/run-command-test.mjs && node test/run-runner-test.mjs",
-    "package": "npx --yes @vscode/vsce@2 package --no-dependencies"
+    "package": "NODE_OPTIONS=\"--require ./tools/node18-file-shim.cjs\" npx --yes @vscode/vsce@2 package --no-dependencies"
   },
   "devDependencies": {
     "@types/node": "^18.19.0",

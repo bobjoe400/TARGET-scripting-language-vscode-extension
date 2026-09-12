@@ -276,6 +276,30 @@ for (const [label, src, needle] of [
   } else fail('banner as doc', `got ${JSON.stringify((h3 || '').slice(0, 100))}`);
 }
 
+// ---- go-to-definition must respect scope ------------------------------------
+// A local inside some other file's function is not a definition of this name. Any
+// short name - i, x, temp, counter - used to open a peek list of unrelated locals.
+{
+  const nfs = require('node:fs');
+  const dir = nfs.mkdtempSync(path.join(require('node:os').tmpdir(), 'scope-'));
+  nfs.writeFileSync(path.join(dir, 'h.tmh'), 'int other()\n{\n\tint counter;\n\treturn counter;\n}\n');
+  const main = 'include "h.tmh"\nint main()\n{\n\tint counter;\n\treturn counter;\n}\n';
+  const file = path.join(dir, 'a.tmc');
+  nfs.writeFileSync(file, main);
+  const doc = new FakeDocument(file, main);
+  stub.workspace.textDocuments = [doc];
+  const at = main.lastIndexOf('counter');
+  const locs = definition.provideDefinition(doc, doc.positionAt(at + 2)) ?? [];
+  const foreign = locs.filter((l) => !l.uri.fsPath.endsWith('a.tmc'));
+  if (locs.length >= 1 && foreign.length === 0) {
+    pass++;
+    console.log(`  ok    go-to-definition ignores locals in other files (${locs.length} result)`);
+  } else {
+    failures.push(`definition scope: ${locs.length} results, ${foreign.length} from other files`);
+  }
+  nfs.rmSync(dir, { recursive: true, force: true });
+}
+
 // ---- an unclosed call must not swallow the file ----------------------------
 // One missing ')' made every later position report as inside that call: completion
 // narrowed to its argument domain and a stale signature popup pinned itself.

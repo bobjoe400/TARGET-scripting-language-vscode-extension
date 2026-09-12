@@ -214,6 +214,7 @@ export function activate(context: vscode.ExtensionContext): void {
       runPoll = undefined;
     }
     runStatus.hide();
+    vscode.commands.executeCommand('setContext', 'targetScript.running', false);
   };
   context.subscriptions.push({ dispose: clearRunStatus });
 
@@ -223,6 +224,9 @@ export function activate(context: vscode.ExtensionContext): void {
     runStatus.text = `$(debug-stop) TARGET: ${scriptName}`;
     runStatus.tooltip = `${scriptName} was launched in TARGET. Click to stop TARGET.`;
     runStatus.show();
+    // Keeps "Stop Running Script" findable in the palette while a script is running,
+    // whatever file happens to be focused.
+    vscode.commands.executeCommand('setContext', 'targetScript.running', true);
     runPoll = setInterval(async () => {
       // Only the GUI matters here; asking for both images spawned a second
       // tasklist.exe every three seconds for the whole session, for a value
@@ -304,13 +308,15 @@ export function activate(context: vscode.ExtensionContext): void {
   const activeEntryScript = async (resource?: vscode.Uri): Promise<string | null> => {
     const doc = await pickTargetDocument(resource);
     if (!doc) return null;
-    // Every dirty TARGET document, not just this one: staging copies from disk, so an
-    // unsaved header would be compiled and run in its previous state while the user is
-    // told the script launched.
+    // Staging copies from disk, so an unsaved header would be compiled in its previous
+    // state. Save this project's files - the ones that will actually be staged - and
+    // nothing else: writing a half-finished experiment in an unrelated folder because
+    // the user compiled something else is not ours to do.
+    const projectDir = path.dirname(doc.uri.fsPath);
     for (const open of vscode.workspace.textDocuments) {
-      if (open.languageId === 'target' && open.isDirty && open.uri.scheme === 'file') {
-        await open.save();
-      }
+      if (open.languageId !== 'target' || !open.isDirty || open.uri.scheme !== 'file') continue;
+      if (path.dirname(open.uri.fsPath) !== projectDir) continue;
+      await open.save();
     }
 
     const { entry, candidates } = resolveEntryScript(doc.uri.fsPath);
@@ -328,6 +334,28 @@ export function activate(context: vscode.ExtensionContext): void {
     return pick?.description ?? null;
   };
 
+  /**
+   * Refuses to execute anything in an untrusted workspace.
+   *
+   * VS Code does not enforce `untrustedWorkspaces: "limited"` - it loads the extension
+   * normally and expects it to gate itself. The manifest claims these commands are
+   * unavailable, so they have to actually be. It matters here because TARGET scripts
+   * are not inert: the builtin table includes system, LoadLibrary, GetProcAddress and
+   * WriteFile, so running a stranger's .tmc is running their code.
+   */
+  const requireTrust = (what: string): boolean => {
+    if (vscode.workspace.isTrusted) return true;
+    vscode.window
+      .showWarningMessage(
+        `${what} runs the TARGET tools against files in this folder, which is not trusted. Highlighting, completion and diagnostics still work.`,
+        'Manage Workspace Trust'
+      )
+      .then((pick) => {
+        if (pick) vscode.commands.executeCommand('workbench.trust.manage');
+      });
+    return false;
+  };
+
   const unsupportedHost = (): boolean => {
     if (detectHost() !== 'unsupported') return false;
     vscode.window.showErrorMessage(
@@ -338,6 +366,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('targetScript.compile', async (resource?: vscode.Uri) => {
+      if (!requireTrust('Checking a script for compile errors')) return;
       if (unsupportedHost()) return;
       const install = requireInstall();
       if (!install) return;
@@ -418,6 +447,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
 
     vscode.commands.registerCommand('targetScript.run', async (resource?: vscode.Uri) => {
+      if (!requireTrust('Running a script')) return;
       if (unsupportedHost()) return;
       const install = requireInstall();
       if (!install) return;
@@ -486,6 +516,11 @@ export function activate(context: vscode.ExtensionContext): void {
         );
         if (pick !== 'Restart') return;
         await stopScript();
+        // taskkill returning is not the process having exited and released the HID
+        // devices. The Script Editor branch above already waits; this one did not.
+        for (let i = 0; i < 10 && (await listTargetProcesses()).gui; i++) {
+          await new Promise((r) => setTimeout(r, 300));
+        }
       }
 
       // TARGET cannot load a script from the WSL filesystem: it reaches it only
@@ -494,7 +529,7 @@ export function activate(context: vscode.ExtensionContext): void {
       let toRun = entry;
       if (!isWindowsLocalPath(entry)) {
         const pick = await vscode.window.showWarningMessage(
-          `${path.basename(entry)} is on the WSL filesystem, which TARGET cannot load from. A copy can be run from a Windows drive instead - edits will need another Run to take effect.`,
+          `${path.basename(entry)} is not on a local Windows drive, which TARGET cannot load from. A copy can be run from one instead - edits will need another Run to take effect.`,
           'Copy to Windows and Run',
           'Cancel'
         );
