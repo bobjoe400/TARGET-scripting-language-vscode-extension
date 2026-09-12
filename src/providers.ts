@@ -45,6 +45,19 @@ export const TARGET_SELECTOR: vscode.DocumentSelector = { language: 'target' };
 export { shortKeyName };
 
 /**
+ * Whether a name is already offered as a builtin.
+ *
+ * The vendor headers are in every script's include closure - that is what
+ * `include "target.tmh"` does - and the builtin tables were generated from those very
+ * files. So walking the closure for "symbols the user declared" re-finds all of them,
+ * and every builtin was offered twice: once from the table, once as though the author
+ * had written it. Measured before the fix: 2,203 items with 1,031 duplicated.
+ */
+function isBuiltinName(name: string): boolean {
+  return functionsByName.has(name) || constantsByName.has(name) || devicesByAlias.has(name);
+}
+
+/**
  * Markdown for a symbol the user declared: its signature, the comment block above it,
  * and where it came from. Scripts are split across a dozen headers, so saying which
  * file a name lives in is half the value.
@@ -112,7 +125,7 @@ export class TargetCompletionProvider implements vscode.CompletionItemProvider {
     let md: string | null = null;
     if (src.kind === 'function') {
       const f = functionsByName.get(src.name);
-      if (f) md = describeFunction(f);
+      if (f) md = describeFunction(f, false);
     } else if (src.kind === 'constant') {
       const c = constantsByName.get(src.name);
       if (c) md = describeConstant(c);
@@ -240,7 +253,7 @@ export class TargetCompletionProvider implements vscode.CompletionItemProvider {
           const seenEv = new Set<string>();
           for (const { decl, file } of this.index.visibleDecls(doc)) {
             if (decl.kind !== 'variable' && decl.kind !== 'function' && decl.kind !== 'define') continue;
-            if (seenEv.has(decl.name)) continue;
+            if (seenEv.has(decl.name) || isBuiltinName(decl.name)) continue;
             seenEv.add(decl.name);
             const it: LazyItem = new vscode.CompletionItem(decl.name, declKindToCompletionKind(decl.kind));
             it.detail = decl.detail;
@@ -342,7 +355,7 @@ export class TargetCompletionProvider implements vscode.CompletionItemProvider {
     // Symbols the user declared, across their includes.
     const seenSym = new Set<string>();
     for (const { decl, file } of this.index.visibleDecls(doc)) {
-      if (seenSym.has(decl.name)) continue;
+      if (seenSym.has(decl.name) || isBuiltinName(decl.name)) continue;
       seenSym.add(decl.name);
       const it: LazyItem = new vscode.CompletionItem(decl.name, declKindToCompletionKind(decl.kind));
       it.detail = decl.detail;

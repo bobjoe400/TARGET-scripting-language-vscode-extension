@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.3.0
+
+- **Every builtin was offered twice in completion.** The vendor headers are in every
+  script's include closure - that is what `include "target.tmh"` does - and the builtin
+  tables were generated from those same files, so walking the closure for "symbols you
+  declared" re-found all of them. Measured: 2,203 items with 1,031 duplicated, now
+  1,143 with none.
+- The completion panel no longer prints a function's signature twice. VS Code renders
+  the item's `detail` above its documentation, and both began with the signature.
+- **A name left on a line by itself is now reported.** `printf` alone is a syntax
+  error - `Interpreter.exe` says "= expected" - and it is easy to leave behind while
+  editing. Checked against 236 published scripts, which contain none.
+
 ## 1.2.1
 
 - **`printf` and `sprintf` say what they take.** `sys.tmh` declares `int printf(){}` -

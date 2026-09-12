@@ -368,13 +368,16 @@ for (const [label, src, needle] of [
     failures.push(`eager docs: ${eager}/${raw.length} items carried ${chars} chars up front`);
   }
 
-  // ...and resolving one fills it in.
+  // ...and resolving one fills it in - WITHOUT repeating the signature, which the
+  // item's `detail` already shows above it. Including both printed the signature twice
+  // in the same panel.
   const mapKey = raw.find((i) => i.label === 'MapKey');
   completion.resolveCompletionItem(mapKey);
-  if (/int MapKey\(alias dev/.test(mapKey?.documentation?.value ?? '')) {
+  const resolved = mapKey?.documentation?.value ?? '';
+  if (resolved.length > 0 && /argument/.test(resolved) && !/```c\nint MapKey/.test(resolved)) {
     pass++;
-    console.log('  ok    resolveCompletionItem fills in the documentation on demand');
-  } else failures.push(`resolve: ${JSON.stringify(mapKey?.documentation?.value ?? null)}`);
+    console.log('  ok    resolveCompletionItem fills in the documentation, minus the signature');
+  } else failures.push(`resolve: ${JSON.stringify(resolved.slice(0, 120))}`);
 }
 
 // ---- argument domains ------------------------------------------------------

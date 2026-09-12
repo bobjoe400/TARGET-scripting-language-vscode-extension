@@ -283,6 +283,31 @@ expectClean('TrimDXAxis w/ CURRENT','int f() { TrimDXAxis(DX_X_AXIS, CURRENT); }
   } else failures.push(`unbound-key with no data: ${noData.length}`);
 }
 
+// A name standing alone is a syntax error - Interpreter.exe says "= expected", because
+// the only thing a bare name can begin is an assignment. Verified against the compiler,
+// and against 236 published scripts, which produce none of these.
+{
+  const flagged = (src) =>
+    computeDiagnostics(buildModel(src), 'x.tmc', {}).filter((d) => d.code === 'bare-name-statement').length;
+  const cases = [
+    ['a name left on its own', 'int main()\n{\n\tprintf\n\tCheckThing();\n}\n', 1],
+    ['...even with a semicolon', 'int main()\n{\n\tprintf;\n}\n', 1],
+    ['a real call', 'int main()\n{\n\tprintf("x");\n}\n', 0],
+    ['an assignment', 'int main()\n{\n\tx = 1;\n}\n', 0],
+    ['a declaration', 'int main()\n{\n\tint x;\n}\n', 0],
+    ['an alias declaration', 'int main()\n{\n\talias a;\n}\n', 0],
+    ['return', 'int f()\n{\n\treturn 1;\n}\n', 0],
+    ['an indexed assignment', 'int main()\n{\n\tarr[0] = 1;\n}\n', 0],
+  ];
+  const bad = cases.filter(([, src, want]) => flagged(src) !== want);
+  if (bad.length === 0) {
+    pass++;
+    console.log('  ok    a bare name is reported, and the things that look like one are not');
+  } else {
+    failures.push(`bare-name-statement: ${bad.map(([l]) => l).join(', ')}`);
+  }
+}
+
 for (const f of failures) console.log(`  FAIL  ${f}`);
 console.log(`  ${pass}/${pass + failures.length} rule assertions passed`);
 

@@ -493,9 +493,14 @@ export function functionSignature(f: BuiltinFunction): string {
   return extra ? f.signature.replace(/\(\s*\)/, `(${extra.args})`) : f.signature;
 }
 
-export function describeFunction(f: BuiltinFunction): string {
+/**
+ * @param withSignature false for a completion item, whose `detail` already shows the
+ *   signature - VS Code renders detail above the documentation, so including it here
+ *   too printed `int printf(alias fmt, ...)` twice in the same panel.
+ */
+export function describeFunction(f: BuiltinFunction, withSignature = true): string {
   const extra = own(VARIADIC_DOCS, f.name);
-  const parts = ['```c', functionSignature(f), '```'];
+  const parts = withSignature ? ['```c', functionSignature(f), '```'] : [];
   if (extra) parts.push('', extra.doc);
   if (f.doc) parts.push('', f.doc);
   const layered = f.params

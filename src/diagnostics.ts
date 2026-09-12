@@ -5,7 +5,7 @@
 // would need guesswork are left out rather than shipped with false positives.
 
 import * as path from 'path';
-import { DocModel, CallNode } from './model';
+import { DocModel, CallNode, TYPE_KEYWORDS } from './model';
 import { TokKind, lex, Token } from './lexer';
 import { SCRIPT_MODIFIERS, SCRIPT_STATE_FLAGS, parseChord } from './binds';
 import {
@@ -225,6 +225,9 @@ export function computeDiagnostics(
     const why = own(NOT_IN_TARGET, t.value);
     if (why) add(t.start, t.end, why, 'error', 'not-in-target');
   }
+
+  // ---- a name standing alone where a statement should be --------------------
+  checkBareNameStatement();
 
   // ---- operators and directives TARGET's parser rejects ---------------------
   checkRejectedSyntax();
@@ -470,6 +473,52 @@ export function computeDiagnostics(
    * two operators, `a && b` is one. Comments and strings never reach here, so a
    * `//-----` banner or a `||||||` divider cannot be mistaken for code.
    */
+  /**
+   * A statement that is just a name.
+   *
+   * `printf` on a line of its own is a syntax error - Interpreter.exe says "= expected",
+   * because the only thing a bare name can begin is an assignment. It is an easy one to
+   * leave behind while editing, and C habits make it look harmless, so the compiler
+   * catching it on the next build is later than it needs to be.
+   *
+   * Reported only for a name that stands completely alone between statement boundaries:
+   * anything followed by `(`, `=`, `[`, `.` or an operator is the start of something
+   * real, and declarations carry a type keyword in front.
+   */
+  function checkBareNameStatement(): void {
+    const toks = model.tokens.filter((t) => t.kind !== TokKind.Comment);
+    let depth = 0;
+    for (let i = 0; i < toks.length; i++) {
+      const t = toks[i];
+      if (t.kind === TokKind.Punct && t.value === '{') depth++;
+      if (t.kind === TokKind.Punct && t.value === '}') depth = Math.max(0, depth - 1);
+      // Only inside a function body; at file scope a different rule already speaks.
+      if (depth === 0 || t.kind !== TokKind.Ident) continue;
+      if (CONTROL_WORDS.has(t.value) || TYPE_KEYWORDS.has(t.value)) continue;
+
+      const prev = toks[i - 1];
+      const next = toks[i + 1];
+      const startsStatement =
+        !prev || (prev.kind === TokKind.Punct && (prev.value === ';' || prev.value === '{' || prev.value === '}'));
+      if (!startsStatement) continue;
+      // `;` ends it, or the next token begins a new statement - which is what a missing
+      // semicolon looks like, and is the shape in the wild.
+      const endsStatement =
+        !next ||
+        (next.kind === TokKind.Punct && (next.value === ';' || next.value === '}')) ||
+        next.kind === TokKind.Ident;
+      if (!endsStatement) continue;
+
+      add(
+        t.start,
+        t.end,
+        `\`${t.value}\` on its own is not a statement. TARGET expects an assignment or a call here, and reports "= expected" when it compiles.`,
+        'error',
+        'bare-name-statement'
+      );
+    }
+  }
+
   function checkRejectedSyntax(): void {
     const toks = model.tokens.filter((t) => t.kind !== TokKind.Comment);
 
