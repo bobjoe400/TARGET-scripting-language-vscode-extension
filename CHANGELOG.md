@@ -2,8 +2,12 @@
 
 ## 1.0.3
 
-- The Marketplace page is 92 lines instead of 363. Everything that was background
-  rather than "what this does and how to use it" moved to `docs/` - the DX button
+- The Marketplace page now opens with Requirements, a Quick start and Usage, which is
+  what someone deciding whether to install this actually needs. It was 363 lines that
+  began with research.
+- Requirements says which half works without TARGET installed - highlighting,
+  completion and hover all ship their own tables - and which half needs it. Everything that was background
+  internal to how it works moved to `docs/` - the DX button
   research, the TARGET-versus-C comparison, where the generated tables come from, the
   full diagnostics table, and the detail behind the game-binding lookup. Nothing was
   deleted; the page just stopped opening with all of it.
