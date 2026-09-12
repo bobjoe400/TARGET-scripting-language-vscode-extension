@@ -30,6 +30,11 @@ MapKeyUMD(&MyJoystick, TS1, ...);
 
 Axis functions (`MapAxis`, `SetSCurve`, …) rank that device's axes first instead.
 
+**Arguments offer only what belongs in them.** `Configure(&T16000, ` offers three
+`MODE_*` values, not 1049 symbols. `MapAxis`'s direction argument offers two. The event
+argument of `MapKey` offers events - composition functions, DX buttons, keys, flags and
+your own declared events - rather than every control of every device you do not own.
+
 **Layer parameters explained.** `MapKeyIOUMD(&Joystick, TG1, ...)` takes six keys named
 `keyIU`, `keyOU`, `keyIM`, `keyOM`, `keyID`, `keyOD`. Signature help says which is
 which: Up, Middle (the default) and Down are the main layers, and In/Out is the

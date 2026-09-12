@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.10.0
+
+- **Arguments now offer only what belongs in them.** Previously every position offered
+  all 1049 symbols, so the event argument of `MapKey` suggested `OSB01` and `SOL_B5` -
+  controls of devices that were not even in the call.
+  - `Configure(&dev, ...)` offers the three `MODE_*` values and nothing else.
+  - `MapAxis`'s DirectX axis argument offers the 11 axis constants, its direction
+    argument `AXIS_NORMAL`/`AXIS_REVERSED`, its last `MAP_ABSOLUTE`/`MAP_RELATIVE`.
+  - `SetKBLayout`, `Init`'s `cfg`, `LED`'s mode and LED number, and the DirectX axis
+    arguments of `DXAxis`, `TrimDXAxis`, `LockDXAxis` and `RotateDXAxis` likewise.
+  - The event argument of the `MapKey` family and `ActKey` offers events: the
+    composition functions, DX buttons, keyboard keys, modifier and event flags, and
+    the events your own script declares - roughly 250 instead of 1049.
+- `MAP_ABSOLUTE`/`MAP_RELATIVE` are listed explicitly rather than by prefix, because
+  `MAP_*` also covers `sys.tmh`'s `MAP_IPTR` and `MAP_THISCALL`, which belong to
+  `Map()` and have nothing to do with axes.
+
 ## 0.9.0
 
 - **The layer parameters are explained.** The headers name them `keyIU`, `keyOM`,

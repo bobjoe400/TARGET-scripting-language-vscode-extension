@@ -150,6 +150,86 @@ export const AXIS_SECOND_ARG = new Set(
 );
 
 /**
+ * The set of values an argument can sensibly take.
+ *
+ * Without this, every argument offers all 1049 symbols - so writing the third argument
+ * of MapKey suggests OSB01, QT_BTN1 and SOL_B5, none of which belong to the device in
+ * hand or even to that position. Each entry below is grounded in the declaration in
+ * target.tmh and the constants defined beside it.
+ */
+export type ArgDomain =
+  | { kind: 'constants'; names: string[]; title: string }
+  | { kind: 'event'; title: string }
+  | null;
+
+/** Constant families, each named by the prefix its members share. */
+const family = (prefix: string) => constants.filter((c) => c.name.startsWith(prefix)).map((c) => c.name);
+
+/** Everything that can stand as the event a button fires. */
+const EVENT_FUNCTIONS = ['SEQ', 'CHAIN', 'TEMPO', 'EXEC', 'REXEC', 'D', 'LOCK', 'AXIS', 'LIST', 'AXMAP1', 'AXMAP2', 'X'];
+const EVENT_FLAGS = [
+  'PULSE', 'DOWN', 'UP', 'KEYON', 'LOCK', 'RNOSTOP', 'DELAY', 'JUMP', 'PROC',
+  'L_SHIFT', 'R_SHIFT', 'L_ALT', 'R_ALT', 'L_CTL', 'R_CTL', 'L_WIN', 'R_WIN',
+];
+
+export function eventDomainNames(): { functions: string[]; constants: string[] } {
+  const keyboard = constants.filter((c) => c.category === 'Virtual keyboard interface').map((c) => c.name);
+  const dx = constants.filter((c) => c.category === 'virtual joystick interface' || c.category === 'virtual mouse interface').map((c) => c.name);
+  return {
+    functions: EVENT_FUNCTIONS,
+    constants: [...new Set([...EVENT_FLAGS, ...dx, ...keyboard, 'USB'])],
+  };
+}
+
+/**
+ * Which domain an argument belongs to, by function and position.
+ * Positions are 0-based and match the declarations in target.tmh.
+ */
+export function argumentDomain(fnName: string, index: number): ArgDomain {
+  const key = `${fnName}:${index}`;
+  switch (key) {
+    // int Configure(alias a, int mode)
+    case 'Configure:1':
+      return { kind: 'constants', names: family('MODE_'), title: 'device mode' };
+    // int Init(alias h, int cfg = CREATE_JOYSTICK+CREATE_KEYBOARD+CREATE_MOUSE)
+    case 'Init:1':
+      return { kind: 'constants', names: family('CREATE_'), title: 'virtual devices to create' };
+    // int MapAxis(alias o, int x, int dx, int dir = AXIS_NORMAL, int relative = MAP_ABSOLUTE)
+    case 'MapAxis:2':
+      return { kind: 'constants', names: constants.filter((c) => /_AXIS$/.test(c.name) && /^(DX|MOUSE)_/.test(c.name)).map((c) => c.name), title: 'DirectX axis' };
+    case 'MapAxis:3':
+      return { kind: 'constants', names: family('AXIS_'), title: 'axis direction' };
+    case 'MapAxis:4':
+      // Named explicitly: MAP_* also covers sys.tmh's MAP_IPTR and MAP_THISCALL, which
+      // belong to Map() and have nothing to do with axes.
+      return { kind: 'constants', names: ['MAP_ABSOLUTE', 'MAP_RELATIVE'], title: 'absolute or relative' };
+    // int SetKBLayout(int layout)
+    case 'SetKBLayout:0':
+      return { kind: 'constants', names: family('KB_'), title: 'keyboard layout' };
+    // int LED(alias dev, int mode, int led)
+    case 'LED:1':
+      return { kind: 'constants', names: ['LED_ONOFF', 'LED_INTENSITY'], title: 'LED mode' };
+    case 'LED:2':
+      return { kind: 'constants', names: [...family('LED'), 'LED_CURRENT'].filter((n) => /^LED\d|LED_CURRENT/.test(n)), title: 'which LED' };
+    // Axis index arguments, which take a DirectX axis rather than a device axis.
+    case 'DXAxis:0':
+    case 'DXSetAxis:0':
+    case 'TrimDXAxis:0':
+    case 'LockDXAxis:0':
+    case 'RotateDXAxis:0':
+    case 'RotateDXAxis:1':
+      return { kind: 'constants', names: constants.filter((c) => /_AXIS$/.test(c.name) && /^(DX|MOUSE)_/.test(c.name)).map((c) => c.name), title: 'DirectX axis' };
+    default:
+      break;
+  }
+
+  // The event argument of the MapKey family: everything a button can fire.
+  if (/^MapKey/.test(fnName) && index >= 2) return { kind: 'event', title: 'event' };
+  if (fnName === 'ActKey' && index === 0) return { kind: 'event', title: 'event' };
+  return null;
+}
+
+/**
  * Explains a layer parameter of the MapKey family.
  *
  * The headers name these `keyIU`, `keyOM`, `keyID` and so on, which says nothing

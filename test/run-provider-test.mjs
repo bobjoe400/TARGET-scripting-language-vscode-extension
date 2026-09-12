@@ -266,6 +266,39 @@ for (const [label, src, needle] of [
   } else fail('banner as doc', `got ${JSON.stringify((h3 || '').slice(0, 100))}`);
 }
 
+// ---- argument domains ------------------------------------------------------
+// Every argument used to offer all 1049 symbols, so the event argument of MapKey
+// suggested OSB01 and SOL_B5 - controls belonging to devices not even in the call.
+{
+  const cases = [
+    ['Configure mode',   'int f() { Configure(&T16000, |); }',                 ['MODE_EXCLUDED'], ['DX1', 'TS1'], 5],
+    ['MapAxis dx axis',  'int f() { MapAxis(&T16000, JOYX, |); }',             ['DX_X_AXIS'],     ['DX1', 'TS1'], 15],
+    ['MapAxis direction','int f() { MapAxis(&T16000, JOYX, DX_X_AXIS, |); }',  ['AXIS_NORMAL'],   ['MAP_IPTR'],   4],
+    ['SetKBLayout',      'int f() { SetKBLayout(|); }',                        ['KB_ENG'],        ['DX1'],        5],
+    ['LED mode',         'int f() { LED(&Throttle, |); }',                     ['LED_INTENSITY'], ['LED1'],       4],
+  ];
+  let domainOk = true;
+  for (const [label, src, want, avoid, maxItems] of cases) {
+    const l = labels(complete(src));
+    const missing = want.filter((w) => !l.includes(w));
+    const leaked = avoid.filter((a) => l.includes(a));
+    if (missing.length || leaked.length || l.length > maxItems) {
+      failures.push(`domain ${label}: ${l.length} items, missing=${missing} leaked=${leaked}`);
+      domainOk = false;
+    }
+  }
+  if (domainOk) { pass++; console.log(`  ok    argument domains narrow ${cases.length} argument positions to their own constants`); }
+
+  // The MapKey event argument: narrowed, but still rich.
+  const ev = labels(complete('int f() { MapKeyUMD(&T16000, TS1, |); }'));
+  if (ev.includes('DX1') && ev.includes('SEQ') && ev.includes('PULSE') && !ev.includes('OSB01') && !ev.includes('SOL_B5')) {
+    pass++;
+    console.log(`  ok    the MapKey event argument offers ${ev.length} events, not every symbol`);
+  } else {
+    failures.push(`event domain: ${ev.length} items, hasDX1=${ev.includes('DX1')} hasSEQ=${ev.includes('SEQ')} leakedOSB01=${ev.includes('OSB01')}`);
+  }
+}
+
 // ---- layer parameters ------------------------------------------------------
 // The headers call these keyIU, keyOM, keyID, which says nothing on its own. The
 // manual's scheme - Up/Middle/Down main layers with an In/Out shift sub-layer - is

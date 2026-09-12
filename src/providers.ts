@@ -9,6 +9,8 @@ import { TokKind } from './lexer';
 import {
   allUsbCodes,
   anyControlLabel,
+  argumentDomain,
+  eventDomainNames,
   BuiltinFunction,
   constants,
   constantsByName,
@@ -126,6 +128,59 @@ export class TargetCompletionProvider implements vscode.CompletionItemProvider {
           items.push(it);
         }
         return items;
+      }
+
+      // An argument with a known domain offers only that domain. Without this every
+      // position offers all 1049 symbols, so the event argument of MapKey suggests
+      // OSB01 and SOL_B5 - controls of devices that are not even in the call.
+      if (fn) {
+        const domain = argumentDomain(fn.name, ctx.argIndex);
+        if (domain?.kind === 'constants') {
+          for (const name of domain.names) {
+            const c = constantsByName.get(name);
+            const it = new vscode.CompletionItem(name, vscode.CompletionItemKind.EnumMember);
+            it.detail = c ? `${domain.title} \u00b7 ${c.value}` : domain.title;
+            if (c) it.documentation = new vscode.MarkdownString(describeConstant(c));
+            it.sortText = `0_${name}`;
+            items.push(it);
+          }
+          if (items.length) return items;
+        }
+        if (domain?.kind === 'event') {
+          const { functions: evFns, constants: evConsts } = eventDomainNames();
+          for (const n of evFns) {
+            const f = functionsByName.get(n);
+            if (!f) continue;
+            const it = new vscode.CompletionItem(n, vscode.CompletionItemKind.Function);
+            it.detail = f.signature;
+            it.documentation = new vscode.MarkdownString(describeFunction(f));
+            it.sortText = `0_${n}`;
+            items.push(it);
+          }
+          for (const n of evConsts) {
+            const c = constantsByName.get(n);
+            const it = new vscode.CompletionItem(n, vscode.CompletionItemKind.Constant);
+            if (c) {
+              it.detail = c.value;
+              it.documentation = new vscode.MarkdownString(describeConstant(c));
+            }
+            it.sortText = `1_${n}`;
+            items.push(it);
+          }
+          // Events the script declares itself belong here too.
+          const seenEv = new Set<string>();
+          for (const { decl, file } of this.index.visibleDecls(doc)) {
+            if (decl.kind !== 'variable' && decl.kind !== 'function') continue;
+            if (seenEv.has(decl.name)) continue;
+            seenEv.add(decl.name);
+            const it = new vscode.CompletionItem(decl.name, declKindToCompletionKind(decl.kind));
+            it.detail = decl.detail;
+            it.documentation = new vscode.MarkdownString(describeDecl(decl, file, doc.uri.fsPath));
+            it.sortText = `2_${decl.name}`;
+            items.push(it);
+          }
+          if (items.length) return items;
+        }
       }
 
       // Second argument: the control on whichever device the first argument names.
