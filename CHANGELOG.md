@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.1
+
+- **A hover now says what an argument accepts.** 96 of the 171 builtins carry no
+  documentation at all - the headers do not comment them - so `SetKBLayout` showed a
+  signature and nothing else. It now lists the values: `KB_ENG`, `KB_FR`, `KB_GER`,
+  from the same constants table the completion list narrows to. Thirteen previously
+  silent builtins now say something true about their arguments.
+
 ## 1.3.0
 
 - **Every builtin was offered twice in completion.** The vendor headers are in every

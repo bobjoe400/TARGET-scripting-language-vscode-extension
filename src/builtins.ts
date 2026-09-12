@@ -305,7 +305,12 @@ export function argumentDomain(fnName: string, index: number): ArgDomain {
     case 'LED:1':
       return { kind: 'constants', names: ['LED_ONOFF', 'LED_INTENSITY'], title: 'LED mode' };
     case 'LED:2':
-      return { kind: 'constants', names: [...family('LED'), 'LED_CURRENT'].filter((n) => /^LED\d|LED_CURRENT/.test(n)), title: 'which LED' };
+      // family('LED') already contains LED_CURRENT, so the explicit one was a duplicate.
+      return {
+        kind: 'constants',
+        names: [...new Set([...family('LED'), 'LED_CURRENT'])].filter((n) => /^LED\d|LED_CURRENT/.test(n)),
+        title: 'which LED',
+      };
     // Axis index arguments, which take a DirectX axis rather than a device axis.
     case 'DXAxis:0':
     case 'DXSetAxis:0':
@@ -503,11 +508,25 @@ export function describeFunction(f: BuiltinFunction, withSignature = true): stri
   const parts = withSignature ? ['```c', functionSignature(f), '```'] : [];
   if (extra) parts.push('', extra.doc);
   if (f.doc) parts.push('', f.doc);
-  const layered = f.params
-    .map((p) => ({ p, d: describeParam(f.name, p.name) }))
-    .filter((x) => x.d);
-  if (layered.length) {
-    parts.push('', ...layered.map((x) => `- \`${x.p.name}\` \u2014 ${x.d}`));
+  // What each parameter means, and what it accepts. The values come from the constants
+  // table - the same domain the completion list narrows to - so a function with no
+  // comment anywhere in the headers still says something true about its arguments.
+  // 96 of the 171 builtins carry no documentation at all: the headers do not comment
+  // them, and the manual's PDF text is too interleaved to extract prose from safely.
+  const described = f.params.map((p, i) => {
+    const bits: string[] = [];
+    const d = describeParam(f.name, p.name);
+    if (d) bits.push(d);
+    const domain = argumentDomain(f.name, i);
+    // Only a short, closed list. An event argument accepts most of the language, and
+    // printing that would bury the parameter it is meant to explain.
+    if (domain && domain.kind === 'constants' && domain.names.length && domain.names.length <= 10) {
+      bits.push(`${domain.title}: ${domain.names.map((n) => `\`${n}\``).join(', ')}`);
+    }
+    return { p, text: bits.join(' \u2014 ') };
+  }).filter((x) => x.text);
+  if (described.length) {
+    parts.push('', ...described.map((x) => `- \`${x.p.name}\` \u2014 ${x.text}`));
   }
   if (VARIADIC.has(f.name)) {
     parts.push('', `*Takes any number of arguments · declared in \`${f.source}\`*`);

@@ -845,6 +845,32 @@ for (const [label, src, needle] of [
     nfs4.rmSync(root, { recursive: true, force: true });
   }
 
+  // --- a hover says what an argument accepts --------------------------------
+  // 96 of the 171 builtins carry no documentation: the headers do not comment them, and
+  // the manual's PDF text is too interleaved to extract prose from without shipping
+  // broken sentences. What IS knowable is the closed set of constants an argument takes,
+  // which the completion list already narrows to - so the hover shows the same thing.
+  {
+    const { describeFunction: df, functionsByName: fbn, argumentDomain } =
+      require(path.join(repoRoot, 'out/builtins.js'));
+    const kb = df(fbn.get('SetKBLayout'));
+    if (/KB_ENG/.test(kb) && /KB_FR/.test(kb) && /keyboard layout/.test(kb)) {
+      pass++; console.log('  ok    an undocumented builtin still says what its argument accepts');
+    } else failures.push(`SetKBLayout hover: ${JSON.stringify(kb)}`);
+
+    // No duplicates in a listed domain - family('LED') already contains LED_CURRENT.
+    const led = argumentDomain('LED', 2).names;
+    if (new Set(led).size === led.length) {
+      pass++; console.log('  ok    a listed domain has no repeated values');
+    } else failures.push(`LED domain repeats: ${led.join(',')}`);
+
+    // An event argument accepts most of the language; listing it would bury the rest.
+    const mk = df(fbn.get('MapKey'));
+    if (!/`DX1`, `DX2`/.test(mk)) {
+      pass++; console.log('  ok    an open-ended argument is not listed out');
+    } else failures.push('MapKey hover listed an open domain');
+  }
+
   // --- variadic builtins say what they take ---------------------------------
   // sys.tmh declares `int printf(){}` - the host binds it at load time - so the
   // generated table honestly records a function taking nothing, next to 315 corpus
