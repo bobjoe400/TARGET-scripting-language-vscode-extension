@@ -18,10 +18,12 @@ import {
   compileCheck,
   detectHost,
   findInstall,
+  isWindowsLocalPath,
   killImage,
   listTargetProcesses,
   resolveEntryScript,
   runScript,
+  stageProjectForRun,
   stopScript,
   TARGET_IMAGES,
   TargetInstall,
@@ -334,7 +336,27 @@ export function activate(context: vscode.ExtensionContext): void {
         await stopScript();
       }
 
-      const res = await runScript(entry, install);
+      // TARGET cannot load a script from the WSL filesystem: it reaches it only
+      // through a \\wsl.localhost\ UNC path and reports "File not found". Running a
+      // copy on a Windows drive is the way round it, but it is a copy, so say so.
+      let toRun = entry;
+      if (!isWindowsLocalPath(entry)) {
+        const pick = await vscode.window.showWarningMessage(
+          `${path.basename(entry)} is on the WSL filesystem, which TARGET cannot load from. A copy can be run from a Windows drive instead - edits will need another Run to take effect.`,
+          'Copy to Windows and Run',
+          'Cancel'
+        );
+        if (pick !== 'Copy to Windows and Run') return;
+        const staged = await stageProjectForRun(entry, install);
+        if (!staged.ok) {
+          vscode.window.showErrorMessage(`Could not copy the project to a Windows drive: ${staged.error}`);
+          return;
+        }
+        toRun = staged.staging.entry;
+        output.appendLine(`\nStaged for running: ${staged.staging.dir}`);
+      }
+
+      const res = await runScript(toRun, install);
       output.appendLine(`\n$ ${res.command ?? ''}`);
       if (!res.ok) {
         vscode.window.showErrorMessage(`Could not start TARGET: ${res.error}`);
@@ -342,8 +364,12 @@ export function activate(context: vscode.ExtensionContext): void {
       }
       // TARGET is launched detached, so this reports the launch, not a confirmed run:
       // anything TARGET itself objects to appears in its own window.
+      const copied = toRun !== entry;
       vscode.window
-        .showInformationMessage(`Launched ${path.basename(entry)} in TARGET.`, 'Stop')
+        .showInformationMessage(
+          `Launched ${path.basename(entry)} in TARGET${copied ? ' (from a copy on the Windows drive)' : ''}.`,
+          'Stop'
+        )
         .then((pick) => {
           if (pick === 'Stop') vscode.commands.executeCommand('targetScript.stop');
         });

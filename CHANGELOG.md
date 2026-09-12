@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.1
+
+- Fixed: running a script stored in the WSL filesystem handed TARGET a
+  `\\wsl.localhost\` UNC path, and TARGET failed with "File not found" in its own
+  window while the extension reported a successful launch. Run now detects a script
+  that is not on a Windows drive and offers to run a copy staged there instead,
+  saying plainly that it is a copy. A script already on a Windows drive is run
+  directly, unchanged.
+- `Interpreter.exe` reads UNC paths perfectly well, so the compile check was never
+  affected and still works on scripts anywhere.
+
 ## 0.3.0
 
 - Checks the structure a runnable script must have. The TARGET compiler reports only

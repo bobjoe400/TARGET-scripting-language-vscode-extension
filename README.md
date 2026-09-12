@@ -118,6 +118,12 @@ rather than letting the launch fail silently in a window you may not be looking 
 
 Works on Windows, and from WSL (the Windows tools are invoked through interop).
 
+**Keep scripts on a Windows drive if you want to run them.** TARGET cannot load a
+script from the WSL filesystem: it can only reach one through a `\\wsl.localhost\`
+UNC path and fails with "File not found". Run detects this and offers to run a copy
+staged on a Windows drive, which is a copy - edits need another Run. The compile check
+is unaffected either way, since `Interpreter.exe` handles UNC paths fine.
+
 ### Why compiling needs a staging directory
 
 `Interpreter.exe` resolves `include` against the working directory only — it has no

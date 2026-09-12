@@ -402,3 +402,59 @@ export async function killImage(image: string): Promise<{ ok: boolean; error?: s
 }
 
 export const TARGET_IMAGES = { gui: IMAGE_GUI, editor: IMAGE_EDITOR };
+
+/**
+ * True when TARGET's tools can reach this path as an ordinary local file.
+ *
+ * Under WSL, a script in the Linux filesystem is only reachable through a
+ * \\wsl.localhost\ UNC path. Interpreter.exe copes with those, but TARGETGUI fails to
+ * load a script from one, reporting "File not found" for a path under the script's own
+ * directory. Rather than hand TARGET a path it cannot use, such a project is staged
+ * onto a Windows drive first.
+ */
+export function isWindowsLocalPath(p: string): boolean {
+  if (process.platform === 'win32') return /^[A-Za-z]:[\\/]/.test(p);
+  return /^\/mnt\/[a-z]\//i.test(p);
+}
+
+export interface RunStaging {
+  /** Absolute path of the staged entry script. */
+  entry: string;
+  dir: string;
+}
+
+/**
+ * Copies a project onto a Windows drive so TARGET can load it.
+ *
+ * Unlike the compile staging this directory is kept, because TARGET goes on reading
+ * from it while the script runs. It is cleared at the start of the next run instead.
+ */
+export async function stageProjectForRun(
+  scriptPath: string,
+  install: TargetInstall
+): Promise<{ ok: true; staging: RunStaging } | { ok: false; error: string }> {
+  try {
+    const projectDir = path.dirname(scriptPath);
+    const root = await defaultStagingRoot();
+    const dir = path.join(root, 'target-script-run', path.basename(projectDir) || 'script');
+
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.mkdirSync(dir, { recursive: true });
+
+    // The TARGET headers first, so the script's includes resolve beside it whatever
+    // search order TARGET uses.
+    for (const h of TARGET_HEADERS) {
+      const src = path.join(install.scripts, h);
+      if (safeIsFile(src)) copyFileBytes(src, path.join(dir, h));
+    }
+    for (const entry of fs.readdirSync(projectDir)) {
+      if (!SCRIPT_EXT.test(entry)) continue;
+      const src = path.join(projectDir, entry);
+      if (safeIsFile(src)) copyFileBytes(src, path.join(dir, entry));
+    }
+
+    return { ok: true, staging: { entry: path.join(dir, path.basename(scriptPath)), dir } };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}

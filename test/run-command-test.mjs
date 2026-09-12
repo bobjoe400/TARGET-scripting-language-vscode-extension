@@ -147,6 +147,67 @@ const noScriptError = () =>
   runner.killImage = realKill;
 }
 
+
+// ---- scripts on the WSL filesystem -----------------------------------------
+// TARGET cannot load a script through a \\wsl.localhost\ UNC path, so a project that
+// is not on a Windows drive must be offered as a staged copy rather than handed over
+// and left to fail in TARGET's own window.
+{
+  const runner = require(path.join(repoRoot, 'out/runner.js'));
+  const realProcs = runner.listTargetProcesses;
+  const realRun = runner.runScript;
+  const realStage = runner.stageProjectForRun;
+
+  const attemptRun = async (scriptPath, answer) => {
+    stub.__reset();
+    stub.workspace.textDocuments = [mkDoc(scriptPath)];
+    stub.__setWarningAnswer(answer);
+    runner.listTargetProcesses = async () => ({ gui: false, editor: false });
+    let ranWith = null;
+    let staged = false;
+    runner.runScript = async (p) => { ranWith = p; return { ok: true, command: 'fake' }; };
+    runner.stageProjectForRun = async () => {
+      staged = true;
+      return { ok: true, staging: { entry: 'C:\\staged\\copy.tmc', dir: 'C:\\staged' } };
+    };
+    await commands.get('targetScript.run')();
+    return { ranWith, staged, warnings: stub.__recorded.warnings, infos: stub.__recorded.infos };
+  };
+
+  // The repo fixtures live in the Linux filesystem, which is the failing case.
+  let r = await attemptRun(entry, 'Cancel');
+  if (r.warnings.some((w) => /WSL filesystem/i.test(w)) && r.ranWith === null) {
+    pass++;
+    console.log('  ok    run warns before handing TARGET a WSL path, and cancels');
+  } else {
+    failures.push(`wsl-path cancel: warnings=${JSON.stringify(r.warnings)} ranWith=${r.ranWith}`);
+  }
+
+  r = await attemptRun(entry, 'Copy to Windows and Run');
+  if (r.staged && r.ranWith === 'C:\\staged\\copy.tmc' && r.infos.some((i) => /from a copy/i.test(i))) {
+    pass++;
+    console.log('  ok    run stages to a Windows drive and says it ran a copy');
+  } else {
+    failures.push(`wsl-path stage: staged=${r.staged} ranWith=${r.ranWith} infos=${JSON.stringify(r.infos)}`);
+  }
+
+  // A script already on a Windows drive must be run directly, with no warning.
+  const winScript = '/mnt/c/Thrustmaster/ED_TargetScript_T16000/ScriptFiles/ED_ENHANCED_T16000.tmc';
+  if (fs.existsSync(winScript)) {
+    r = await attemptRun(winScript, 'Cancel');
+    if (!r.staged && r.ranWith === winScript && !r.warnings.some((w) => /WSL filesystem/i.test(w))) {
+      pass++;
+      console.log('  ok    a script on a Windows drive runs directly, unstaged');
+    } else {
+      failures.push(`windows-path: staged=${r.staged} ranWith=${r.ranWith} warnings=${JSON.stringify(r.warnings)}`);
+    }
+  }
+
+  runner.listTargetProcesses = realProcs;
+  runner.runScript = realRun;
+  runner.stageProjectForRun = realStage;
+}
+
 for (const f of failures) console.log(`  FAIL  ${f}`);
 console.log(`\n  ${pass}/${pass + failures.length} command assertions passed`);
 if (failures.length) process.exit(1);
