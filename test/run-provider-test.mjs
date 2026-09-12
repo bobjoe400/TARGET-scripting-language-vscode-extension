@@ -266,6 +266,27 @@ for (const [label, src, needle] of [
   } else fail('banner as doc', `got ${JSON.stringify((h3 || '').slice(0, 100))}`);
 }
 
+// ---- USB scancodes ---------------------------------------------------------
+// Neither target.tmh nor defines.tmh says what USB[0x2C] is; the corpus uses 123
+// distinct codes across 318 references, so naming them is the difference between
+// reading a script and decoding one.
+{
+  const h = hoverAt('int f() { MapKey(&Joystick, TG1, USB[0x2|C]); }');
+  if (h && /Space/.test(h)) { ok('usb hover'); console.log('  ok    hover names a USB scancode (0x2C = Space)'); }
+  else failures.push(`usb hover: ${JSON.stringify((h || '').slice(0, 100))}`);
+
+  const h2 = hoverAt('int f() { MapKey(&Joystick, TG1, USB[0x3|D]); }');
+  if (h2 && /F4/.test(h2)) { ok('usb hover F4'); console.log('  ok    hover names 0x3D = F4'); }
+  else failures.push(`usb hover F4: ${JSON.stringify((h2 || '').slice(0, 100))}`);
+
+  const items = complete('int f() { MapKey(&Joystick, TG1, USB[|]); }');
+  const space = items.find((i) => i.label === '0x2C');
+  if (space && /Space/.test(space.detail ?? '') && items.length > 50) {
+    ok('usb completion');
+    console.log(`  ok    completion offers ${items.length} named scancodes inside USB[`);
+  } else failures.push(`usb completion: ${items.length} items, 0x2C detail=${JSON.stringify(space?.detail)}`);
+}
+
 // ---- physical control descriptions -----------------------------------------
 // Taken from the per-device PDFs TARGET installs. EFLNORM means nothing on its own.
 {

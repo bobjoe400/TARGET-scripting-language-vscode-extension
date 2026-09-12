@@ -30,6 +30,11 @@ MapKeyUMD(&MyJoystick, TS1, ...);
 
 Axis functions (`MapAxis`, `SetSCurve`, …) rank that device's axes first instead.
 
+**USB scancodes by name.** `USB[0x2C]` is Space, `USB[0x18]` is U. Hover says so, and
+typing inside `USB[` lists every code by key name. Nothing in `target.tmh` or
+`defines.tmh` says what these mean - it only declares `short USB[256]` - so the names
+come from the manual's appendix.
+
 **Plain-English control names.** `EFLNORM` is meaningless; "Engine Fuel Flow Left" is
 not. Completion and hover describe physical controls using the per-device diagrams
 TARGET installs - `APALT` is the Autopilot Select Switch, `CHF` is China Hat forward.
@@ -244,12 +249,22 @@ C out of habit tells you immediately rather than at runtime.
 
 ## Where the data comes from
 
+Four generated tables, all from files the TARGET installer puts on disk:
+
+| Table | Source | Contents |
+| --- | --- | --- |
+| `builtins.json` | `target.tmh`, `defines.tmh`, `hid.tmh`, `sys.tmh` | 171 functions, 851 constants, 38 devices |
+| `target.tmLanguage.json` | generated from `builtins.json` | the grammar |
+| `device-labels.json` | the per-device PDFs | 58 control descriptions |
+| `usb-codes.json` | the scripting manual's appendix | 119 key names |
+
+
 The builtin tables are **generated from the headers of an installed TARGET**
 (`target.tmh`, `defines.tmh`, `hid.tmh`, `sys.tmh`) rather than transcribed from the
 PDF manual, which is older than the shipping software and incomplete. The shipped
 tables cover 171 functions, 851 constants and 38 devices.
 
-Regenerate them after a TARGET update:
+Regenerate them all after a TARGET update:
 
 ```bash
 npm run gen -- --scripts "/path/to/Thrustmaster/TARGET/scripts"

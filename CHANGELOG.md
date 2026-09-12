@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.8.0
+
+- **USB scancodes are named.** Hovering `USB[0x2C]` says "Space"; typing inside
+  `USB[` offers all 119 codes by key name, filterable by name as well as by number.
+  Neither `target.tmh` nor `defines.tmh` carries this - the header only declares
+  `short USB[256]` - so the names come from the manual's appendix. The test corpus
+  uses 123 distinct codes across 318 references, which is a lot of opaque hex.
+- The table is parsed by walking ascending codes rather than positionally, because the
+  PDF scatters spaces through both names and codes ("Up Arro w", "w W 1 A"), and the
+  result is checked against known USB HID values (`0x04`=a, `0x28`=Return, `0x2C`=Space,
+  `0x3D`=F4) before anything is written. An entry where the walk loses its place is
+  dropped rather than recorded wrongly.
+
 ## 0.7.1
 
 - Fixed the label on the Warthog engine-operate switches, which read "Throttle Right

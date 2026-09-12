@@ -7,6 +7,7 @@ import { TargetIndex } from './index';
 import { callContextAt, collectAliasBindings, Decl, DocModel } from './model';
 import { TokKind } from './lexer';
 import {
+  allUsbCodes,
   anyControlLabel,
   BuiltinFunction,
   constants,
@@ -22,6 +23,7 @@ import {
   functionsByName,
   keywords,
   NOT_IN_TARGET,
+  usbKeyName,
 } from './builtins';
 
 export const TARGET_SELECTOR: vscode.DocumentSelector = { language: 'target' };
@@ -80,6 +82,20 @@ export class TargetCompletionProvider implements vscode.CompletionItemProvider {
     // Stay quiet inside comments; a string is different, because EXEC's argument is code.
     const tok = tokenContaining(model, offset);
     if (tok?.kind === TokKind.Comment) return [];
+
+    // Inside USB[...] the only sensible content is a scancode, and the hex is
+    // meaningless on its own, so offer the key names instead.
+    const beforeCursor = doc.lineAt(pos).text.slice(0, pos.character);
+    if (/\bUSB\s*\[\s*(0[xX][0-9A-Fa-f]*)?$/.test(beforeCursor)) {
+      return allUsbCodes().map(({ hex, name }) => {
+        const it = new vscode.CompletionItem(`0x${hex}`, vscode.CompletionItemKind.Value);
+        it.detail = name;
+        it.filterText = `0x${hex} ${name}`;
+        it.documentation = new vscode.MarkdownString(`**${name}**\n\nUSB HID keyboard code \`0x${hex}\`.`);
+        it.sortText = hex;
+        return it;
+      });
+    }
 
     const ctx = callContextAt(model, offset);
     const items: vscode.CompletionItem[] = [];
@@ -237,6 +253,21 @@ export class TargetHoverProvider implements vscode.HoverProvider {
   constructor(private index: TargetIndex) {}
 
   provideHover(doc: vscode.TextDocument, pos: vscode.Position): vscode.Hover | null {
+    // USB[0x2C] first: the hex is the interesting part and is not a word.
+    const usbRange = doc.getWordRangeAtPosition(pos, /USB\s*\[\s*0[xX][0-9A-Fa-f]+\s*\]/);
+    if (usbRange) {
+      const m = /0[xX]([0-9A-Fa-f]+)/.exec(doc.getText(usbRange));
+      const name = m ? usbKeyName(m[1]) : null;
+      if (name) {
+        return new vscode.Hover(
+          new vscode.MarkdownString(
+            `**${name}**\n\nUSB HID keyboard code \`0x${m![1].toUpperCase()}\`, sent through the virtual keyboard.`
+          ),
+          usbRange
+        );
+      }
+    }
+
     const range = doc.getWordRangeAtPosition(pos, /[A-Za-z_]\w*/);
     if (!range) return null;
     const word = doc.getText(range);

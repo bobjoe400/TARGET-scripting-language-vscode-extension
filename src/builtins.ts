@@ -3,6 +3,7 @@
 
 import raw from './data/builtins.json';
 import rawLabels from './data/device-labels.json';
+import rawUsb from './data/usb-codes.json';
 
 export interface BuiltinParam {
   name: string;
@@ -77,6 +78,21 @@ const labelData = rawLabels as unknown as { labels: Record<string, Record<string
 
 export function controlLabel(deviceAlias: string, control: string): string | null {
   return labelData.labels?.[deviceAlias]?.[control] ?? null;
+}
+
+/**
+ * Key names for USB[0xNN]. Neither target.tmh nor defines.tmh carries these - the
+ * header only declares `short USB[256]` - so without them a script reads as a wall of
+ * opaque hex. They come from the manual's appendix.
+ */
+const usbData = rawUsb as unknown as { codes: Record<string, string> };
+
+export function usbKeyName(hex: string): string | null {
+  return usbData.codes[hex.toUpperCase().replace(/^0X/, '').padStart(2, '0')] ?? null;
+}
+
+export function allUsbCodes(): { hex: string; name: string }[] {
+  return Object.entries(usbData.codes).map(([hex, name]) => ({ hex, name }));
 }
 
 /** Any description for a control name, whichever device it belongs to. */
