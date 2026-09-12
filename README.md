@@ -98,14 +98,10 @@ answers for the whole chord, and narrows to the preset the game will really load
 
 ## How it works
 
-Written up separately, since none of it is needed to use the extension:
-
-- [Diagnostics in full](https://github.com/bobjoe400/TARGET-scripting-language-vscode-extension/blob/main/docs/diagnostics.md) — every check, and why the structural ones exist
-- [Game bindings](https://github.com/bobjoe400/TARGET-scripting-language-vscode-extension/blob/main/docs/game-bindings.md) — which files, how they are found, and why compiling stages a scratch directory
-- [Is this C?](https://github.com/bobjoe400/TARGET-scripting-language-vscode-extension/blob/main/docs/not-quite-c.md) — what TARGET has and lacks, checked against the compiler
-- [The DX button ceiling](https://github.com/bobjoe400/TARGET-scripting-language-vscode-extension/blob/main/docs/dx-buttons.md) — why `DX121`+ warn, measured from the device
-- [Where the data comes from](https://github.com/bobjoe400/TARGET-scripting-language-vscode-extension/blob/main/docs/data-sources.md) — the generated tables and how to rebuild them
-- [Development](https://github.com/bobjoe400/TARGET-scripting-language-vscode-extension/blob/main/docs/development.md)
+TARGET's own behaviour had to be established before much of this could be relied on —
+what the compiler actually checks, how many buttons the virtual device really has, how
+each game stores its bindings. That working out lives with the code:
+**[docs/](https://github.com/bobjoe400/TARGET-scripting-language-vscode-extension/blob/main/docs)**.
 
 ## Acknowledgements
 
