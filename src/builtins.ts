@@ -79,6 +79,28 @@ const labelData = rawLabels as unknown as {
   defaults: Record<string, Record<string, number>>;
 };
 
+/** One control's entry in a per-device table, or undefined where there is none. */
+function perDevice<T>(
+  table: Record<string, Record<string, T>> | undefined,
+  deviceAlias: string,
+  control: string
+): T | undefined {
+  const forDevice = own(table ?? {}, deviceAlias);
+  return forDevice ? own(forDevice, control) : undefined;
+}
+
+/** The first device whose table describes this control. */
+function anyDevice<T>(
+  table: Record<string, Record<string, T>> | undefined,
+  control: string
+): { value: T; device: string } | null {
+  for (const [device, map] of Object.entries(table ?? {})) {
+    const hit = own(map, control);
+    if (hit !== undefined) return { value: hit, device };
+  }
+  return null;
+}
+
 /**
  * The DirectX button a control sends with no script running - the device's
  * out-of-the-box mapping, printed on the per-device diagrams. Worth knowing when a
@@ -86,21 +108,16 @@ const labelData = rawLabels as unknown as {
  * refer to.
  */
 export function defaultDxButton(deviceAlias: string, control: string): number | null {
-  const forDevice = own(labelData.defaults ?? {}, deviceAlias);
-  return (forDevice ? own(forDevice, control) : undefined) ?? null;
+  return perDevice(labelData.defaults, deviceAlias, control) ?? null;
 }
 
 export function anyDefaultDxButton(control: string): { dx: number; device: string } | null {
-  for (const [device, map] of Object.entries(labelData.defaults ?? {})) {
-    const hit = own(map, control);
-    if (hit !== undefined) return { dx: hit, device };
-  }
-  return null;
+  const hit = anyDevice(labelData.defaults, control);
+  return hit ? { dx: hit.value, device: hit.device } : null;
 }
 
 export function controlLabel(deviceAlias: string, control: string): string | null {
-  const forDevice = own(labelData.labels ?? {}, deviceAlias);
-  return (forDevice ? own(forDevice, control) : undefined) ?? null;
+  return perDevice(labelData.labels, deviceAlias, control) ?? null;
 }
 
 /**
@@ -110,24 +127,50 @@ export function controlLabel(deviceAlias: string, control: string): string | nul
  */
 const usbData = rawUsb as unknown as { codes: Record<string, string> };
 
+/**
+ * A scancode written in a script, in the form the table and the binds index are keyed
+ * by: upper case, two digits, no leading zeroes beyond that.
+ *
+ * Strip leading zeroes BEFORE padding: USB[0x004] is the same key as USB[0x04], and
+ * padding without trimming produced '004', which matches nothing. An `0x` prefix is
+ * tolerated so callers may pass either the whole literal or just its digits.
+ */
+export function normalizeUsbCode(hex: string): string {
+  return hex.toUpperCase().replace(/^0X/, '').replace(/^0+(?=.)/, '').padStart(2, '0');
+}
+
 export function usbKeyName(hex: string): string | null {
-  // Strip leading zeroes first: USB[0x004] is the same key as USB[0x04], and padding
-  // without trimming produced '004', which matches nothing.
-  const bare = hex.toUpperCase().replace(/^0X/, '').replace(/^0+(?=.)/, '');
-  return own(usbData.codes, bare.padStart(2, '0')) ?? null;
+  return own(usbData.codes, normalizeUsbCode(hex)) ?? null;
 }
 
 export function allUsbCodes(): { hex: string; name: string }[] {
   return Object.entries(usbData.codes).map(([hex, name]) => ({ hex, name }));
 }
 
+/**
+ * The two halves of a USB table name that lists a key by both its cases - "u U",
+ * "1 !" - or null for a name that is not of that shape. The notation means unshifted
+ * and shifted, so both halves name the same key; "Keypad *" is a name in its own right
+ * and is not split.
+ */
+export function usbNamePair(name: string): [string, string] | null {
+  const parts = name.split(/\s+/);
+  return parts.length === 2 && parts.every((p) => p.length <= 2) ? [parts[0], parts[1]] : null;
+}
+
+/**
+ * The USB table names a key by both its cases - "u U", "s S" - which is the table's
+ * notation for unshifted and shifted, not the key's name. Showing both reads as a
+ * stutter, so the pair collapses to the first, which is the key.
+ */
+export function shortKeyName(name: string): string {
+  return usbNamePair(name)?.[0] ?? name;
+}
+
 /** Any description for a control name, whichever device it belongs to. */
 export function anyControlLabel(control: string): { label: string; device: string } | null {
-  for (const [device, map] of Object.entries(labelData.labels ?? {})) {
-    const hit = own(map, control);
-    if (hit) return { label: hit, device };
-  }
-  return null;
+  const hit = anyDevice(labelData.labels, control);
+  return hit ? { label: hit.value, device: hit.device } : null;
 }
 
 /** Words a C programmer reaches for that TARGET does not have. */
@@ -199,6 +242,17 @@ export type ArgDomain =
 /** Constant families, each named by the prefix its members share. */
 const family = (prefix: string) => constants.filter((c) => c.name.startsWith(prefix)).map((c) => c.name);
 
+/**
+ * The axes of the virtual devices, which several arguments take in place of a physical
+ * device axis. Named once: MapAxis's third argument and the DXAxis family's index
+ * argument mean exactly the same thing.
+ */
+const dxAxisDomain = (): ArgDomain => ({
+  kind: 'constants',
+  names: constants.filter((c) => /_AXIS$/.test(c.name) && /^(DX|MOUSE)_/.test(c.name)).map((c) => c.name),
+  title: 'DirectX axis',
+});
+
 /** Everything that can stand as the event a button fires. */
 // LIST is absent deliberately: `define LIST AXMAP2` makes it a define rather than a
 // function, so it is offered through the constant list below instead. Including it
@@ -233,7 +287,7 @@ export function argumentDomain(fnName: string, index: number): ArgDomain {
       return { kind: 'constants', names: family('CREATE_'), title: 'virtual devices to create' };
     // int MapAxis(alias o, int x, int dx, int dir = AXIS_NORMAL, int relative = MAP_ABSOLUTE)
     case 'MapAxis:2':
-      return { kind: 'constants', names: constants.filter((c) => /_AXIS$/.test(c.name) && /^(DX|MOUSE)_/.test(c.name)).map((c) => c.name), title: 'DirectX axis' };
+      return dxAxisDomain();
     case 'MapAxis:3':
       return { kind: 'constants', names: family('AXIS_'), title: 'axis direction' };
     case 'MapAxis:4':
@@ -255,7 +309,7 @@ export function argumentDomain(fnName: string, index: number): ArgDomain {
     case 'LockDXAxis:0':
     case 'RotateDXAxis:0':
     case 'RotateDXAxis:1':
-      return { kind: 'constants', names: constants.filter((c) => /_AXIS$/.test(c.name) && /^(DX|MOUSE)_/.test(c.name)).map((c) => c.name), title: 'DirectX axis' };
+      return dxAxisDomain();
     default:
       break;
   }

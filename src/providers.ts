@@ -4,7 +4,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { TargetIndex } from './index';
-import { callContextAt, collectAliasBindings, Decl, DocModel } from './model';
+import { callContextAt, Decl, DocModel } from './model';
 import { TokKind, tokenAt } from './lexer';
 import { BindingRef, Chord, chordMatches, parseChord, GAME_ELITE } from './binds';
 import {
@@ -27,8 +27,10 @@ import {
   functions,
   functionsByName,
   keywords,
+  normalizeUsbCode,
   NOT_IN_TARGET,
   own,
+  shortKeyName,
   takesDeviceFirst,
   usbKeyName,
   VARIADIC,
@@ -36,12 +38,22 @@ import {
 
 export const TARGET_SELECTOR: vscode.DocumentSelector = { language: 'target' };
 
+// Lives with the USB table in builtins, because diagnostics needs the same rule and
+// cannot import this module - it pulls in vscode. Re-exported here, where it reads as
+// part of the hover's vocabulary.
+export { shortKeyName };
+
 /**
  * Markdown for a symbol the user declared: its signature, the comment block above it,
  * and where it came from. Scripts are split across a dozen headers, so saying which
  * file a name lives in is half the value.
  */
-function describeDecl(decl: Decl, file: string, currentFile: string): string {
+function describeDecl(
+  decl: { detail: string; doc: string },
+  file: string,
+  /** Omitted where there is no document to compare against, as in a completion item. */
+  currentFile?: string
+): string {
   const parts = ['```c', decl.detail, '```'];
   if (decl.doc.trim()) {
     // Single newlines do not break lines in markdown; these blocks are written as
@@ -50,18 +62,6 @@ function describeDecl(decl: Decl, file: string, currentFile: string): string {
   }
   if (file !== currentFile) parts.push('', `*declared in \`${path.basename(file)}\`*`);
   return parts.join('\n');
-}
-
-/** Device handles a script binds itself, merged across the include graph. */
-function aliasBindingsFor(index: TargetIndex, doc: vscode.TextDocument): Map<string, Set<string>> {
-  const merged = new Map<string, Set<string>>();
-  for (const { model } of index.includeClosure(doc.uri.fsPath, index.getModel(doc))) {
-    for (const [k, v] of collectAliasBindings(model)) {
-      if (!merged.has(k)) merged.set(k, new Set());
-      for (const d of v) merged.get(k)!.add(d);
-    }
-  }
-  return merged;
 }
 
 /** Every device a `&handle` argument could refer to. */
@@ -130,15 +130,9 @@ export class TargetCompletionProvider implements vscode.CompletionItemProvider {
       const d = devicesByAlias.get(src.alias);
       if (d) md = describeDevice(d);
     } else {
-      md = [
-        '```c',
-        src.detail,
-        '```',
-        src.doc.trim() ? '\n' + src.doc.split('\n').join('  \n') : '',
-        `\n*declared in \`${path.basename(src.file)}\`*`,
-      ]
-        .filter(Boolean)
-        .join('\n');
+      // No current file to compare against here, so the note always shows - which is
+      // what a completion list wants: the name is being offered out of context.
+      md = describeDecl(src, src.file);
     }
     if (md) item.documentation = new vscode.MarkdownString(md);
     return item;
@@ -200,7 +194,7 @@ export class TargetCompletionProvider implements vscode.CompletionItemProvider {
           items.push(it);
         }
         // Handles the script binds itself are just as valid here.
-        for (const [handle, bound] of aliasBindingsFor(this.index, doc)) {
+        for (const [handle, bound] of this.index.aliasBindings(doc)) {
           if (devicesByAlias.has(handle)) continue;
           const it = new vscode.CompletionItem(handle, vscode.CompletionItemKind.Variable);
           it.detail = `device handle → ${[...bound].join(', ')}`;
@@ -273,7 +267,7 @@ export class TargetCompletionProvider implements vscode.CompletionItemProvider {
       if (fn && takesDeviceFirst(fn.name) && ctx.argIndex === 1 && ctx.call.args[0]) {
         const m = ctx.call.args[0].text.match(/^&\s*([A-Za-z_]\w*)$/);
         if (m) {
-          const bindings = aliasBindingsFor(this.index, doc);
+          const bindings = this.index.aliasBindings(doc);
           const devs = devicesForHandle(m[1], bindings);
           // Axis functions want axes first; the MapKey family wants buttons.
           const axisFirst = /Axis|Curve/.test(fn.name);
@@ -390,18 +384,29 @@ function tokenContaining(model: DocModel, offset: number) {
   return tokenAt(model.tokens, offset);
 }
 
+/**
+ * A `USB[0x..]` scancode reference as written in a script. Used as a word pattern by
+ * both the hover and the peek command, which must agree on what they are pointing at.
+ */
+export const USB_REF_RE = /USB\s*\[\s*0[xX][0-9A-Fa-f]+\s*\]/;
+
+/** The scancode inside such a reference, keyed the way the binds index is. */
+export function usbCodeInRef(text: string): string | null {
+  const m = /0[xX]([0-9A-Fa-f]+)/.exec(text);
+  return m ? normalizeUsbCode(m[1]) : null;
+}
+
 // =============================================================== hover
 export class TargetHoverProvider implements vscode.HoverProvider {
   constructor(private index: TargetIndex) {}
 
   provideHover(doc: vscode.TextDocument, pos: vscode.Position): vscode.Hover | null {
     // USB[0x2C] first: the hex is the interesting part and is not a word.
-    const usbRange = doc.getWordRangeAtPosition(pos, /USB\s*\[\s*0[xX][0-9A-Fa-f]+\s*\]/);
+    const usbRange = doc.getWordRangeAtPosition(pos, USB_REF_RE);
     if (usbRange) {
-      const m = /0[xX]([0-9A-Fa-f]+)/.exec(doc.getText(usbRange));
-      const name = m ? usbKeyName(m[1]) : null;
-      if (name) {
-        const normalised = m![1].toUpperCase().replace(/^0+(?=.)/, '').padStart(2, '0');
+      const normalised = usbCodeInRef(doc.getText(usbRange));
+      const name = normalised ? usbKeyName(normalised) : null;
+      if (normalised && name) {
         // The modifiers written before the key are part of what this line sends, so they
         // are part of the question. Read backwards rather than widened into the trigger
         // regex, which still matches USB[0x4F] alone.
@@ -514,7 +519,7 @@ export class TargetHoverProvider implements vscode.HoverProvider {
     }
 
     // A handle the script binds to hardware.
-    const bound = aliasBindingsFor(this.index, doc).get(word);
+    const bound = this.index.aliasBindings(doc).get(word);
     if (bound?.size) {
       return md(`Device handle, bound to ${[...bound].map((b) => `\`${b}\``).join(' or ')}.`);
     }
@@ -659,11 +664,6 @@ function locateRange(model: DocModel, d: Decl): vscode.Range {
 }
 
 /**
- * The USB table names a key by both its cases - "u U", "s S" - which is the table's
- * notation for unshifted and shifted, not the key's name. Showing both reads as a
- * stutter, so the pair collapses to one.
- */
-/**
  * An inline code span around content that may itself contain backticks - USB 0x35 is
  * the ` key, and DCS action names are freeform Lua strings. The fence has to be longer
  * than the longest run inside, and the content padded so a leading or trailing backtick
@@ -675,14 +675,6 @@ export function code(text: string): string {
   const fence = '`'.repeat(longest + 1);
   const pad = text.startsWith('`') || text.endsWith('`') ? ' ' : '';
   return `${fence}${pad}${text}${pad}${fence}`;
-}
-
-export function shortKeyName(name: string): string {
-  const parts = name.split(/\s+/);
-  // Two short tokens is the table's unshifted/shifted pair - "u U", "1 !". The first is
-  // the key. A name like "Keypad *" is not that shape and survives whole.
-  if (parts.length === 2 && parts.every((p) => p.length <= 2)) return parts[0];
-  return name;
 }
 
 /**

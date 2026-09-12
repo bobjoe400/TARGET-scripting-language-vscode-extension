@@ -73,6 +73,100 @@ interface Frame {
 }
 
 /**
+ * Builds call nodes out of the parenthesis, comma and closing-paren tokens fed to it.
+ *
+ * One implementation, fed from two places: the main scan of the file, and afterwards
+ * the variable initialisers whose tokens the declaration parser consumes. Without that
+ * second pass a call in an initialiser - `int q = SetSCurve(...);`, `int fp = fopen(...)`
+ * - exists for nobody: no arity or range check, no EXEC body check, and no signature
+ * help while typing it. The two used to be separate copies of this loop.
+ */
+class CallCollector {
+  private frames: Frame[] = [];
+  private stack: CallNode[] = [];
+
+  constructor(
+    private readonly text: string,
+    /** Calls with no enclosing call. */
+    private readonly roots: CallNode[],
+    /** Every call, in the order they were opened. */
+    private readonly all: CallNode[]
+  ) {}
+
+  /** How many argument lists are open; zero means we are at statement level. */
+  get openFrames(): number {
+    return this.frames.length;
+  }
+
+  /** Abandons every unclosed call, at a token that cannot appear inside an argument list. */
+  reset(): void {
+    this.frames.length = 0;
+    this.stack.length = 0;
+  }
+
+  /**
+   * Feeds the punctuation token at `i`, returning true when it was part of a call
+   * expression and the caller should look no further at it.
+   *
+   * `from` is where the caller's slice of tokens begins: the identifier before a '(' is
+   * only the callee when it belongs to the same slice.
+   */
+  feed(sig: Token[], i: number, from = 0): boolean {
+    const t = sig[i];
+    if (t.value === '(') {
+      const prev = sig[i - 1];
+      let node: CallNode | null = null;
+      if (prev && prev.kind === TokKind.Ident && i - 1 >= from) {
+        node = {
+          name: prev.value,
+          nameStart: prev.start,
+          nameEnd: prev.end,
+          open: t.start,
+          close: -1,
+          args: [],
+          parent: this.stack.length ? this.stack[this.stack.length - 1] : null,
+          children: [],
+        };
+        if (node.parent) node.parent.children.push(node);
+        else this.roots.push(node);
+        this.all.push(node);
+        this.stack.push(node);
+      }
+      this.frames.push({ call: node, argStart: t.end });
+      return true;
+    }
+
+    if (t.value === ')') {
+      const frame = this.frames.pop();
+      if (frame?.call) {
+        const raw = this.text.slice(frame.argStart, t.start);
+        if (raw.trim() || frame.call.args.length > 0) {
+          frame.call.args.push({ start: frame.argStart, end: t.start, text: raw.trim() });
+        }
+        frame.call.close = t.end;
+        this.stack.pop();
+      }
+      return true;
+    }
+
+    if (t.value === ',') {
+      const frame = this.frames[this.frames.length - 1];
+      if (frame?.call) {
+        frame.call.args.push({
+          start: frame.argStart,
+          end: t.start,
+          text: this.text.slice(frame.argStart, t.start).trim(),
+        });
+        frame.argStart = t.end;
+      }
+      return true;
+    }
+
+    return false;
+  }
+}
+
+/**
  * The comment block documenting a declaration at `offset`.
  *
  * Real scripts separate the block from the declaration by a blank line:
@@ -140,14 +234,7 @@ export function docCommentAbove(lines: string[], lineIndex: number): string {
   return collected.map((l) => l.replace(/\t+/g, ' ')).join('\n');
 }
 
-/**
- * Builds call nodes from a slice of significant tokens.
- *
- * Used both for the body of the file and, afterwards, for variable initialisers,
- * whose tokens the declaration parser consumes. Without the second pass a call in an
- * initialiser - `int q = SetSCurve(...);`, `int fp = fopen(...)` - exists for nobody:
- * no arity or range check, no EXEC body check, and no signature help while typing it.
- */
+/** Builds call nodes from one slice of significant tokens, e.g. an initialiser. */
 function extractCalls(
   sig: Token[],
   from: number,
@@ -156,56 +243,9 @@ function extractCalls(
   roots: CallNode[],
   all: CallNode[]
 ): void {
-  const frames: { call: CallNode | null; argStart: number }[] = [];
-  const stack: CallNode[] = [];
+  const calls = new CallCollector(text, roots, all);
   for (let i = from; i < to && i < sig.length; i++) {
-    const t = sig[i];
-    if (t.kind !== TokKind.Punct) continue;
-    if (t.value === '(') {
-      const prev = sig[i - 1];
-      let node: CallNode | null = null;
-      if (prev && prev.kind === TokKind.Ident && i - 1 >= from) {
-        node = {
-          name: prev.value,
-          nameStart: prev.start,
-          nameEnd: prev.end,
-          open: t.start,
-          close: -1,
-          args: [],
-          parent: stack.length ? stack[stack.length - 1] : null,
-          children: [],
-        };
-        if (node.parent) node.parent.children.push(node);
-        else roots.push(node);
-        all.push(node);
-        stack.push(node);
-      }
-      frames.push({ call: node, argStart: t.end });
-      continue;
-    }
-    if (t.value === ')') {
-      const frame = frames.pop();
-      if (frame?.call) {
-        const raw = text.slice(frame.argStart, t.start);
-        if (raw.trim() || frame.call.args.length > 0) {
-          frame.call.args.push({ start: frame.argStart, end: t.start, text: raw.trim() });
-        }
-        frame.call.close = t.end;
-        stack.pop();
-      }
-      continue;
-    }
-    if (t.value === ',') {
-      const frame = frames[frames.length - 1];
-      if (frame?.call) {
-        frame.call.args.push({
-          start: frame.argStart,
-          end: t.start,
-          text: text.slice(frame.argStart, t.start).trim(),
-        });
-        frame.argStart = t.end;
-      }
-    }
+    if (sig[i].kind === TokKind.Punct) calls.feed(sig, i, from);
   }
 }
 
@@ -218,8 +258,7 @@ export function buildModel(text: string): DocModel {
   const decls: Decl[] = [];
   const includes: IncludeRef[] = [];
 
-  const frames: Frame[] = [];
-  const callStack: CallNode[] = [];
+  const collector = new CallCollector(text, calls, allCalls);
   /** Token ranges of variable initialisers, scanned for calls after the main loop. */
   const initialiserRanges: [number, number][] = [];
   let braceDepth = 0;
@@ -250,72 +289,23 @@ export function buildModel(text: string): DocModel {
     const t = sig[i];
 
     if (t.kind === TokKind.Punct) {
-      if (t.value === '(') {
-        const prev = sig[i - 1];
-        let node: CallNode | null = null;
-        if (prev && prev.kind === TokKind.Ident) {
-          node = {
-            name: prev.value,
-            nameStart: prev.start,
-            nameEnd: prev.end,
-            open: t.start,
-            close: -1,
-            args: [],
-            parent: callStack.length ? callStack[callStack.length - 1] : null,
-            children: [],
-          };
-          if (node.parent) node.parent.children.push(node);
-          else calls.push(node);
-          allCalls.push(node);
-          callStack.push(node);
-        }
-        frames.push({ call: node, argStart: t.end });
-        continue;
-      }
-
-      if (t.value === ')') {
-        const frame = frames.pop();
-        if (frame?.call) {
-          const raw = text.slice(frame.argStart, t.start);
-          if (raw.trim() || frame.call.args.length > 0) {
-            frame.call.args.push({ start: frame.argStart, end: t.start, text: raw.trim() });
-          }
-          frame.call.close = t.end;
-          callStack.pop();
-        }
-        continue;
-      }
-
-      if (t.value === ',') {
-        const frame = frames[frames.length - 1];
-        if (frame?.call) {
-          frame.call.args.push({
-            start: frame.argStart,
-            end: t.start,
-            text: text.slice(frame.argStart, t.start).trim(),
-          });
-          frame.argStart = t.end;
-        }
-        continue;
-      }
+      if (collector.feed(sig, i)) continue;
 
       if (t.value === '{') braceDepth++;
       else if (t.value === '}') {
         braceDepth = Math.max(0, braceDepth - 1);
         // See the semicolon note below: a brace also ends any unclosed call.
-        frames.length = 0;
-        callStack.length = 0;
+        collector.reset();
       } else if (t.value === ';') {
         // A statement terminator closes any call left open by a missing ')'.
         //
-        // Declarations are only recognised while no call is in progress, and frames
+        // Declarations are only recognised while no call is in progress, and a frame
         // is popped only by ')'. So one unclosed paren - which is the state of the
         // file for as long as you are mid-way through typing a call - made every
         // declaration below it invisible: the outline emptied, and diagnostics
         // reported missing-main and unknown-function for code three lines away.
         // TARGET has no `for(;;)`, so a semicolon can never be inside an argument list.
-        frames.length = 0;
-        callStack.length = 0;
+        collector.reset();
       }
       continue;
     }
@@ -330,7 +320,7 @@ export function buildModel(text: string): DocModel {
     // the first of a run of consecutive `define`s would ever be seen.
     const prevTok = sig[i - 1];
     const atStatementStart =
-      frames.length === 0 &&
+      collector.openFrames === 0 &&
       (i === 0 ||
         (prevTok.kind === TokKind.Punct && [';', '{', '}'].includes(prevTok.value)) ||
         text.slice(prevTok.end, t.start).includes('\n'));
@@ -473,7 +463,8 @@ function parseDeclaration(
       // The body, if present, ends the statement.
       let end = sig[j]?.end ?? name.end;
       const afterParen = sig[j + 1];
-      if (afterParen?.kind === TokKind.Punct && afterParen.value === '{') {
+      const hasBody = afterParen?.kind === TokKind.Punct && afterParen.value === '{';
+      if (hasBody) {
         let bd = 0;
         let k = j + 1;
         for (; k < sig.length; k++) {
@@ -485,22 +476,6 @@ function parseDeclaration(
           }
         }
         end = sig[k]?.end ?? end;
-        out.push({
-          kind: 'function',
-          doc: docAbove(typeTok.start),
-          name: name.value,
-          start: name.start,
-          end: name.end,
-          fullStart: typeTok.start,
-          fullEnd: end,
-          type,
-          value: null,
-          detail: `${type} ${name.value}(${paramText})`,
-          global: braceDepth === 0,
-        });
-        // Stop at the parameter list's ')' rather than at the end of the body: the
-        // caller resumes scanning inside the body, where the calls actually live.
-        return j;
       }
       out.push({
         kind: 'function',
@@ -515,6 +490,9 @@ function parseDeclaration(
         detail: `${type} ${name.value}(${paramText})`,
         global: braceDepth === 0,
       });
+      // With a body, stop at the parameter list's ')' rather than at the end of the
+      // body: the caller resumes scanning inside it, where the calls actually live.
+      if (hasBody) return j;
       i = j;
       continue;
     }

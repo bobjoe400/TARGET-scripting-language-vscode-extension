@@ -13,7 +13,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { readTextFile } from './encoding';
-import { own, usbKeyName } from './builtins';
+import { own, usbKeyName, usbNamePair } from './builtins';
 
 /** What the script produced: a keystroke, a virtual button, or an axis. */
 export type InputKind = 'key' | 'button' | 'axis';
@@ -120,6 +120,25 @@ export function virtualDeviceName(scriptText: string): string {
 }
 
 /**
+ * A path under each Windows user profile.
+ *
+ * On Windows that is the running user's own profile. From WSL it has to be found on the
+ * mounted drive and every profile is a candidate, since os.homedir() there is the Linux
+ * home and tells us nothing about the Windows user.
+ */
+function inWindowsProfiles(windowsRoot: string | null, ...rel: string[]): string[] {
+  if (process.platform === 'win32') return [path.join(os.homedir(), ...rel)];
+  if (!windowsRoot) return [];
+  const users = path.join(windowsRoot, 'Users');
+  try {
+    return fs.readdirSync(users).map((u) => path.join(users, u, ...rel));
+  } catch {
+    /* no mounted profile */
+    return [];
+  }
+}
+
+/**
  * Where DCS keeps its input profiles.
  *
  *   Saved Games/DCS[.openbeta]/Config/Input/<Module>/<category>/<Device> {GUID}.diff.lua
@@ -130,17 +149,7 @@ export function virtualDeviceName(scriptText: string): string {
  * since a file for somebody's rudder pedals says nothing about what a TARGET script does.
  */
 export function dcsInputRoots(windowsRoot: string | null): string[] {
-  const homes: string[] = [];
-  if (process.platform === 'win32') {
-    homes.push(path.join(os.homedir(), 'Saved Games'));
-  } else if (windowsRoot) {
-    const users = path.join(windowsRoot, 'Users');
-    try {
-      for (const u of fs.readdirSync(users)) homes.push(path.join(users, u, 'Saved Games'));
-    } catch {
-      /* no mounted profile */
-    }
-  }
+  const homes = inWindowsProfiles(windowsRoot, 'Saved Games');
   const roots: string[] = [];
   for (const home of homes) {
     let entries: string[];
@@ -208,29 +217,21 @@ export function gameForExecutable(exe: string): string | null {
 }
 
 /**
- * Where the TARGET GUI keeps its settings. On Windows this is the running user's
- * roaming profile; from WSL the profile has to be found on the mounted drive, since
- * os.homedir() there is the Linux home and tells us nothing about the Windows user.
+ * Where the TARGET GUI keeps its settings. Under every Windows profile, then narrowed
+ * to the ones that are actually there - from WSL there may be several, and only some
+ * of them have ever run TARGET.
  */
 export function targetSettingsPaths(windowsRoot: string | null): string[] {
-  const rel = ['AppData', 'Roaming', 'Thrustmaster', 'TARGET', 'TargetSettings.xml'];
-  if (process.platform === 'win32') return [path.join(os.homedir(), ...rel)];
-  if (!windowsRoot) return [];
-  const users = path.join(windowsRoot, 'Users');
-  try {
-    return fs
-      .readdirSync(users)
-      .map((u) => path.join(users, u, ...rel))
-      .filter((p) => {
-        try {
-          return fs.statSync(p).isFile();
-        } catch {
-          return false;
-        }
-      });
-  } catch {
-    return [];
-  }
+  return inWindowsProfiles(
+    windowsRoot,
+    'AppData', 'Roaming', 'Thrustmaster', 'TARGET', 'TargetSettings.xml'
+  ).filter((p) => {
+    try {
+      return fs.statSync(p).isFile();
+    } catch {
+      return false;
+    }
+  });
 }
 
 /** Reads the script-to-game associations the TARGET GUI has recorded. */
@@ -405,10 +406,7 @@ function usbNameIndex(): Map<string, string> {
     // "a A" and "1 !" list a key and its shifted form; both name the same key. Only
     // whole alternatives are registered - indexing every word would let "Home" match
     // "Keypad 7 Home", which is a different key.
-    const parts = name.split(/\s+/);
-    if (parts.length === 2 && parts[0].length <= 2 && parts[1].length <= 2) {
-      for (const p of parts) if (!m.has(norm(p))) m.set(norm(p), hex);
-    }
+    for (const p of usbNamePair(name) ?? []) if (!m.has(norm(p))) m.set(norm(p), hex);
   }
   nameIndex = m;
   return m;
@@ -484,11 +482,18 @@ export function parseChord(before: string): Chord {
   return { modifiers: [...modifiers].sort(), unknown, length: m[1].length };
 }
 
-/** Whether a binding fires for exactly this chord. Set equality, not subset. */
+/**
+ * Whether a binding fires for exactly this chord. Set equality, not subset.
+ *
+ * Both sides are sorted here rather than relying on the caller: parseChord already
+ * returns its modifiers sorted, but the diagnostic's lookup is handed a plain array
+ * and had grown its own copy of this comparison to be safe.
+ */
 export function chordMatches(ref: BindingRef, chord: string[]): boolean {
   const a = [...ref.modifiers].sort();
-  if (a.length !== chord.length) return false;
-  return a.every((v, i) => v === chord[i]);
+  const b = [...chord].sort();
+  if (a.length !== b.length) return false;
+  return a.every((v, i) => v === b[i]);
 }
 
 /** Turns a character offset into a 1-based line, scanning the file once. */

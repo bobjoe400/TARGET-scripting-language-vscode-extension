@@ -4,7 +4,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { buildModel, DocModel, Decl } from './model';
+import { buildModel, collectAliasBindings, DocModel, Decl } from './model';
 import { readTextFile } from './encoding';
 import {
   buildBindsIndex,
@@ -19,29 +19,16 @@ import {
   dcsProfilesFor,
   virtualDeviceName,
 } from './binds';
-import { windowsSystemRoot, resolveEntryScript } from './runner';
+import { candidateRoots, TARGET_HEADERS, windowsSystemRoot, resolveEntryScript } from './runner';
 
-/** Default locations of the TARGET install, used when the setting is empty. */
 /**
- * Where TARGET usually lives. The WSL entries are derived from the real mount rather
- * than assuming /mnt/c: automount.root is configurable, and hardcoding it made
- * auto-detection fail completely under `root = /` - no install found, and
- * `include "target.tmh"` never resolving, which quietly disables the checks gated on
- * a complete symbol table.
+ * Default locations of the TARGET install's scripts folder, used when the setting is
+ * empty. The same list findInstall() searches - kept as one list because an install
+ * the compile command can find but `include "target.tmh"` cannot resolve against
+ * quietly disables every check gated on a complete symbol table.
  */
 function defaultInstallDirs(): string[] {
-  const windows = [
-    'C:\\Program Files (x86)\\Thrustmaster\\TARGET\\scripts',
-    'C:\\Program Files\\Thrustmaster\\TARGET\\scripts',
-  ];
-  const root = windowsSystemRoot();
-  const mounted = root
-    ? [
-        path.join(root, 'Program Files (x86)', 'Thrustmaster', 'TARGET', 'scripts'),
-        path.join(root, 'Program Files', 'Thrustmaster', 'TARGET', 'scripts'),
-      ]
-    : [];
-  return [...windows, ...mounted, '/mnt/c/Program Files (x86)/Thrustmaster/TARGET/scripts'];
+  return candidateRoots().map((root) => path.join(root, 'scripts'));
 }
 
 interface Entry {
@@ -498,18 +485,9 @@ export class TargetIndex {
       const closure = this.includeClosure(root, rootModel);
       if (!closure.some((c) => c.file === doc.uri.fsPath)) continue;
       reachesThisFile = true;
-      let thisComplete = closure.length < CLOSURE_LIMIT;
-      const entryDir = this.entryDirFor(root);
-      for (const { file, model: m } of closure) {
-        for (const d of m.decls) symbols.add(d.name);
-        for (const inc of m.includes) {
-          const resolved = this.resolveInclude(file, inc.path, entryDir);
-          if (!resolved || !closure.some((c) => c.file === resolved)) thisComplete = false;
-        }
-      }
       // One fully-resolved project is enough to judge against; a second that happens to
       // be broken should not switch the checks off.
-      if (thisComplete) complete = true;
+      if (this.collectClosureSymbols(root, closure, symbols)) complete = true;
     }
     // A header no entry script includes is not part of any project here, and its names
     // would be judged against the wrong table.
@@ -522,29 +500,37 @@ export class TargetIndex {
   symbolTable(doc: vscode.TextDocument): { symbols: Set<string>; complete: boolean } {
     const model = this.getModel(doc);
     const symbols = new Set<string>();
-    let complete = true;
     const closure = this.includeClosure(doc.uri.fsPath, model);
-    // Hitting the traversal cap means files were left out, so the table is partial -
-    // which is exactly the condition closureComplete exists to report. Without this,
-    // a large project produced confident "not defined" warnings for symbols that were
-    // simply never visited.
-    if (closure.length >= CLOSURE_LIMIT) complete = false;
-    const symEntryDir = this.entryDirFor(doc.uri.fsPath);
+    const complete = this.collectClosureSymbols(doc.uri.fsPath, closure, symbols);
+    return { symbols, complete };
+  }
+
+  /**
+   * Adds every name an already-walked closure declares to `into`, and says whether the
+   * closure is whole.
+   *
+   * Two things make it partial, and both must switch off the checks that report a
+   * missing name. Hitting the traversal cap means files were left out, and a large
+   * project then produced confident "not defined" warnings for symbols that were simply
+   * never visited. And resolving is not the same as reading: a header that exists but
+   * cannot be decoded is dropped from the closure, so calling the table complete on the
+   * strength of the resolution alone re-enables the very check this flag exists to gate.
+   */
+  private collectClosureSymbols(
+    startFile: string,
+    closure: { file: string; model: DocModel }[],
+    into: Set<string>
+  ): boolean {
+    let complete = closure.length < CLOSURE_LIMIT;
+    const entryDir = this.entryDirFor(startFile);
     for (const { file, model: m } of closure) {
-      for (const d of m.decls) symbols.add(d.name);
+      for (const d of m.decls) into.add(d.name);
       for (const inc of m.includes) {
-        const resolved = this.resolveInclude(file, inc.path, symEntryDir);
-        if (!resolved) {
-          complete = false;
-          continue;
-        }
-        // Resolving is not the same as reading. A header that exists but cannot be
-        // decoded is dropped from the closure, and calling the table complete then
-        // re-enables the very check this flag exists to gate.
-        if (!closure.some((c) => c.file === resolved)) complete = false;
+        const resolved = this.resolveInclude(file, inc.path, entryDir);
+        if (!resolved || !closure.some((c) => c.file === resolved)) complete = false;
       }
     }
-    return { symbols, complete };
+    return complete;
   }
 
   /**
@@ -628,10 +614,10 @@ export class TargetIndex {
     //  - The TARGET-supplied headers are excluded: a user declaration clashing with
     //    one of those is reported against the builtin tables instead, with a better
     //    message, and reporting both would say the same thing twice.
-    const TARGET_HEADERS = new Set(['target.tmh', 'defines.tmh', 'hid.tmh', 'sys.tmh']);
+    const vendorHeaders = new Set(TARGET_HEADERS);
     const owners = new Map<string, { file: string; isDefine: boolean }[]>();
     for (const { file, model } of this.includeClosure(rootFile, rootModel)) {
-      if (TARGET_HEADERS.has(path.basename(file).toLowerCase())) continue;
+      if (vendorHeaders.has(path.basename(file).toLowerCase())) continue;
       for (const d of model.decls) {
         if (!d.global) continue;
         if (!owners.has(d.name)) owners.set(d.name, []);
@@ -649,6 +635,23 @@ export class TargetIndex {
     }
 
     return { problems, duplicateSymbols };
+  }
+
+  /**
+   * Device handles the script binds itself, merged across the include graph.
+   *
+   * Merged rather than read from one file because a handle is usually bound in a
+   * different file from the one that uses it.
+   */
+  aliasBindings(doc: vscode.TextDocument): Map<string, Set<string>> {
+    const merged = new Map<string, Set<string>>();
+    for (const { model } of this.includeClosure(doc.uri.fsPath, this.getModel(doc))) {
+      for (const [k, v] of collectAliasBindings(model)) {
+        if (!merged.has(k)) merged.set(k, new Set());
+        for (const d of v) merged.get(k)!.add(d);
+      }
+    }
+    return merged;
   }
 
   /** Global declarations visible from a document, across its include graph. */

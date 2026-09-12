@@ -8,12 +8,6 @@ import * as path from 'path';
 import { DocModel, CallNode } from './model';
 import { TokKind, lex } from './lexer';
 import { SCRIPT_MODIFIERS, SCRIPT_STATE_FLAGS, parseChord } from './binds';
-
-/** "u U" is the USB table's unshifted/shifted pair, not the key's name. */
-function shortName(name: string): string {
-  const parts = name.split(/\s+/);
-  return parts.length === 2 && parts.every((p) => p.length <= 2) ? parts[0] : name;
-}
 import {
   functionsByName,
   constantsByName,
@@ -22,7 +16,9 @@ import {
   NOT_IN_TARGET,
   FORBIDDEN_IN_EXEC,
   DISPUTED_IN_EXEC,
+  normalizeUsbCode,
   own,
+  shortKeyName,
   usbKeyName,
 } from './builtins';
 
@@ -664,7 +660,7 @@ export function computeDiagnostics(
       const m = /^USB\s*\[\s*0[xX]([0-9A-Fa-f]+)\s*\]/.exec(model.text.slice(t.start));
       if (!m) continue;
       const end = t.start + m[0].length;
-      const code = m[1].toUpperCase().replace(/^0+(?=.)/, '').padStart(2, '0');
+      const code = normalizeUsbCode(m[1]);
       const lineStart = model.text.lastIndexOf('\n', t.start) + 1;
       const chord = parseChord(model.text.slice(lineStart, t.start));
       // An unrecognised term means the chord is not known, so it cannot be called
@@ -674,7 +670,7 @@ export function computeDiagnostics(
       if (bound !== false) continue;
       // The key by name where the table knows it; the hex alone reads as a riddle.
       const named = usbKeyName(code);
-      const label = [...chord.modifiers, named ? shortName(named) : `0x${code}`].join(' + ');
+      const label = [...chord.modifiers, named ? shortKeyName(named) : `0x${code}`].join(' + ');
       if (seen.has(label + lineStart)) continue;
       seen.add(label + lineStart);
       // Underline the whole chord. Marking only the scancode pointed at half of what is

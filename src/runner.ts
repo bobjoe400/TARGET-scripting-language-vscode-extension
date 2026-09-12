@@ -31,7 +31,7 @@ const NO_RUN_SENTINEL = '__targetscript_compile_check__';
 
 const SCRIPT_EXT = /\.(tmc|tmh|ttm)$/i;
 /** The headers TARGET ships, which every script includes. */
-const TARGET_HEADERS = ['target.tmh', 'defines.tmh', 'hid.tmh', 'sys.tmh'];
+export const TARGET_HEADERS = ['target.tmh', 'defines.tmh', 'hid.tmh', 'sys.tmh'];
 
 export type Host = 'windows' | 'wsl' | 'unsupported';
 
@@ -79,6 +79,19 @@ function systemTool(name: string): string {
   return root ? path.join(root, 'Windows', 'System32', name) : `/mnt/c/Windows/System32/${name}`;
 }
 
+/**
+ * How one of those tools is run. From WSL it needs a working directory it can actually
+ * see, and every call is timed: a taskkill held up by a modal prompt or a wedged
+ * interop layer otherwise leaves its caller pending with nothing to cancel, and the Run
+ * flow awaits one inline.
+ */
+function systemToolOptions(): { cwd: string | undefined; timeout: number } {
+  return {
+    cwd: detectHost() === 'windows' ? undefined : windowsSystemRoot() ?? '/mnt/c',
+    timeout: 10_000,
+  };
+}
+
 /** A path in the form Windows understands. Under WSL that means asking wslpath. */
 export async function toWindowsPath(p: string): Promise<string> {
   if (process.platform === 'win32') return p;
@@ -101,7 +114,7 @@ export interface TargetInstall {
  * running, compiling, and every check that needs the vendor headers. /mnt/c stays as a
  * last resort for the case where the mount cannot be read.
  */
-function candidateRoots(): string[] {
+export function candidateRoots(): string[] {
   const roots = [
     'C:\\Program Files (x86)\\Thrustmaster\\TARGET',
     'C:\\Program Files\\Thrustmaster\\TARGET',
@@ -313,6 +326,61 @@ function copyFileBytes(src: string, dst: string): void {
   fs.writeFileSync(dst, fs.readFileSync(src));
 }
 
+/**
+ * Puts the TARGET headers beside the staged entry script.
+ *
+ * That is where the interpreter resolves includes from: its working directory is the
+ * entry's own place in the mirrored tree. Call this BEFORE staging the project's own
+ * files, so that a project file of the same name wins if it exists.
+ */
+function stageTargetHeaders(
+  entryDirInStage: string,
+  install: TargetInstall,
+  onStaged?: (name: string, src: string) => void
+): void {
+  fs.mkdirSync(entryDirInStage, { recursive: true });
+  for (const h of TARGET_HEADERS) {
+    const src = path.join(install.scripts, h);
+    if (!safeIsFile(src)) continue;
+    copyFileBytes(src, path.join(entryDirInStage, h));
+    onStaged?.(h, src);
+  }
+}
+
+/**
+ * Mirrors the project's script files into a stage, preserving the relative paths the
+ * includes are written with.
+ *
+ * Shared by the compile check and the run staging, which have to produce byte-identical
+ * trees: a project that compiles here and then fails to load there - or the reverse -
+ * is the extension contradicting itself.
+ */
+function stageScriptSources(
+  stage: string,
+  stageRoot: string,
+  projectDir: string,
+  closureFiles: string[],
+  onStaged?: (src: string, rel: string, bytes: Buffer) => void
+): void {
+  // Everything under the project, plus anything the include graph reaches outside it.
+  const sources = new Set<string>(listScriptFiles(projectDir).map((r) => path.join(projectDir, r)));
+  for (const f of closureFiles) if (safeIsFile(f)) sources.add(f);
+
+  // Insertion order matters: the project's own files are in the set first, so they
+  // claim their names before anything reached from outside the tree.
+  const taken = new Set<string>();
+  for (const src of sources) {
+    const rel = stagedRelPath(src, stageRoot, projectDir, taken);
+    if (rel === null) continue;
+    taken.add(rel.toLowerCase());
+    const bytes = fs.readFileSync(src);
+    const dst = path.join(stage, rel);
+    fs.mkdirSync(path.dirname(dst), { recursive: true });
+    fs.writeFileSync(dst, bytes);
+    onStaged?.(src, rel, bytes);
+  }
+}
+
 export interface CompileProblem {
   /** Absolute path of the original file, mapped back from the staging copy. */
   file: string;
@@ -372,40 +440,17 @@ export async function compileCheck(
     /** Files the compiler will choke on before reading a single statement. */
     const bomFiles: { file: string; kind: string }[] = [];
 
-    // The TARGET headers first, so a project file of the same name wins if it exists.
-    // They get origin entries too: without them an error the compiler reports inside
-    // target.tmh maps to a same-named path in the user's project, which is not there.
-    // Beside the entry script, because the interpreter resolves includes against its
-    // working directory and that is now the entry's own place in the mirrored tree.
-    fs.mkdirSync(entryDirInStage, { recursive: true });
-    for (const h of TARGET_HEADERS) {
-      const src = path.join(install.scripts, h);
-      if (safeIsFile(src)) {
-        copyFileBytes(src, path.join(entryDirInStage, h));
-        origin.set(h.toLowerCase(), src);
-      }
-    }
+    // The vendor headers get origin entries too: without them an error the compiler
+    // reports inside target.tmh maps to a same-named path in the user's project, which
+    // is not there.
+    stageTargetHeaders(entryDirInStage, install, (name, src) => origin.set(name.toLowerCase(), src));
 
-    // Everything under the project, plus anything the include graph reaches outside it.
-    const sources = new Set<string>(listScriptFiles(projectDir).map((r) => path.join(projectDir, r)));
-    for (const f of opts.closureFiles ?? []) if (safeIsFile(f)) sources.add(f);
-
-    // Insertion order matters: the project's own files are in the set first, so they
-    // claim their names before anything reached from outside the tree.
-    const taken = new Set<string>();
-    for (const src of sources) {
-      const rel = stagedRelPath(src, stageRoot, projectDir, taken);
-      if (rel === null) continue;
-      taken.add(rel.toLowerCase());
-      const bytes = fs.readFileSync(src);
+    stageScriptSources(stage, stageRoot, projectDir, opts.closureFiles ?? [], (src, rel, bytes) => {
       const bom = bomKind(bytes);
       if (bom) bomFiles.push({ file: src, kind: bom });
-      const dst = path.join(stage, rel);
-      fs.mkdirSync(path.dirname(dst), { recursive: true });
-      fs.writeFileSync(dst, bytes);
       origin.set(rel.toLowerCase().replace(/\\/g, '/'), src);
       origin.set(path.basename(rel).toLowerCase(), src);
-    }
+    });
 
     const main = path.basename(scriptPath);
     // Run from where the entry script landed, so its own relative includes resolve
@@ -644,25 +689,14 @@ export async function runScript(
 }
 
 
-/** Stops a running script by closing TARGETGUI. */
+/**
+ * Stops a running script by closing TARGETGUI.
+ *
+ * Forced, unlike the Script Editor case killImage exists for: the GUI holds the HID
+ * devices and there is no unsaved work in it to lose.
+ */
 export async function stopScript(): Promise<{ ok: boolean; error?: string }> {
-  const host = detectHost();
-  const taskkill = systemTool('taskkill.exe');
-  try {
-    // Timed, like every other tool call here: a taskkill held up by a modal prompt or
-    // a wedged interop layer otherwise left "Stop Running Script" pending with nothing
-    // to cancel, and the Run flow awaits this one inline.
-    await execFileAsync(taskkill, ['/IM', 'TARGETGUI.exe', '/F'], {
-      cwd: host === 'windows' ? undefined : windowsSystemRoot() ?? '/mnt/c',
-      timeout: 10_000,
-    });
-    return { ok: true };
-  } catch (e) {
-    // taskkill exits non-zero when nothing matched, which is not a failure worth raising.
-    const msg = e instanceof Error ? e.message : String(e);
-    if (/not found|not running/i.test(msg)) return { ok: true };
-    return { ok: false, error: msg };
-  }
+  return killImage(IMAGE_GUI, true);
 }
 
 /** Whether `dir` is `other` or an ancestor of it. */
@@ -740,12 +774,12 @@ export async function isGuiRunning(): Promise<boolean> {
 
 /** Is one Windows image running? */
 async function imageRunning(image: string): Promise<boolean> {
-  const host = detectHost();
   try {
-    const { stdout } = await execFileAsync(systemTool('tasklist.exe'), ['/FI', `IMAGENAME eq ${image}`], {
-      cwd: host === 'windows' ? undefined : windowsSystemRoot() ?? '/mnt/c',
-      timeout: 10_000,
-    });
+    const { stdout } = await execFileAsync(
+      systemTool('tasklist.exe'),
+      ['/FI', `IMAGENAME eq ${image}`],
+      systemToolOptions()
+    );
     return stdout.toLowerCase().includes(image.toLowerCase());
   } catch {
     // Unable to ask: assume nothing is running rather than block the user.
@@ -776,14 +810,9 @@ async function listTargetProcessesUncached(): Promise<TargetProcesses> {
  * reports that rather than pretending it closed.
  */
 export async function killImage(image: string, force = false): Promise<{ ok: boolean; error?: string }> {
-  const host = detectHost();
-  const taskkill = systemTool('taskkill.exe');
   try {
     const args = force ? ['/IM', image, '/F'] : ['/IM', image];
-    await execFileAsync(taskkill, args, {
-      cwd: host === 'windows' ? undefined : windowsSystemRoot() ?? '/mnt/c',
-      timeout: 10_000,
-    });
+    await execFileAsync(systemTool('taskkill.exe'), args, systemToolOptions());
     return { ok: true };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -859,25 +888,8 @@ export async function stageProjectForRun(
     // while TARGET failed to load the script in its own window.
     const stageRoot = stageRootFor(projectDir, opts.closureFiles ?? [], install);
     const entryDir = path.join(dir, path.relative(stageRoot, projectDir));
-    fs.mkdirSync(entryDir, { recursive: true });
-
-    // The TARGET headers beside the entry script, where its includes resolve from.
-    for (const h of TARGET_HEADERS) {
-      const src = path.join(install.scripts, h);
-      if (safeIsFile(src)) copyFileBytes(src, path.join(entryDir, h));
-    }
-
-    const sources = new Set<string>(listScriptFiles(projectDir).map((r) => path.join(projectDir, r)));
-    for (const f of opts.closureFiles ?? []) if (safeIsFile(f)) sources.add(f);
-    const taken = new Set<string>();
-    for (const src of sources) {
-      const rel = stagedRelPath(src, stageRoot, projectDir, taken);
-      if (rel === null) continue;
-      taken.add(rel.toLowerCase());
-      const dst = path.join(dir, rel);
-      fs.mkdirSync(path.dirname(dst), { recursive: true });
-      copyFileBytes(src, dst);
-    }
+    stageTargetHeaders(entryDir, install);
+    stageScriptSources(dir, stageRoot, projectDir, opts.closureFiles ?? []);
 
     return { ok: true, staging: { entry: path.join(entryDir, path.basename(scriptPath)), dir } };
   } catch (e) {

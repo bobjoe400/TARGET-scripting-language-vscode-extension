@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { TargetIndex } from './index';
-import { BindingRef } from './binds';
+import { BindingRef, chordMatches } from './binds';
 
 /** What a hover link asks the peek command to look up, since a hover is not the caret. */
 interface PeekTarget {
@@ -14,7 +14,6 @@ interface PeekTarget {
   line?: number;
   character?: number;
 }
-import { collectAliasBindings } from './model';
 import { computeDiagnostics, DIAG_SOURCE, RawDiagnostic, Severity } from './diagnostics';
 import {
   TARGET_SELECTOR,
@@ -23,6 +22,8 @@ import {
   TargetHoverProvider,
   TargetSignatureProvider,
   TargetSymbolProvider,
+  usbCodeInRef,
+  USB_REF_RE,
 } from './providers';
 import { generated } from './builtins';
 import {
@@ -119,11 +120,7 @@ export function activate(context: vscode.ExtensionContext): void {
     return (code, modifiers) => {
       const refs = binds.byUsbCode.get(code);
       if (!refs?.length) return false;
-      const sorted = [...modifiers].sort();
-      return refs.some((r) => {
-        const a = [...r.modifiers].sort();
-        return a.length === sorted.length && a.every((v, i) => v === sorted[i]);
-      });
+      return refs.some((r) => chordMatches(r, modifiers));
     };
   };
 
@@ -149,16 +146,6 @@ export function activate(context: vscode.ExtensionContext): void {
     }
     const model = index.getModel(doc);
 
-    // Device handles are usually bound in a different file from the one that uses
-    // them, so the bindings are merged across the include graph.
-    const bindings = new Map<string, Set<string>>();
-    for (const { model: m } of index.includeClosure(doc.uri.fsPath, model)) {
-      for (const [k, v] of collectAliasBindings(m)) {
-        if (!bindings.has(k)) bindings.set(k, new Set());
-        for (const d of v) bindings.get(k)!.add(d);
-      }
-    }
-
     const { symbols, complete } = index.symbolTable(doc);
     // Resolved from the entry script, so a header is judged against the project it
     // belongs to rather than against its own includes.
@@ -168,7 +155,7 @@ export function activate(context: vscode.ExtensionContext): void {
     const isEntry = doc.fileName.toLowerCase().endsWith('.tmc');
     const graph = isEntry ? index.analyzeIncludes(doc) : null;
     const raw = computeDiagnostics(model, path.basename(doc.fileName), {
-      aliasBindings: bindings,
+      aliasBindings: index.aliasBindings(doc),
       knownSymbols: symbols,
       closureComplete: complete,
       isEntryScript: isEntry,
@@ -754,7 +741,7 @@ export function activate(context: vscode.ExtensionContext): void {
         target?.line !== undefined
           ? new vscode.Position(target.line, target.character ?? 0)
           : ed.selection.active;
-      const usb = target?.kind === 'key' ? null : doc.getWordRangeAtPosition(pos, /USB\s*\[\s*0[xX][0-9A-Fa-f]+\s*\]/);
+      const usb = target?.kind === 'key' ? null : doc.getWordRangeAtPosition(pos, USB_REF_RE);
       const dx = target?.kind === 'button' ? null : doc.getWordRangeAtPosition(pos, /\bDX\d+\b/);
       // Deliberately unnarrowed: the point is to see the whole picture.
       const binds = index.getBindsIndex(doc, false);
@@ -767,7 +754,7 @@ export function activate(context: vscode.ExtensionContext): void {
         refs = binds.byButton.get(Number(target.code)) ?? [];
         what = `DX${target.code}`;
       } else if (usb) {
-        const hex = /0[xX]([0-9A-Fa-f]+)/.exec(doc.getText(usb))![1].toUpperCase().replace(/^0+(?=.)/, '').padStart(2, '0');
+        const hex = usbCodeInRef(doc.getText(usb))!;
         refs = binds.byUsbCode.get(hex) ?? [];
         what = doc.getText(usb);
       } else if (dx) {
