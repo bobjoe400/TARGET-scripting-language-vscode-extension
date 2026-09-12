@@ -2,6 +2,10 @@
 
 ## 1.0.1
 
+- The extension ID is now `bobjoe400.tm-target-script`. The original ID was
+  published and then removed, and the Marketplace reserves a removed extension's name
+  permanently - an anti-impersonation rule, and not reversible by the publisher. The
+  listing is the same extension under a new ID.
 - Renamed to **T.A.R.G.E.T. Script (Unofficial)**. The old name read as though
   Thrustmaster published or supported this, which would have sent people to them with
   bug reports that are not theirs to answer.
