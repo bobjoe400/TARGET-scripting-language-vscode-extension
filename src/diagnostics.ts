@@ -224,21 +224,24 @@ export function computeDiagnostics(
   }
 
   /**
-   * Notes DX buttons above 32, where the sources genuinely disagree and the
-   * consequence is silent.
+   * Notes DX buttons above 32.
    *
-   *   Thrustmaster's own manual (v1.5, shipped 2011) states the virtual controller
-   *   "will never be able to declare more axes and DirectX buttons than the official
-   *   DirectX limits (32 buttons and 8 axes)".
+   * The ceiling is not TARGET's and not fixed: DirectInput defines two joystick data
+   * formats, and the GAME chooses which one it asks for.
    *
-   *   defines.tmh, updated 2024, names DX1 through DX128.
+   *   c_dfDIJoystick  -> DIJOYSTATE   { ... BYTE rgbButtons[32];  }
+   *   c_dfDIJoystick2 -> DIJOYSTATE2  { ... BYTE rgbButtons[128]; }
    *
-   *   Community documentation for current TARGET reports 56 usable DX buttons on the
-   *   combined virtual device.
+   * So a button above DX32 reaches a game reading DIJOYSTATE2 and is invisible to one
+   * reading DIJOYSTATE. That is why the figures in circulation disagree: Thrustmaster's
+   * 2011 manual quotes 32, defines.tmh names DX1..DX128, and Elite Dangerous reads 32.
    *
-   * The number that actually reaches a game also depends on the game: Elite Dangerous
-   * reads 32. None of this can be settled without the hardware, so this is a hint
-   * rather than a warning, and it says what is uncertain instead of picking a side.
+   * Both formats carry exactly eight axes - lX, lY, lZ, lRx, lRy, lRz and rglSlider[2] -
+   * which is precisely the eight DX_*_AXIS constants defines.tmh declares, so the axis
+   * half of the limit needs no check: a ninth cannot be named.
+   *
+   * A button past the game's limit is never reported rather than rejected, so this is a
+   * hint: it cannot be known from the script alone whether it is a problem.
    */
   function checkDirectXButtonCeiling(): void {
     const reported = new Set<string>();
@@ -252,7 +255,7 @@ export function computeDiagnostics(
       add(
         t.start,
         t.end,
-        `${t.value} is above DX32. Thrustmaster's manual gives the DirectX limit as 32 buttons, defines.tmh names up to DX128, and current TARGET is reported to expose 56 on the combined virtual device. A button above the limit is simply never seen by the game, and many games (Elite Dangerous among them) read only 32. Keyboard combinations are the usual way around it.`,
+        `${t.value} is above DX32. Whether it reaches the game depends on the DirectInput data format that game requests: DIJOYSTATE (c_dfDIJoystick) carries 32 buttons, DIJOYSTATE2 (c_dfDIJoystick2) carries 128. A button past the game's limit is silently never reported - Elite Dangerous reads 32. Keyboard combinations are the usual way around it.`,
         'info',
         'directx-button-ceiling'
       );

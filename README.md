@@ -62,7 +62,7 @@ split over a dozen headers and Thrustmaster's editor has no navigation at all.
 | Event handler passed to `Init()` does not exist | fails at runtime with `Symbol not found` |
 | Handler that never calls `DefaultMapping()` | mappings and shift layers never take effect |
 | Call to a function defined nowhere | a typo that TARGET only discovers mid-flight |
-| DX buttons above `DX32` | a hint: the ceiling is disputed and exceeding it fails silently |
+| DX buttons above `DX32` | a hint: whether it arrives depends on the game's DirectInput data format |
 | C keywords TARGET lacks | `for`, `switch`, `continue`, `typedef`, `enum`, `const`, … |
 
 Names borrowed from another device that happen to land on the same index (`TG1` and
@@ -146,6 +146,26 @@ own headers. The extension stages the four TARGET headers and your project's scr
 files into a scratch directory, compiles there, and maps reported paths back to your
 real files. The scratch directory is removed afterwards; nothing is written into your
 project.
+
+## The DX button ceiling
+
+TARGET replaces your hardware with a virtual controller, and `DX1`..`DXn` are buttons on
+it. How many of those a game can see is decided by the game, not by TARGET: DirectInput
+defines two joystick data formats, and the game picks one.
+
+| Data format | Structure | Buttons |
+| --- | --- | --- |
+| `c_dfDIJoystick` | `DIJOYSTATE` | `BYTE rgbButtons[32]` |
+| `c_dfDIJoystick2` | `DIJOYSTATE2` | `BYTE rgbButtons[128]` |
+
+That is why the numbers in circulation disagree - Thrustmaster's 2011 manual quotes 32,
+`defines.tmh` names up to `DX128`, and Elite Dangerous reads 32. A button past the
+game's limit is never reported rather than rejected, so the extension flags anything
+above `DX32` as a hint and leaves the judgement to you.
+
+Axes are not in doubt: both structures carry exactly eight (`lX`, `lY`, `lZ`, `lRx`,
+`lRy`, `lRz`, `rglSlider[2]`), which is exactly the eight `DX_*_AXIS` constants
+`defines.tmh` declares, so a ninth cannot be named.
 
 ## Is this C?
 

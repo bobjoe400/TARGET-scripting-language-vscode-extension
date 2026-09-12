@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.2
+
+- The DX button hint now explains the real reason the ceiling is disputed instead of
+  reporting that sources disagree. DirectInput defines two joystick data formats and
+  the game chooses which it asks for: `c_dfDIJoystick` gives `DIJOYSTATE` with
+  `BYTE rgbButtons[32]`, `c_dfDIJoystick2` gives `DIJOYSTATE2` with
+  `BYTE rgbButtons[128]`. A button above DX32 reaches a game reading the second and is
+  invisible to one reading the first, which is why no single number is correct.
+- Both structures carry exactly eight axes (`lX`, `lY`, `lZ`, `lRx`, `lRy`, `lRz` and
+  `rglSlider[2]`), matching the eight `DX_*_AXIS` constants in `defines.tmh` exactly.
+
 ## 0.5.1
 
 - Notes DX buttons above DX32 as a hint. This was previously dropped on the reasoning
