@@ -319,12 +319,26 @@ export class TargetHoverProvider implements vscode.HoverProvider {
       const m = /0[xX]([0-9A-Fa-f]+)/.exec(doc.getText(usbRange));
       const name = m ? usbKeyName(m[1]) : null;
       if (name) {
-        return new vscode.Hover(
-          new vscode.MarkdownString(
-            `**${name}**\n\nUSB HID keyboard code \`0x${m![1].toUpperCase()}\`, sent through the virtual keyboard.`
-          ),
-          usbRange
-        );
+        const parts = [
+          `**${name}**`,
+          `USB HID keyboard code \`0x${m![1].toUpperCase()}\`, sent through the virtual keyboard.`,
+        ];
+        // What the game does with that key, if a .binds file is to hand. The script
+        // itself cannot say: it sends keystrokes and the game decides.
+        const bound = this.index
+          .getBindsIndex(doc)
+          .byUsbCode.get(m![1].toUpperCase().padStart(2, '0'));
+        if (bound?.length) {
+          const shown = bound.slice(0, 6).map((b) => {
+            const mods = b.modifiers.length ? `${b.modifiers.join('+')}+ ` : '';
+            return `- ${mods}\`${b.action}\` (${b.slot})`;
+          });
+          parts.push(
+            `**Bound in ${bound[0].file}:**`,
+            shown.join('\n') + (bound.length > 6 ? `\n- \u2026and ${bound.length - 6} more` : '')
+          );
+        }
+        return new vscode.Hover(new vscode.MarkdownString(parts.join('\n\n')), usbRange);
       }
     }
 

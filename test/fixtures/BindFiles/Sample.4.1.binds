@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<Root PresetName="Sample" MajorVersion="4" MinorVersion="1">
+	<DeployHardpointToggle>
+		<Primary Device="Keyboard" Key="Key_U" />
+		<Secondary Device="{NoDevice}" Key="" />
+	</DeployHardpointToggle>
+	<LandingGearToggle>
+		<Primary Device="Keyboard" Key="Key_L" />
+	</LandingGearToggle>
+	<UIFocus>
+		<Primary Device="Keyboard" Key="Key_Home">
+			<Modifier Device="Keyboard" Key="Key_LeftShift" />
+		</Primary>
+	</UIFocus>
+	<ShipSpotLightToggle>
+		<Primary Device="Keyboard" Key="Key_Insert" />
+	</ShipSpotLightToggle>
+</Root>

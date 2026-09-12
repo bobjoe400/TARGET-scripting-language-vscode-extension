@@ -111,7 +111,16 @@ for (let code = 0x04; code <= 0xe7; code++) {
     misses++;
     continue; // a gap in the table, or a code the manual does not list
   }
-  const name = rejoin(text.slice(idx[lastEnd] ?? 0, idx[found]).replace(/\s+/g, ' ').trim());
+  let name = rejoin(text.slice(idx[lastEnd] ?? 0, idx[found]).replace(/\s+/g, ' ').trim());
+  // Two names can share a code ("Break (Ctrl-Pause) 48  Pause 48  Insert 49"), which
+  // leaves the previous entry's tail in front of this one. Keep only the text after
+  // the last embedded code. Requires text on both sides, so a name that is itself
+  // hex-shaped, like F1, is left alone.
+  for (let guard = 0; guard < 4; guard++) {
+    const m2 = /^.+?\s+[0-9A-F]{2}\s+(.+)$/.exec(name);
+    if (!m2) break;
+    name = m2[1];
+  }
   // A name carrying what looks like another code means the walk lost its place;
   // record nothing rather than a run of merged entries.
   const desynced = /\b[0-9A-F]{2}\b/.test(name) && name.length > 12;

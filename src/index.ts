@@ -6,6 +6,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { buildModel, DocModel, Decl } from './model';
 import { readTextFile } from './encoding';
+import { buildBindsIndex, BindsIndex } from './binds';
 
 /** Default locations of the TARGET install, used when the setting is empty. */
 const DEFAULT_INSTALL_DIRS = [
@@ -57,6 +58,59 @@ export class TargetIndex {
 
   invalidate(uri: vscode.Uri): void {
     this.cache.delete(uri.toString());
+    this.binds = undefined;
+  }
+
+  private binds: { index: BindsIndex; stamp: string } | undefined;
+
+  /**
+   * Elite Dangerous binding files near the script, so the editor can say what the
+   * game does with a key. Searched beside the script, one level up, and in the
+   * workspace root - which is where the community layouts keep them (a BindFiles
+   * folder next to ScriptFiles).
+   */
+  getBindsIndex(doc: vscode.TextDocument): BindsIndex {
+    const configured = vscode.workspace
+      .getConfiguration('targetScript')
+      .get<string>('bindsFolder')
+      ?.trim();
+
+    const dirs: string[] = [];
+    const scriptDir = path.dirname(doc.uri.fsPath);
+    if (configured) dirs.push(configured);
+    dirs.push(scriptDir, path.dirname(scriptDir));
+    const folder = vscode.workspace.getWorkspaceFolder(doc.uri);
+    if (folder) dirs.push(folder.uri.fsPath);
+
+    const files: string[] = [];
+    for (const dir of [...new Set(dirs)]) {
+      for (const candidate of [dir, path.join(dir, 'BindFiles'), path.join(dir, 'Bindings')]) {
+        try {
+          if (!fs.statSync(candidate).isDirectory()) continue;
+          for (const name of fs.readdirSync(candidate)) {
+            if (/\.binds$/i.test(name)) files.push(path.join(candidate, name));
+          }
+        } catch {
+          /* not a readable directory */
+        }
+      }
+    }
+    const unique = [...new Set(files)].sort();
+
+    // Rebuild only when the set of files or their timestamps change.
+    const stamp = unique
+      .map((f) => {
+        try {
+          return `${f}:${fs.statSync(f).mtimeMs}`;
+        } catch {
+          return f;
+        }
+      })
+      .join('|');
+    if (this.binds && this.binds.stamp === stamp) return this.binds.index;
+    const index = buildBindsIndex(unique);
+    this.binds = { index, stamp };
+    return index;
   }
 
   /** Directories searched for `include "..."`, nearest first. */

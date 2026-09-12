@@ -30,6 +30,16 @@ MapKeyUMD(&MyJoystick, TS1, ...);
 
 Axis functions (`MapAxis`, `SetSCurve`, …) rank that device's axes first instead.
 
+**Elite Dangerous bindings.** A script sends keystrokes; the game decides what they do,
+and that lives only in the game's `.binds` file. Hover a scancode and the extension says
+both - `USB[0x18]` is "u U", and the game has it on `DeployHardpointToggle`. Drop your
+`.binds` beside the script (or in `BindFiles/`) and it is picked up automatically; set
+`targetScript.bindsFolder` if it lives elsewhere.
+
+The lookup is by key rather than by name, because script authors name their defines
+however they like: of the 200 defines in the test corpus only 15 match a game action
+name.
+
 **Default DirectX mappings.** With no script running, `TS1` sends `DX1` and `MSP` sends
 `DX26`. Hover and completion say so, which matters when a script means to preserve a
 default or you are working out what an existing game binding pointed at.
@@ -261,6 +271,7 @@ C out of habit tells you immediately rather than at runtime.
 | --- | --- | --- |
 | `targetScript.installPath` | auto-detect | The TARGET `scripts` folder. Used to resolve `include "target.tmh"` and to locate `TARGETGUI.exe` and `Interpreter.exe`. Set this if TARGET is not in the default location. |
 | `targetScript.diagnostics.enable` | `true` | Turn diagnostics off entirely. |
+| `targetScript.bindsFolder` | auto-detect | Folder holding Elite Dangerous `.binds` files. |
 
 ## Where the data comes from
 

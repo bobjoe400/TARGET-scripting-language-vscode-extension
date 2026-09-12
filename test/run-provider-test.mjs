@@ -415,6 +415,45 @@ for (const [label, src, needle] of [
   }
 }
 
+
+// ---- Elite Dangerous bindings ----------------------------------------------
+// A script sends keystrokes; the game decides what they mean, and that mapping lives
+// only in the game's .binds file. Looking it up by key rather than by name, because
+// script authors name their defines however they like - of 200 defines in the corpus
+// only 15 match a game action name.
+{
+  const { usbCodeForEdKey, ED_MODIFIERS, buildBindsIndex } = require(path.join(repoRoot, 'out/binds.js'));
+
+  // Key resolution must be exact: Home and Keypad-7 are different keys.
+  const resolutions = [
+    ['Key_U', '18'], ['Key_Home', '4A'], ['Key_Numpad_7', '5F'], ['Key_F4', '3D'],
+    ['Key_Space', '2C'], ['Key_Equals', '2E'], ['Key_Insert', '49'], ['Key_Numpad_Add', '57'],
+  ];
+  const wrong = resolutions.filter(([k, want]) => usbCodeForEdKey(k) !== want);
+  if (wrong.length === 0) { pass++; console.log(`  ok    ${resolutions.length} Elite key names resolve to the right USB codes`); }
+  else failures.push(`ed key resolution: ${wrong.map(([k, w]) => `${k} wanted ${w} got ${usbCodeForEdKey(k)}`).join(', ')}`);
+
+  if (ED_MODIFIERS.LeftShift === 'L_SHIFT' && usbCodeForEdKey('Key_LeftShift') === null) {
+    pass++; console.log('  ok    modifiers map to TARGET flags, not scancodes');
+  } else failures.push('modifier handling');
+
+  const bindsFile = path.join(FIX, 'BindFiles', 'Sample.4.1.binds');
+  const idx = buildBindsIndex([bindsFile]);
+  const u = idx.byUsbCode.get('18');
+  if (u?.[0]?.action === 'DeployHardpointToggle' && idx.actions.includes('LandingGearToggle')) {
+    pass++; console.log(`  ok    .binds parsed: ${idx.actions.length} actions, U -> ${u[0].action}`);
+  } else failures.push(`binds parse: ${JSON.stringify([...idx.byUsbCode.keys()])}`);
+
+  const home = idx.byUsbCode.get('4A');
+  if (home?.[0]?.modifiers.includes('L_SHIFT')) { pass++; console.log('  ok    modifier keys are carried through (Shift+Home)'); }
+  else failures.push(`binds modifiers: ${JSON.stringify(home)}`);
+
+  // And it reaches the editor: hovering the scancode says what the game does.
+  const h = hoverAt('int f() { MapKey(&Joystick, TG1, USB[0x1|8]); }', path.join(FIX, 'bindsdemo.tmc'));
+  if (h && /DeployHardpointToggle/.test(h)) { pass++; console.log('  ok    hover shows the game action a key is bound to'); }
+  else failures.push(`binds hover: ${JSON.stringify((h || '').slice(0, 200))}`);
+}
+
 for (const f of failures) console.log(`  FAIL  ${f}`);
 console.log(`\n  ${pass}/${pass + failures.length} provider assertions passed`);
 if (failures.length) process.exit(1);

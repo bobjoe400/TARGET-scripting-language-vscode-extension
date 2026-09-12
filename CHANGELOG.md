@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.12.0
+
+- **Elite Dangerous bindings.** Hovering a scancode now says what the game does with
+  that key: `USB[0x18]` shows "u U" *and* `DeployHardpointToggle (Primary)`. A script
+  only sends keystrokes - what they mean lives in the game's `.binds` file and nowhere
+  in the script.
+- `.binds` files are found beside the script, one level up, and in the workspace root,
+  including `BindFiles/` and `Bindings/` subfolders, or set `targetScript.bindsFolder`.
+- The lookup is by key, not by name, and deliberately so: of the 200 defines in the
+  test corpus only 15 match a game action name - the game calls deploying hardpoints
+  `DeployHardpointToggle` while the script calls it `DeployHardpoints` - so matching by
+  name would be wrong far more often than right. 99% of the key names in a real binds
+  file resolve to a USB code; only `Key_Apps` does not, its code being absent from the
+  manual's table.
+- Modifiers are carried through, so a Shift+Home binding reads as `L_SHIFT+`.
+- Fixed two faults found while building this: the USB table lost `Insert` because
+  Break and Pause share code 48 and the shared code desynced the walk, and modifier
+  keys were silently dropped because an optional closing tag let the lazy body match
+  nothing.
+
 ## 0.11.0
 
 - **Default DirectX mappings.** Hover and completion now say which DX button a control
