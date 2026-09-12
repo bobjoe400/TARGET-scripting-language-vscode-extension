@@ -211,7 +211,7 @@ export const NOT_IN_TARGET: Record<string, string> = {
  * EXEC("StopAutoRepeat(4);") as the supported way to interact with a running REXEC, so
  * flagging it would be asserting a restriction nothing supports.
  */
-export const FORBIDDEN_IN_EXEC = new Set(['SEQ', 'CHAIN', 'EXEC', 'TEMPO', 'AXIS', 'LIST']);
+export const FORBIDDEN_IN_EXEC = new Set(['SEQ', 'CHAIN', 'EXEC', 'TEMPO', 'AXIS']);
 
 /**
  * Documented as forbidden inside EXEC, but contradicted by Thrustmaster's own code.
@@ -223,8 +223,12 @@ export const FORBIDDEN_IN_EXEC = new Set(['SEQ', 'CHAIN', 'EXEC', 'TEMPO', 'AXIS
  * compiles and is genuinely forbidden; the restriction is a runtime one and needs
  * hardware to test. So this is a hint naming the disagreement, not an error on code
  * that ships with the product.
+ *
+ * LIST joined it for the same reason from the other direction: the manual lists it as
+ * forbidden, the compiler accepts it, and TarodBOFH's published Elite Dangerous macros
+ * use it inside EXEC fourteen times in a script that builds.
  */
-export const DISPUTED_IN_EXEC = new Set(['SetCustomCurve']);
+export const DISPUTED_IN_EXEC = new Set(['SetCustomCurve', 'LIST']);
 
 /**
  * The set of values an argument can sensibly take.

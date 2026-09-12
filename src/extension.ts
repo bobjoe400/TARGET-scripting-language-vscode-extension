@@ -152,7 +152,10 @@ export function activate(context: vscode.ExtensionContext): void {
     const project = index.projectSymbols(doc);
     // The include graph is only meaningful from an entry script: a header analysed on
     // its own is not what the compiler ever sees.
-    const isEntry = doc.fileName.toLowerCase().endsWith('.tmc');
+    // A .tmc that another script includes is a library file, not an entry script: it
+    // needs no main(), and its symbols are not duplicates of its includer's.
+    const isEntry =
+      doc.fileName.toLowerCase().endsWith('.tmc') && !index.isIncludedElsewhere(doc);
     const graph = isEntry ? index.analyzeIncludes(doc) : null;
     const raw = computeDiagnostics(model, path.basename(doc.fileName), {
       aliasBindings: index.aliasBindings(doc),

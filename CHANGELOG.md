@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.2.0
+
+Tested against 236 scripts from 21 public repositories, with the real compiler as the
+reference. Four false positives found and fixed:
+
+- **A  that another script includes is a library, not an entry script.** Real
+  projects use the extension for both -  is included by
+   - and a library file needs no  of its own.
+- ** is not an increment.** It is a modifier plus a unary-plus
+  scancode, the compiler accepts it, and scripts in the wild write it that way.
+- ** handles above 99 are a note, not an error.** The manual documents 0-99;
+  the compiler accepts any value, verified past 65536, and published DCS profiles use
+  100 and 101.
+- ** inside  is a hint, not an error**, joining  -
+  forbidden by the manual, accepted by the compiler, and used by a published script.
+
 ## 1.1.0
 
 - **Star Citizen bindings now resolve which stick is which.** `js3_button30` names a

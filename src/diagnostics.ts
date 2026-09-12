@@ -6,7 +6,7 @@
 
 import * as path from 'path';
 import { DocModel, CallNode } from './model';
-import { TokKind, lex } from './lexer';
+import { TokKind, lex, Token } from './lexer';
 import { SCRIPT_MODIFIERS, SCRIPT_STATE_FLAGS, parseChord } from './binds';
 import {
   functionsByName,
@@ -278,7 +278,11 @@ export function computeDiagnostics(
   // ---- structure a runnable script must have --------------------------------
   // None of this is enforced by the TARGET compiler, which only reports syntax
   // errors. A script missing main() compiles and then does nothing at all.
-  if (fileName.toLowerCase().endsWith('.tmc')) checkEntryScriptStructure();
+  // The caller decides what an entry script is, because the filename cannot: real
+  // projects use .tmc for library files too, and one that another script includes needs
+  // no main() of its own. The filename is only the fallback for callers that say nothing.
+  const looksLikeEntry = opts.isEntryScript ?? fileName.toLowerCase().endsWith('.tmc');
+  if (looksLikeEntry) checkEntryScriptStructure();
 
   for (const call of model.allCalls) {
     checkCall(call);
@@ -468,6 +472,23 @@ export function computeDiagnostics(
    */
   function checkRejectedSyntax(): void {
     const toks = model.tokens.filter((t) => t.kind !== TokKind.Comment);
+
+    /**
+     * Whether `++` or `--` here is two signs rather than an increment.
+     *
+     * `L_CTL++USB[0x09]` is a modifier flag plus a unary-plus scancode, and the
+     * compiler accepts it - verified. Real scripts in the wild write it that way. An
+     * increment has an operand on exactly one side; a sign run has operands on both.
+     */
+    const isSignRun = (op: string, at: number): boolean => {
+      if (op !== '++' && op !== '--') return false;
+      const operand = (t?: Token) =>
+        !!t && (t.kind === TokKind.Ident || t.kind === TokKind.Number || (t.kind === TokKind.Punct && t.value === '('));
+      const before = toks[at - 1];
+      const after = toks[at + 2];
+      const leftIsOperand = !!before && (before.kind === TokKind.Ident || before.kind === TokKind.Number);
+      return leftIsOperand && operand(after);
+    };
     for (let i = 0; i < toks.length; i++) {
       const t = toks[i];
 
@@ -525,7 +546,7 @@ export function computeDiagnostics(
       }
       const two = joined(2);
       const twoMsg = two ? own(REJECTED_OPERATORS, two) : undefined;
-      if (two && twoMsg) {
+      if (two && twoMsg && !isSignRun(two, i)) {
         add(t.start, toks[i + 1].end, twoMsg, 'error', 'not-in-target');
         i += 1;
         continue;
@@ -754,12 +775,18 @@ export function computeDiagnostics(
     // ---- REXEC handle must be 0..99 -----------------------------------------
     if (call.name === 'REXEC' && call.args[0]) {
       const h = intLiteral(call.args[0].text);
+      // A warning, not an error. The manual documents 0-99, but Interpreter.exe accepts
+      // any value - verified up to 65536 - and published DCS profiles use 100 and 101
+      // in scripts that work. A negative handle is still reported as an error: there is
+      // no reading under which that is intended.
       if (h !== null && (h < 0 || h > 99)) {
         add(
           call.args[0].start,
           call.args[0].end,
-          `REXEC handle must be 0-99, got ${h}.`,
-          'error',
+          h < 0
+            ? `REXEC handle cannot be negative, got ${h}.`
+            : `The manual documents REXEC handles as 0-99, and this is ${h}. The compiler accepts it and scripts in the wild use higher handles, so this is a note rather than an error.`,
+          h < 0 ? 'error' : 'warning',
           'rexec-handle'
         );
       }

@@ -1,0 +1,5 @@
+{
+  "forbidden-in-exec": "TEMPO and CHAIN inside EXEC in one third-party script (bofhgr/qp.tmc). The manual forbids them and the restriction is a RUNTIME one, so compiling proves nothing - SEQ inside EXEC compiles too and is genuinely forbidden. Kept as an error: unlike SetCustomCurve, no Thrustmaster-shipped sample does this, so one author's script is as likely to carry a latent bug as the manual is to be wrong.",
+  "arity": "MapKeyUMD given 6 arguments in ClickerNZ/ED_MapKeyAssignment.tmh. The compiler enforces no arity whatsoever - verified: it accepts 1 argument and 9 - so this is a real mistake in that script that TARGET will not report, which is exactly what the check is for.",
+  "missing-main": "whartsell/Elite_V2/functions.tmc - a .tmc nothing includes and with no main(). Run directly it does nothing, so the report is correct."
+}

@@ -313,6 +313,41 @@ export class TargetIndex {
     return null;
   }
 
+  /**
+   * Whether some other script in the project includes this one.
+   *
+   * A .tmc is usually the entry script, but real projects use the extension for library
+   * files too - DCS_F-14AB_Tomcat_JESTER.tmc is included by DCS_F-14AB_Tomcat_main.tmc -
+   * and an included file needs no main() of its own, nor is it a second copy of the
+   * symbols its includer already has. Judging every .tmc as an entry produced hundreds
+   * of missing-main and duplicate-symbol errors on scripts that compile perfectly.
+   */
+  isIncludedElsewhere(doc: vscode.TextDocument): boolean {
+    const me = doc.uri.fsPath;
+    const dir = path.dirname(me);
+    let siblings: string[];
+    try {
+      siblings = fs
+        .readdirSync(dir)
+        .filter((f) => /\.(tmc|tmh|ttm)$/i.test(f))
+        .map((f) => path.join(dir, f))
+        .filter((f) => !TargetIndex.samePath(f, me));
+    } catch {
+      return false;
+    }
+    for (const s of siblings) {
+      const m = this.getModelForPath(s);
+      if (!m) continue;
+      // Direct includes only. A file reached two hops away is in somebody's graph, but
+      // the file that names it is the one that decides whether it stands alone.
+      for (const inc of m.includes) {
+        const resolved = this.resolveInclude(s, inc.path, this.entryDirFor(s));
+        if (resolved && TargetIndex.samePath(resolved, me)) return true;
+      }
+    }
+    return false;
+  }
+
   private entryDirFor(file: string): string {
     const hit = this.entryDirCache.get(file);
     if (hit !== undefined) return hit;
