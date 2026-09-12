@@ -160,5 +160,14 @@
       "supported": "limited",
       "description": "Highlighting, snippets and the editor configuration work in a virtual workspace. Diagnostics, include resolution, compiling and running need the files on a local disk and are unavailable."
     }
+  },
+  "icon": "images/icon.png",
+  "bugs": {
+    "url": "https://github.com/bobjoe400/TARGET-scripting-language-vscode-extension/issues"
+  },
+  "homepage": "https://github.com/bobjoe400/TARGET-scripting-language-vscode-extension#readme",
+  "galleryBanner": {
+    "color": "#1e2229",
+    "theme": "dark"
   }
 }
