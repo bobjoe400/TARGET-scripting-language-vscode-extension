@@ -423,7 +423,17 @@ export class TargetHoverProvider implements vscode.HoverProvider {
         const describesChord = !inComment && (chord.modifiers.length > 0 || chord.unknown.length > 0);
         const parts =
           bound.length || describesChord
-            ? renderBindings(bound, chord, label, binds.activePreset, true, { kind: 'key', code: normalised })
+            ? renderBindings(
+              bound,
+              chord,
+              label,
+              binds.activePreset,
+              true,
+              { kind: 'key', code: normalised },
+              vscode.workspace
+                .getConfiguration('targetScript', doc.uri)
+                .get<boolean>('diagnostics.unboundKeys') === true
+            )
             : [`**${escapeMarkdown(label)}**`];
         // The hover covers the whole chord, so the underline matches what it describes.
         const chordStart = describesChord
@@ -701,7 +711,9 @@ export function renderBindings(
   keyLabel: string | null,
   activePreset: string | null,
   showChord = false,
-  peek?: { kind: 'key' | 'button'; code: string }
+  peek?: { kind: 'key' | 'button'; code: string },
+  /** True when the unbound-key diagnostic is on and has already said this. */
+  diagnosticSaysUnbound = false
 ): string[] {
   const out: string[] = [];
 
@@ -734,7 +746,11 @@ export function renderBindings(
       .map(({ ref, slots }) => {
         const target = `${vscode.Uri.file(ref.path).toString()}#L${ref.line}`;
         const bits: string[] = [];
-        if (manyFiles) bits.push(code(ref.file));
+        // Which aircraft, for DCS. Not a filter - every module's bindings are live at
+        // once and which applies depends on what you are flying - so it is the context
+        // that makes the row mean anything.
+        if (ref.context) bits.push(code(ref.context));
+        else if (manyFiles) bits.push(code(ref.file));
         if (slots.size && ![...slots].some((sl) => sl === 'primary' || sl === '')) {
           bits.push([...slots].join(' & '));
         }
@@ -775,9 +791,13 @@ export function renderBindings(
   // the reason those rows were dropped from the match case. Bringing them back here
   // under a different heading was the same noise relabelled. Anyone who does want the
   // whole picture has the peek, which is built for exactly that.
-  const games = [...new Set(all.map((r) => r.game))];
-  const where = games.length ? games.map((g) => `**${g}**`).join(' or ') : 'any binding file found';
-  out.push(`Nothing in ${where} is bound to ${chordLabel}.`);
+  // VS Code renders a diagnostic above the hover, so when the unbound-key check is on
+  // this sentence is the second copy of one the reader has already had.
+  if (!diagnosticSaysUnbound) {
+    const games = [...new Set(all.map((r) => r.game))];
+    const where = games.length ? games.map((g) => `**${g}**`).join(' or ') : 'any binding file found';
+    out.push(`Nothing in ${where} is bound to ${chordLabel}.`);
+  }
   if (peekLink) out.push(peekLink);
   return out;
 }

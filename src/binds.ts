@@ -36,6 +36,8 @@ export interface BindingRef {
   kind: InputKind;
   /** Virtual-device button number, when kind is 'button'. DX1 is button 1. */
   button?: number;
+  /** Which aircraft or profile this came from, where the game has such a thing. */
+  context?: string;
 }
 
 export interface BindsIndex {
@@ -100,6 +102,99 @@ export function comparablePath(p: string): string {
 function anyBasename(p: string): string {
   const parts = p.replace(/\\/g, '/').split('/');
   return parts[parts.length - 1] ?? '';
+}
+
+/**
+ * The virtual DirectInput device a script creates.
+ *
+ * target.tmh's Init() calls `PlugGame(&virtualj, "Thrustmaster Combined")`, and that
+ * string is the name the games see - so it is what DCS puts in its filenames. It is an
+ * argument, though, so a script that calls PlugGame itself picks its own name and the
+ * script has to be asked rather than assumed.
+ */
+export const DEFAULT_VIRTUAL_DEVICE = 'Thrustmaster Combined';
+
+export function virtualDeviceName(scriptText: string): string {
+  const m = /\bPlugGame\s*\(\s*&\s*\w+\s*,\s*"([^"]+)"/.exec(scriptText);
+  return m ? m[1] : DEFAULT_VIRTUAL_DEVICE;
+}
+
+/**
+ * Where DCS keeps its input profiles.
+ *
+ *   Saved Games/DCS[.openbeta]/Config/Input/<Module>/<category>/<Device> {GUID}.diff.lua
+ *
+ * There is no "active" profile the way Elite has one: every module's bindings are live
+ * at once and which applies depends on the aircraft being flown. So the module is
+ * context to report, not something to filter by - the thing to filter by is the DEVICE,
+ * since a file for somebody's rudder pedals says nothing about what a TARGET script does.
+ */
+export function dcsInputRoots(windowsRoot: string | null): string[] {
+  const homes: string[] = [];
+  if (process.platform === 'win32') {
+    homes.push(path.join(os.homedir(), 'Saved Games'));
+  } else if (windowsRoot) {
+    const users = path.join(windowsRoot, 'Users');
+    try {
+      for (const u of fs.readdirSync(users)) homes.push(path.join(users, u, 'Saved Games'));
+    } catch {
+      /* no mounted profile */
+    }
+  }
+  const roots: string[] = [];
+  for (const home of homes) {
+    let entries: string[];
+    try {
+      entries = fs.readdirSync(home);
+    } catch {
+      continue;
+    }
+    // DCS, DCS.openbeta, DCS.release - installs sit side by side.
+    for (const e of entries) {
+      if (!/^DCS(\.|$)/i.test(e)) continue;
+      const input = path.join(home, e, 'Config', 'Input');
+      try {
+        if (fs.statSync(input).isDirectory()) roots.push(input);
+      } catch {
+        /* not this one */
+      }
+    }
+  }
+  return roots;
+}
+
+/**
+ * Every .diff.lua under a DCS Input tree that belongs to the named device, with the
+ * module it was found under.
+ */
+export function dcsProfilesFor(inputRoot: string, device: string): { file: string; module: string }[] {
+  const wanted = device.toLowerCase();
+  const out: { file: string; module: string }[] = [];
+  let modules: string[];
+  try {
+    modules = fs.readdirSync(inputRoot);
+  } catch {
+    return out;
+  }
+  for (const mod of modules) {
+    for (const category of ['joystick', 'keyboard']) {
+      const dir = path.join(inputRoot, mod, category);
+      let files: string[];
+      try {
+        files = fs.readdirSync(dir);
+      } catch {
+        continue;
+      }
+      for (const f of files) {
+        if (!/\.diff\.lua$/i.test(f)) continue;
+        // "Thrustmaster Combined {GUID}.diff.lua" - the GUID varies per machine, so the
+        // match is on the device name that precedes it.
+        if (!f.toLowerCase().startsWith(wanted)) continue;
+        out.push({ file: path.join(dir, f), module: mod });
+      }
+    }
+  }
+  return out;
 }
 
 /** Which game an executable belongs to, by its own name then by its install path. */
@@ -473,7 +568,7 @@ export function parseBinds(file: string): BindingRef[] {
  * to the name about to appear, and anything under "removed" is a binding being taken
  * away, not one to report.
  */
-export function parseDcsDiff(file: string): BindingRef[] {
+export function parseDcsDiff(file: string, module?: string): BindingRef[] {
   const text = readTextFile(file);
   if (text === null) return [];
   const base = path.basename(file);
@@ -491,7 +586,7 @@ export function parseDcsDiff(file: string): BindingRef[] {
     if (m[1] === 'name') {
       const action = (m[2] ?? '').replace(/\\(.)/g, '$1').trim();
       const line = lineAt(m.index ?? 0);
-      if (action) for (const p of pending) out.push({ action, slot: '', key: p.token, modifiers: [], file: base, path: file, line, game: GAME_DCS, kind: 'button', button: p.button });
+      if (action) for (const p of pending) out.push({ action, slot: '', key: p.token, modifiers: [], file: base, path: file, line, game: GAME_DCS, kind: 'button', button: p.button, context: module });
       pending = [];
       continue;
     }
@@ -527,24 +622,29 @@ export function parseStarCitizen(file: string): BindingRef[] {
 }
 
 /** Parses any supported binding file, choosing the parser by what the file is. */
-export function parseBindingFile(file: string): BindingRef[] {
+export function parseBindingFile(file: string, module?: string): BindingRef[] {
   switch (bindingFormat(file)) {
     case GAME_ELITE: return parseBinds(file);
-    case GAME_DCS: return parseDcsDiff(file);
+    case GAME_DCS: return parseDcsDiff(file, module);
     case GAME_STAR_CITIZEN: return parseStarCitizen(file);
     default: return [];
   }
 }
 
 /** Builds a key-indexed view of every binding in the given files. */
-export function buildBindsIndex(files: string[], activePreset: string | null = null): BindsIndex {
+export function buildBindsIndex(
+  files: string[],
+  activePreset: string | null = null,
+  /** Absolute file path -> the DCS module it was found under. */
+  modules: Map<string, string> = new Map()
+): BindsIndex {
   const byUsbCode = new Map<string, BindingRef[]>();
   const byButton = new Map<number, BindingRef[]>();
   const actions = new Set<string>();
   const games = new Set<string>();
   const used: string[] = [];
   for (const file of files) {
-    const refs = parseBindingFile(file);
+    const refs = parseBindingFile(file, modules.get(file));
     if (refs.length) used.push(file);
     for (const ref of refs) {
       actions.add(ref.action);
@@ -567,7 +667,11 @@ export function buildBindsIndex(files: string[], activePreset: string | null = n
     const seen = new Set<string>();
     const unique: BindingRef[] = [];
     for (const r of refs) {
-      const key = `${r.game}\u0000${r.action}\u0000${r.slot}\u0000${r.modifiers.join('+')}`;
+      // The context is part of the identity: DCS ships the same action name for every
+      // aircraft, and folding "Gun Trigger" in the A-10 together with the same name in
+      // the Hornet loses the only thing that made each row mean something. Two copies of
+      // ONE preset still collapse, which is what this is for.
+      const key = `${r.game}\u0000${r.context ?? ''}\u0000${r.action}\u0000${r.slot}\u0000${r.modifiers.join('+')}`;
       if (seen.has(key)) continue;
       seen.add(key);
       unique.push(r);

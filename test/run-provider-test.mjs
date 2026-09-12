@@ -534,7 +534,8 @@ for (const [label, src, needle] of [
 // only 15 match a game action name.
 {
   const { usbCodeForEdKey, ED_MODIFIERS, buildBindsIndex, activePresetNames, fileMatchesPreset, bindingFormat, parseChord, chordMatches,
-          readAssociations, gameForExecutable, comparablePath, targetSettingsPaths } =
+          readAssociations, gameForExecutable, comparablePath, targetSettingsPaths,
+          dcsProfilesFor, virtualDeviceName, DEFAULT_VIRTUAL_DEVICE } =
     require(path.join(repoRoot, 'out/binds.js'));
   const { renderBindings, escapeMarkdown, shortKeyName, code } = require(path.join(repoRoot, 'out/providers.js'));
   const NOCHORD = { modifiers: [], unknown: [] };
@@ -767,6 +768,52 @@ for (const [label, src, needle] of [
       pass++; console.log(`  ok    every format records a line to link to (DCS L${dcsRef.line}, SC L${scRef.line})`);
     } else failures.push(`lines: dcs=${dcsRef.line} sc=${scRef.line}`);
     void edButtons;
+  }
+
+  // --- DCS: filter by DEVICE, report the aircraft ---------------------------
+  // DCS has no "active" profile: every module's bindings are live at once and which
+  // applies depends on what is being flown. So the aircraft is context to report, and
+  // the thing to filter by is the device - a file for somebody's rudder pedals says
+  // nothing about what a TARGET script does. Layout verified against a real profile
+  // tree: <Module>/<category>/<Device> {GUID}.diff.lua
+  {
+    const nfs4 = require('node:fs');
+    const root = nfs4.mkdtempSync(path.join(require('node:os').tmpdir(), 'dcs-'));
+    const src = nfs4.readFileSync(path.join(FIX, 'BindFiles', 'Sample.diff.lua'));
+    const put = (mod, name) => {
+      const dir = path.join(root, mod, 'joystick');
+      nfs4.mkdirSync(dir, { recursive: true });
+      nfs4.writeFileSync(path.join(dir, name), src);
+    };
+    put('A-10C', 'Thrustmaster Combined {A1B2-GUID}.diff.lua');
+    put('FA-18C_hornet', 'Thrustmaster Combined {A1B2-GUID}.diff.lua');
+    put('UH-1H', 'Saitek Pro Flight Rudder Pedals {OTHER-GUID}.diff.lua');
+
+    const found = dcsProfilesFor(root, DEFAULT_VIRTUAL_DEVICE);
+    if (found.length === 2 && found.every((f) => f.module !== 'UH-1H')) {
+      pass++; console.log('  ok    DCS profiles for another device are left out');
+    } else failures.push(`dcs discovery: ${JSON.stringify(found.map((f) => f.module))}`);
+
+    // The same action name in two aircraft is two answers, not one.
+    const idx = buildBindsIndex(found.map((f) => f.file), null, new Map(found.map((f) => [f.file, f.module])));
+    const six = idx.byButton.get(6) ?? [];
+    const mods = six.map((r) => r.context).sort();
+    if (six.length === 2 && mods[0] === 'A-10C' && mods[1] === 'FA-18C_hornet') {
+      pass++; console.log('  ok    one action name in two aircraft stays two rows');
+    } else failures.push(`dcs modules: ${JSON.stringify(six.map((r) => r.context))}`);
+
+    const md = renderBindings(six, NOCHORD, 'DX6', null).join('\n');
+    if (/`A-10C`/.test(md) && /`FA-18C_hornet`/.test(md)) {
+      pass++; console.log('  ok    the hover names the aircraft each binding belongs to');
+    } else failures.push(`dcs render: ${JSON.stringify(md.slice(0, 200))}`);
+
+    // The device name is the script's to choose - target.tmh's Init() passes
+    // "Thrustmaster Combined", but PlugGame takes it as an argument.
+    if (virtualDeviceName('int main(){ Init(&EventHandle); }') === DEFAULT_VIRTUAL_DEVICE &&
+        virtualDeviceName('PlugGame(&virtualj, "My Stick");') === 'My Stick') {
+      pass++; console.log('  ok    the virtual device name comes from the script, not a guess');
+    } else failures.push('virtualDeviceName');
+    nfs4.rmSync(root, { recursive: true, force: true });
   }
 
   // --- the association the TARGET GUI records --------------------------------

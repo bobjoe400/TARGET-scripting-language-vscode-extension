@@ -15,6 +15,9 @@ import {
   comparablePath,
   readAssociations,
   targetSettingsPaths,
+  dcsInputRoots,
+  dcsProfilesFor,
+  virtualDeviceName,
 } from './binds';
 import { windowsSystemRoot, resolveEntryScript } from './runner';
 
@@ -220,6 +223,18 @@ export class TargetIndex {
         }
       }
     }
+    // DCS keeps its profiles in Saved Games, one per module and device, and never
+    // alongside the script. Only the ones for the device this script creates are
+    // relevant - a file for somebody's rudder pedals says nothing about a TARGET script.
+    const dcsModules = new Map<string, string>();
+    const device = virtualDeviceName(this.getModel(doc).text);
+    for (const root of dcsInputRoots(windowsSystemRoot())) {
+      for (const { file, module } of dcsProfilesFor(root, device)) {
+        files.push(file);
+        dcsModules.set(file, module);
+      }
+    }
+
     let unique = [...new Set(files)].sort();
 
     // The TARGET GUI records which game each script is associated with. Where that
@@ -275,7 +290,7 @@ export class TargetIndex {
       this.bindsScanCache.set(scanKey, { at: Date.now(), index: hit.index });
       return hit.index;
     }
-    const index = buildBindsIndex(unique, activePreset);
+    const index = buildBindsIndex(unique, activePreset, dcsModules);
     if (this.bindsCache.size > 8) this.bindsCache.clear();
     this.bindsCache.set(cacheKey, { index, stamp });
     if (this.bindsScanCache.size > 16) this.bindsScanCache.clear();
