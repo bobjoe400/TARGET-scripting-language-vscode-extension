@@ -412,7 +412,7 @@ export class TargetHoverProvider implements vscode.HoverProvider {
         const tok = tokenAt(model.tokens, doc.offsetAt(usbRange.start));
         const inComment = tok?.kind === TokKind.Comment;
         const chord = inComment
-          ? { modifiers: [], unknown: [] }
+          ? { modifiers: [], unknown: [], length: 0 }
           : parseChord(lineText.slice(0, usbRange.start.character));
         const label = shortKeyName(name);
         const binds = this.index.getBindsIndex(doc);
@@ -427,7 +427,7 @@ export class TargetHoverProvider implements vscode.HoverProvider {
             : [`**${escapeMarkdown(label)}**`];
         // The hover covers the whole chord, so the underline matches what it describes.
         const chordStart = describesChord
-          ? new vscode.Position(usbRange.start.line, usbRange.start.character - (/((?:(?:[A-Za-z_]\w*|USB\s*\[[^\]]*\])\s*\+\s*)+)$/.exec(lineText.slice(0, usbRange.start.character))?.[1].length ?? 0))
+          ? new vscode.Position(usbRange.start.line, usbRange.start.character - chord.length)
           : usbRange.start;
         const body = new vscode.MarkdownString(parts.join('\n\n'), true);
         // A narrow grant: only this command, never blanket trust.
@@ -482,7 +482,7 @@ export class TargetHoverProvider implements vscode.HoverProvider {
       if (forButton?.length) {
         const bindings = renderBindings(
           forButton,
-          { modifiers: [], unknown: [] },
+          { modifiers: [], unknown: [], length: 0 },
           word,
           this.index.getBindsIndex(doc).activePreset,
           false,

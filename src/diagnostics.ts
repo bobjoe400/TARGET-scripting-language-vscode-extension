@@ -8,6 +8,12 @@ import * as path from 'path';
 import { DocModel, CallNode } from './model';
 import { TokKind, lex } from './lexer';
 import { SCRIPT_MODIFIERS, SCRIPT_STATE_FLAGS, parseChord } from './binds';
+
+/** "u U" is the USB table's unshifted/shifted pair, not the key's name. */
+function shortName(name: string): string {
+  const parts = name.split(/\s+/);
+  return parts.length === 2 && parts.every((p) => p.length <= 2) ? parts[0] : name;
+}
 import {
   functionsByName,
   constantsByName,
@@ -17,6 +23,7 @@ import {
   FORBIDDEN_IN_EXEC,
   DISPUTED_IN_EXEC,
   own,
+  usbKeyName,
 } from './builtins';
 
 export const DIAG_SOURCE = 'target';
@@ -665,13 +672,19 @@ export function computeDiagnostics(
       if (chord.unknown.length) continue;
       const bound = opts.isChordBound(code, chord.modifiers);
       if (bound !== false) continue;
-      const label = [...chord.modifiers, `0x${code}`].join(' + ');
+      // The key by name where the table knows it; the hex alone reads as a riddle.
+      const named = usbKeyName(code);
+      const label = [...chord.modifiers, named ? shortName(named) : `0x${code}`].join(' + ');
       if (seen.has(label + lineStart)) continue;
       seen.add(label + lineStart);
+      // Underline the whole chord. Marking only the scancode pointed at half of what is
+      // wrong, and the modifier is the half more likely to be the mistake. The caveat
+      // about which preset is loaded lives in the setting's own description rather than
+      // being repeated on every one of these.
       add(
-        t.start,
+        t.start - chord.length,
         end,
-        `The game's current bindings do nothing with ${label}. This depends on which preset the game has loaded, so it is informational only.`,
+        `Nothing in the game's loaded bindings uses ${label}.`,
         'info',
         'unbound-key'
       );

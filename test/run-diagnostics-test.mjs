@@ -259,9 +259,22 @@ expectClean('TrimDXAxis w/ CURRENT','int f() { TrimDXAxis(DX_X_AXIS, CURRENT); }
 
   const on = computeDiagnostics(model, 'x.tmh', { isChordBound: bound }).filter((d) => d.code === 'unbound-key');
   const msgs = on.map((d) => d.message);
-  if (on.length === 1 && /0x4F/.test(msgs[0]) && on[0].severity === 'info') {
+  // The key by name, not its scancode: "Right Arrow" over "0x4F".
+  if (on.length === 1 && /Right Arrow/.test(msgs[0]) && on[0].severity === 'info') {
     pass++; console.log('  ok    only the chord the game ignores is reported, as information');
   } else failures.push(`unbound-key: ${on.length} -> ${JSON.stringify(msgs)}`);
+
+  // The whole chord is underlined. Marking only the scancode pointed at half of what
+  // is wrong - and the modifier is the half more likely to be the mistake.
+  {
+    const src2 = 'define B  L_SHIFT+USB[0x4F]\n';
+    const only = computeDiagnostics(buildModel(src2), 'x.tmh', { isChordBound: () => false })
+      .filter((d) => d.code === 'unbound-key');
+    const span = only.length === 1 ? src2.slice(only[0].start, only[0].end) : '';
+    if (span === 'L_SHIFT+USB[0x4F]') {
+      pass++; console.log('  ok    the whole chord is underlined, not just the scancode');
+    } else failures.push(`unbound-key range: ${JSON.stringify(span)}`);
+  }
 
   // Nothing to compare against must not read as "bound to nothing".
   const noData = computeDiagnostics(model, 'x.tmh', { isChordBound: () => null }).filter((d) => d.code === 'unbound-key');

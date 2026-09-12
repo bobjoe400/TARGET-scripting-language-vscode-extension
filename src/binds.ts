@@ -352,6 +352,11 @@ export interface Chord {
   modifiers: string[];
   /** Terms that are not modifiers this code knows. */
   unknown: string[];
+  /**
+   * How many characters before the key the chord occupies, so a caller can underline
+   * `L_CTL+USB[0x1F]` rather than just the half of it the token happens to cover.
+   */
+  length: number;
 }
 
 /**
@@ -371,7 +376,7 @@ export function parseChord(before: string): Chord {
   const modifiers = new Set<string>();
   const unknown: string[] = [];
   const m = /((?:(?:[A-Za-z_]\w*|USB\s*\[[^\]]*\])\s*\+\s*)+)$/.exec(before);
-  if (!m) return { modifiers: [], unknown: [] };
+  if (!m) return { modifiers: [], unknown: [], length: 0 };
   for (const raw of m[1].split('+')) {
     const term = raw.trim();
     if (!term) continue;
@@ -381,7 +386,7 @@ export function parseChord(before: string): Chord {
     if (name) modifiers.add(name);
     else unknown.push(term);
   }
-  return { modifiers: [...modifiers].sort(), unknown };
+  return { modifiers: [...modifiers].sort(), unknown, length: m[1].length };
 }
 
 /** Whether a binding fires for exactly this chord. Set equality, not subset. */
