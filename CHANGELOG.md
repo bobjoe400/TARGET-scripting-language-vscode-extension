@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.2
+
+- Screenshots on the listing. 1.0.1 shipped without them, and a language extension is
+  a visual thing - the one worth seeing is an `EXEC("...")` argument coloured as source
+  code inside a string literal, which is hard to describe and obvious to look at.
+
 ## 1.0.1
 
 - The extension ID is now `bobjoe400.tm-target-script`. The original ID was
