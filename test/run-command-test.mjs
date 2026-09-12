@@ -25,6 +25,35 @@ const R = require(path.join(repoRoot, 'out/runner.js'));
 let pass = 0;
 const failures = [];
 
+// The command layer's logic is platform-independent; its GUARDS are not. On a plain
+// Linux runner detectHost() is 'unsupported' and findInstall() is null, so every
+// compile and run command short-circuits with "requires the Windows TARGET tools"
+// before reaching anything under test. Both are stubbed here the same way this suite
+// already stubs listTargetProcesses, killImage, runScript and stageProjectForRun - so
+// these assertions run everywhere rather than only on a machine with TARGET on it.
+//
+// Stubbed rather than skipped deliberately: what they cover - which document a command
+// acts on, the editor conflict, the staging prompt, the running indicator - is exactly
+// the logic that has no business depending on the host, and skipping it on CI would
+// leave it tested in only one place.
+// TARGET_TEST_NO_TOOLCHAIN forces the stubbed path on a machine that HAS the toolchain,
+// so the runner-less behaviour can be checked without uninstalling anything - the
+// alternative being to discover it only from a CI run.
+const noToolchain = !!process.env.TARGET_TEST_NO_TOOLCHAIN;
+if (noToolchain || R.detectHost() === 'unsupported') R.detectHost = () => 'wsl';
+if (noToolchain || !R.findInstall()) {
+  R.findInstall = () => ({
+    root: '/fake/TARGET',
+    scripts: '/fake/TARGET/scripts',
+    targetGui: '/fake/TARGET/TARGETGUI.exe',
+    interpreter: '/fake/TARGET/Interpreter.exe',
+  });
+  // Run does a pre-flight compile, which would try to spawn that path. The toolchain
+  // suite is where compiling is actually exercised, against the real Interpreter.exe;
+  // here it only needs to not be the thing under test.
+  R.compileCheck = async () => ({ ok: true, problems: [], output: '' });
+}
+
 const context = { subscriptions: [] };
 activate(context);
 const commands = stub.__recorded.commands;
