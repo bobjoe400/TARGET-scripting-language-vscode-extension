@@ -180,7 +180,10 @@ const grammar = {
     },
     'char-literal': {
       name: 'string.quoted.single.target',
-      match: "'(\\\\(x[0-9A-Fa-f]+|[0-7]{1,3}|.)|[^'\\\\])'",
+      // One OR MORE characters: layer constants are written 'i', 'o', 'iu', 'ium',
+      // which the extension's own parameter help documents, and a single-character
+      // pattern left the multi-character ones unstyled.
+      match: "'(\\\\(x[0-9A-Fa-f]+|[0-7]{1,3}|.)|[^'\\\\])+'",
     },
 
     'usb-lookup': {

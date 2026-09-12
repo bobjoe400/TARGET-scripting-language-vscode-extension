@@ -86,18 +86,21 @@ const labelData = rawLabels as unknown as {
  * refer to.
  */
 export function defaultDxButton(deviceAlias: string, control: string): number | null {
-  return labelData.defaults?.[deviceAlias]?.[control] ?? null;
+  const forDevice = own(labelData.defaults ?? {}, deviceAlias);
+  return (forDevice ? own(forDevice, control) : undefined) ?? null;
 }
 
 export function anyDefaultDxButton(control: string): { dx: number; device: string } | null {
   for (const [device, map] of Object.entries(labelData.defaults ?? {})) {
-    if (map[control] !== undefined) return { dx: map[control], device };
+    const hit = own(map, control);
+    if (hit !== undefined) return { dx: hit, device };
   }
   return null;
 }
 
 export function controlLabel(deviceAlias: string, control: string): string | null {
-  return labelData.labels?.[deviceAlias]?.[control] ?? null;
+  const forDevice = own(labelData.labels ?? {}, deviceAlias);
+  return (forDevice ? own(forDevice, control) : undefined) ?? null;
 }
 
 /**
@@ -108,7 +111,7 @@ export function controlLabel(deviceAlias: string, control: string): string | nul
 const usbData = rawUsb as unknown as { codes: Record<string, string> };
 
 export function usbKeyName(hex: string): string | null {
-  return usbData.codes[hex.toUpperCase().replace(/^0X/, '').padStart(2, '0')] ?? null;
+  return own(usbData.codes, hex.toUpperCase().replace(/^0X/, '').padStart(2, '0')) ?? null;
 }
 
 export function allUsbCodes(): { hex: string; name: string }[] {
@@ -118,12 +121,25 @@ export function allUsbCodes(): { hex: string; name: string }[] {
 /** Any description for a control name, whichever device it belongs to. */
 export function anyControlLabel(control: string): { label: string; device: string } | null {
   for (const [device, map] of Object.entries(labelData.labels ?? {})) {
-    if (map[control]) return { label: map[control], device };
+    const hit = own(map, control);
+    if (hit) return { label: hit, device };
   }
   return null;
 }
 
 /** Words a C programmer reaches for that TARGET does not have. */
+/**
+ * Looks a user-supplied identifier up in a plain object safely.
+ *
+ * These tables are indexed by names taken straight from the source, so without a
+ * guard `toString`, `constructor` and `__proto__` reach Object.prototype and return
+ * a function. That escapes `?? []` and throws out of computeDiagnostics, which runs
+ * during activate() - taking the command registrations down with it.
+ */
+export function own<T>(table: Record<string, T>, key: string): T | undefined {
+  return Object.prototype.hasOwnProperty.call(table, key) ? table[key] : undefined;
+}
+
 export const NOT_IN_TARGET: Record<string, string> = {
   for: 'TARGET has no `for` loop. Use `while` or `do ... while`.',
   switch: 'TARGET has no `switch`. Use `if` / `else if`.',

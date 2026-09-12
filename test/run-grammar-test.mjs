@@ -51,6 +51,10 @@ const T = [
   ['event flag',              "ActKey(PULSE+KEYON+'a');", 'PULSE', 'support.constant.flag'],
   ['keyboard constant',       'MapKey(&Joystick, S1, L_CTL+F1);', 'F1', 'support.constant.keyboard'],
   ['char literal',            "ActKey(PULSE+KEYON+'a');", "'a'", 'string.quoted.single'],
+  // Layer constants are written 'i', 'o', 'iu', 'ium' - the extension's own parameter
+  // help documents that, so a single-character pattern left most of them unstyled.
+  ['two-char layer constant',   "KeyAxis(&Joystick, JOYX, 'iu', 0);", "'iu'", 'string.quoted.single'],
+  ['three-char layer constant', "KeyAxis(&Joystick, JOYX, 'ium', 0);", "'ium'", 'string.quoted.single'],
   ['hex number',              'int x = 0x2C;', '0x2C', 'constant.numeric.hex'],
   ['float number',            'SetSCurve(&Joystick, JOYX, 0, 0, 0, 5, 0.5);', '0.5', 'constant.numeric.float'],
   ['control keyword',         'if(Joystick[TG1]) ActKey(0);', 'if', 'keyword.control'],

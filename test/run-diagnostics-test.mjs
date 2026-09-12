@@ -157,6 +157,30 @@ expect('range check inside an initialiser', 'int q = SetSCurve(&Joystick, JOYX, 
 expect('arity check inside an initialiser', 'int q = MapKey(&Joystick);', 'arity');
 expectClean('a valid initialiser call',     'int q = SetSCurve(&Joystick, JOYX, 0, 0, 0, 5, 0);');
 
+// Identifiers come straight from user source, so a name that collides with
+// Object.prototype must not reach it. These threw out of computeDiagnostics, which
+// runs during activate() and took the command registrations down with it.
+for (const name of ['toString', 'constructor', 'valueOf', 'hasOwnProperty', '__proto__']) {
+  try {
+    run(`int main() { ${name}(1); return 0; }`, 'm.tmc');
+    pass++;
+  } catch (e) {
+    failures.push(`prototype key "${name}": ${e.message}`);
+  }
+}
+
+// A declaration's initialiser is not a statement, however it is wrapped. Asserted
+// against the specific rule, since a bare .tmc legitimately reports missing main().
+function expectNotCode(label, src, code, name = 'test.tmh') {
+  const ds = run(src, name);
+  if (!ds.some((d) => d.code === code)) { pass++; return; }
+  failures.push(`${label}: expected no "${code}", got ${ds.filter((d) => d.code === code).map((d) => d.message.split('\n')[0]).join(' | ')}`);
+}
+expectNotCode('initialiser wrapped after =', 'int q =\n    fnDbl(21);\n', 'statement-at-file-scope', 'm.tmc');
+expectNotCode('nested call starting a line', 'int q = fnAdd(1, 2,\n    fnDbl(3));\n', 'statement-at-file-scope', 'm.tmc');
+expect('a real file-scope statement still flags',
+  'include "target.tmh"\nMapKey(&Joystick, TG1, DX1);\nint main() { return 0; }', 'statement-at-file-scope', 'm.tmc');
+
 // -- the DirectX button ceiling, where the sources disagree ---------------------
 expect('DX40 needs the newer data format', 'int f() { MapKey(&Joystick, TG1, DX40); }', 'directx-button-ceiling');
 expect('DX120 is the last real button',     'int f() { MapKey(&Joystick, TG1, DX120); }', 'directx-button-ceiling');

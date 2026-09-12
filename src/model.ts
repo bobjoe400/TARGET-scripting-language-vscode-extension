@@ -58,6 +58,8 @@ export interface IncludeRef {
 export interface DocModel {
   text: string;
   tokens: Token[];
+  /** Character spans of variable initialisers; calls inside them are not statements. */
+  initialiserSpans: [number, number][];
   calls: CallNode[];
   /** Every call, flattened, in source order. */
   allCalls: CallNode[];
@@ -367,7 +369,11 @@ export function buildModel(text: string): DocModel {
   for (const [from, to] of initialiserRanges) extractCalls(sig, from, to, text, calls, allCalls);
   allCalls.sort((a, b) => a.nameStart - b.nameStart);
 
-  return { text, tokens, calls, allCalls, decls, includes };
+  const initialiserSpans: [number, number][] = initialiserRanges
+    .map(([from, to]) => [sig[from]?.start ?? 0, sig[Math.min(to, sig.length - 1)]?.end ?? 0] as [number, number])
+    .filter(([a, b]) => b > a);
+
+  return { text, tokens, calls, allCalls, decls, includes, initialiserSpans };
 }
 
 function stripComment(s: string): string {
@@ -533,6 +539,14 @@ function parseDeclaration(
 
 const truncate = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
 
+/** Where to stop pretending an unclosed call continues. */
+function unclosedCallEnd(text: string, open: number): number {
+  const blank = text.indexOf('\n\n', open);
+  const brace = text.indexOf('\n}', open);
+  const candidates = [blank, brace].filter((n) => n !== -1);
+  return candidates.length ? Math.min(...candidates) : text.length;
+}
+
 /** The innermost call containing `offset`, plus which argument the cursor is in. */
 export function callContextAt(
   model: DocModel,
@@ -540,7 +554,11 @@ export function callContextAt(
 ): { call: CallNode; argIndex: number } | null {
   let best: CallNode | null = null;
   for (const c of model.allCalls) {
-    const end = c.close === -1 ? model.text.length : c.close;
+    // An unclosed call is bounded at the next blank line or closing brace rather than
+    // running to end of file. Without that, one missing ')' made every later position
+    // report as inside that call: completion narrowed to its argument domain and a
+    // stale signature popup pinned itself for the rest of the document.
+    const end = c.close === -1 ? unclosedCallEnd(model.text, c.open) : c.close;
     if (offset > c.open && offset <= end) {
       if (!best || c.open > best.open) best = c;
     }

@@ -28,6 +28,7 @@ import {
   functionsByName,
   keywords,
   NOT_IN_TARGET,
+  own,
   usbKeyName,
 } from './builtins';
 
@@ -410,7 +411,8 @@ export class TargetHoverProvider implements vscode.HoverProvider {
       return md(parts.join('\n\n'));
     }
 
-    if (NOT_IN_TARGET[word]) return md(`**Not part of TARGET.** ${NOT_IN_TARGET[word]}`);
+    const notInTarget = own(NOT_IN_TARGET, word);
+    if (notInTarget) return md(`**Not part of TARGET.** ${notInTarget}`);
 
     for (const { decl, file } of this.index.visibleDecls(doc)) {
       if (decl.name !== word) continue;

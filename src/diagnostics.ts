@@ -14,6 +14,7 @@ import {
   devices,
   NOT_IN_TARGET,
   FORBIDDEN_IN_EXEC,
+  own,
 } from './builtins';
 
 export const DIAG_SOURCE = 'target';
@@ -199,7 +200,7 @@ export function computeDiagnostics(
   // ---- words TARGET does not have -------------------------------------------
   for (const t of model.tokens) {
     if (t.kind !== TokKind.Ident) continue;
-    const why = NOT_IN_TARGET[t.value];
+    const why = own(NOT_IN_TARGET, t.value);
     if (why) add(t.start, t.end, why, 'error', 'not-in-target');
   }
 
@@ -341,8 +342,13 @@ export function computeDiagnostics(
       .map((d) => [d.fullStart, d.fullEnd] as const);
     const insideFunction = (o: number) => fnRanges.some(([a, b]) => o >= a && o <= b);
     const posOf = new Map(sig.map((t, i) => [t.start, i]));
+    const inInitialiser = (o: number) => model.initialiserSpans.some(([a, b]) => o >= a && o <= b);
     for (const call of model.allCalls) {
       if (insideFunction(call.nameStart)) continue;
+      // A declaration's initialiser is not a statement, however it is wrapped. The
+      // newline rule below treats a fresh line as a statement boundary, which is right
+      // for `include "x.tmh"` but wrong for `int q =\n    fn(1);`.
+      if (inInitialiser(call.nameStart)) continue;
       // Only a call that *starts* a statement: `int g = fn();` is a declaration.
       const idx = posOf.get(call.nameStart);
       const prev = idx !== undefined && idx > 0 ? sig[idx - 1] : null;
@@ -478,14 +484,16 @@ export function computeDiagnostics(
       };
 
       const three = joined(3);
-      if (three && REJECTED_OPERATORS[three]) {
-        add(t.start, toks[i + 2].end, REJECTED_OPERATORS[three], 'error', 'not-in-target');
+      const threeMsg = three ? own(REJECTED_OPERATORS, three) : undefined;
+      if (three && threeMsg) {
+        add(t.start, toks[i + 2].end, threeMsg, 'error', 'not-in-target');
         i += 2;
         continue;
       }
       const two = joined(2);
-      if (two && REJECTED_OPERATORS[two]) {
-        add(t.start, toks[i + 1].end, REJECTED_OPERATORS[two], 'error', 'not-in-target');
+      const twoMsg = two ? own(REJECTED_OPERATORS, two) : undefined;
+      if (two && twoMsg) {
+        add(t.start, toks[i + 1].end, twoMsg, 'error', 'not-in-target');
         i += 1;
         continue;
       }
@@ -493,8 +501,9 @@ export function computeDiagnostics(
         i += 1;
         continue;
       }
-      if (REJECTED_OPERATORS[t.value]) {
-        add(t.start, t.end, REJECTED_OPERATORS[t.value], 'error', 'not-in-target');
+      const oneMsg = own(REJECTED_OPERATORS, t.value);
+      if (oneMsg) {
+        add(t.start, t.end, oneMsg, 'error', 'not-in-target');
       }
     }
   }
@@ -696,7 +705,7 @@ export function computeDiagnostics(
     }
 
     // ---- numeric ranges ------------------------------------------------------
-    for (const rule of RANGE_RULES[call.name] ?? []) {
+    for (const rule of own(RANGE_RULES, call.name) ?? []) {
       const arg = call.args[rule.arg];
       if (!arg) continue;
       const v = intLiteral(arg.text);

@@ -148,6 +148,30 @@ await check(
   fs.rmSync(f, { force: true });
 }
 
+// The shipped snippets must emit code the compiler accepts. A bare assignment at file
+// scope does not: TARGET wants a declaration there and says only "Type required".
+{
+  const snippets = JSON.parse(fs.readFileSync(path.join(repoRoot, 'snippets/target.json'), 'utf8'));
+  const expand = (body) =>
+    body
+      .join('\n')
+      .replace(/\$\{\d+\|([^,}]+)[^}]*\}/g, '$1')
+      .replace(/\$\{\d+:([^}]*)\}/g, '$1')
+      .replace(/\$\{\d+\}|\$\d+/g, '');
+  for (const name of ['Script scaffold', 'Reusable event']) {
+    const snip = snippets[name];
+    if (!snip) { failures.push(`snippet "${name}" is missing`); continue; }
+    let body = expand(snip.body);
+    if (!/include\s+"target\.tmh"/.test(body)) body = 'include "target.tmh"\n' + body;
+    const f = path.join(tmp, 'snip.tmc');
+    fs.writeFileSync(f, body + '\n');
+    const r = await R.compileCheck(f, install);
+    if (r.ok) { pass++; console.log(`  ok    the "${name}" snippet compiles`); }
+    else failures.push(`snippet "${name}": ${r.problems.map((p) => p.message).join(' | ')}`);
+    fs.rmSync(f, { force: true });
+  }
+}
+
 // The real corpus, if it is on this machine, must still compile.
 const realProject = 'C:\\Thrustmaster\\ED_TargetScript_T16000\\ScriptFiles\\ED_ENHANCED_T16000.tmc';
 const realWsl = '/mnt/c/Thrustmaster/ED_TargetScript_T16000/ScriptFiles/ED_ENHANCED_T16000.tmc';

@@ -22,27 +22,37 @@
   "Configure device": {
     "prefix": "configure",
     "description": "Configure a device before mapping it",
-    "body": ["Configure(&${1|Joystick,Throttle,T16000,TWCSThrottle,HCougar,LMFD,RMFD|}, MODE_${2|EXCLUDED,KEEPENABLED,FILTERED|});"]
+    "body": [
+      "Configure(&${1|Joystick,Throttle,T16000,TWCSThrottle,HCougar,LMFD,RMFD|}, MODE_${2|EXCLUDED,KEEPENABLED,FILTERED|});"
+    ]
   },
   "MapKey": {
     "prefix": "mapkey",
     "description": "MapKey(dev, btn, key)",
-    "body": ["MapKey(&${1:Joystick}, ${2:TG1}, ${3:DX1});"]
+    "body": [
+      "MapKey(&${1:Joystick}, ${2:TG1}, ${3:DX1});"
+    ]
   },
   "MapKey on release": {
     "prefix": "mapkeyr",
     "description": "MapKeyR(dev, btn, key) - fires on release",
-    "body": ["MapKeyR(&${1:Joystick}, ${2:TG1}, ${3:DX1});"]
+    "body": [
+      "MapKeyR(&${1:Joystick}, ${2:TG1}, ${3:DX1});"
+    ]
   },
   "MapKey I/O layer": {
     "prefix": "mapkeyio",
     "description": "MapKeyIO(dev, btn, keyI, keyO) - IN and OUT layers",
-    "body": ["MapKeyIO(&${1:Joystick}, ${2:TG1}, ${3:DX1}, ${4:DX2});"]
+    "body": [
+      "MapKeyIO(&${1:Joystick}, ${2:TG1}, ${3:DX1}, ${4:DX2});"
+    ]
   },
   "MapKey UMD layer": {
     "prefix": "mapkeyumd",
     "description": "MapKeyUMD(dev, btn, keyU, keyM, keyD) - Up/Middle/Down layers",
-    "body": ["MapKeyUMD(&${1:Joystick}, ${2:TG1}, ${3:DX1}, ${4:DX2}, ${5:DX3});"]
+    "body": [
+      "MapKeyUMD(&${1:Joystick}, ${2:TG1}, ${3:DX1}, ${4:DX2}, ${5:DX3});"
+    ]
   },
   "MapKey IOUMD layer": {
     "prefix": "mapkeyioumd",
@@ -57,47 +67,65 @@
   "MapAxis": {
     "prefix": "mapaxis",
     "description": "MapAxis(dev, axis, dxaxis, dir, relative)",
-    "body": ["MapAxis(&${1:Joystick}, ${2:JOYX}, ${3:DX_X_AXIS}, ${4|AXIS_NORMAL,AXIS_REVERSED|}, ${5|MAP_ABSOLUTE,MAP_RELATIVE|});"]
+    "body": [
+      "MapAxis(&${1:Joystick}, ${2:JOYX}, ${3:DX_X_AXIS}, ${4|AXIS_NORMAL,AXIS_REVERSED|}, ${5|MAP_ABSOLUTE,MAP_RELATIVE|});"
+    ]
   },
   "S-curve": {
     "prefix": "setscurve",
     "description": "SetSCurve(dev, axis, lower, center, upper, curve, zoom)",
-    "body": ["SetSCurve(&${1:Joystick}, ${2:JOYX}, ${3:0}, ${4:0}, ${5:0}, ${6:0}, ${7:0});"]
+    "body": [
+      "SetSCurve(&${1:Joystick}, ${2:JOYX}, ${3:0}, ${4:0}, ${5:0}, ${6:0}, ${7:0});"
+    ]
   },
   "J-curve": {
     "prefix": "setjcurve",
     "description": "SetJCurve(dev, axis, in, out)",
-    "body": ["SetJCurve(&${1:Joystick}, ${2:JOYX}, ${3:50}, ${4:50});"]
+    "body": [
+      "SetJCurve(&${1:Joystick}, ${2:JOYX}, ${3:50}, ${4:50});"
+    ]
   },
   "EXEC": {
     "prefix": "exec",
     "description": "EXEC(\"code\") - runs TARGET source held in a string",
-    "body": ["EXEC(\"${1:fnName();}\")"]
+    "body": [
+      "EXEC(\"${1:fnName();}\")"
+    ]
   },
   "REXEC repeating": {
     "prefix": "rexec",
     "description": "REXEC(handle, ms, \"code\", RNOSTOP) - repeat on an interval",
-    "body": ["REXEC(${1:0}, ${2:500}, \"${3:fnName();}\", RNOSTOP)"]
+    "body": [
+      "REXEC(${1:0}, ${2:500}, \"${3:fnName();}\", RNOSTOP)"
+    ]
   },
   "SEQ": {
     "prefix": "seq",
     "description": "SEQ(...) - a different event on each successive press",
-    "body": ["SEQ(${1:DX1}, ${2:DX2})"]
+    "body": [
+      "SEQ(${1:DX1}, ${2:DX2})"
+    ]
   },
   "CHAIN": {
     "prefix": "chain",
     "description": "CHAIN(...) - several events from one press",
-    "body": ["CHAIN(${1:DX1}, D(), ${2:DX2})"]
+    "body": [
+      "CHAIN(${1:DX1}, D(), ${2:DX2})"
+    ]
   },
   "TEMPO": {
     "prefix": "tempo",
     "description": "TEMPO(short, long, ms) - short press vs long press",
-    "body": ["TEMPO(${1:DX1}, ${2:DX2}, ${3:350})"]
+    "body": [
+      "TEMPO(${1:DX1}, ${2:DX2}, ${3:350})"
+    ]
   },
   "Shift button": {
     "prefix": "setshift",
     "description": "SetShiftButton(devI, indexI, devUMD, indexU, indexD)",
-    "body": ["SetShiftButton(&${1:Joystick}, ${2:S3}, &${3:Throttle}, ${4:0}, ${5:0});"]
+    "body": [
+      "SetShiftButton(&${1:Joystick}, ${2:S3}, &${3:Throttle}, ${4:0}, ${5:0});"
+    ]
   },
   "Event handler": {
     "prefix": "eventhandle",
@@ -112,17 +140,35 @@
   },
   "Reusable event": {
     "prefix": "intevent",
-    "description": "Declare a reusable event, then define it (TARGET declares these as variables)",
-    "body": ["int ${1:myEvent};", "${1:myEvent} = ${2:SEQ(DX1, DX2)};"]
+    "description": "Declare a reusable event, then assign it inside a function (TARGET rejects a bare assignment at file scope)",
+    "body": [
+      "int ${1:myEvent};\t\t\t\t// declared at file scope",
+      "",
+      "int ${2:main}()",
+      "{",
+      "\tif(Init(&EventHandle)) return 1;",
+      "\t${1:myEvent} = ${3:SEQ(DX1, DX2)};\t// assigned inside a function",
+      "}"
+    ]
   },
   "Function": {
     "prefix": "fn",
     "description": "Function definition",
-    "body": ["int ${1:fnName}(${2:int dummy})", "{", "\t$0", "}"]
+    "body": [
+      "int ${1:fnName}(${2:int dummy})",
+      "{",
+      "\t$0",
+      "}"
+    ]
   },
   "While loop": {
     "prefix": "while",
     "description": "while loop (TARGET has no for loop)",
-    "body": ["while(${1:condition})", "{", "\t$0", "}"]
+    "body": [
+      "while(${1:condition})",
+      "{",
+      "\t$0",
+      "}"
+    ]
   }
 }

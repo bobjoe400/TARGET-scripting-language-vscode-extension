@@ -18,6 +18,7 @@ import {
   compileCheck,
   detectHost,
   findInstall,
+  clearInstallCache,
   isGuiRunning,
   isInstalledHeader,
   isWindowsLocalPath,
@@ -64,6 +65,13 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.languages.registerDocumentSymbolProvider(TARGET_SELECTOR, new TargetSymbolProvider(index)),
     vscode.languages.registerDefinitionProvider(TARGET_SELECTOR, new TargetDefinitionProvider(index))
   );
+
+  // Compile results live in their own collection so the live linter's updates do not
+  // wipe them, and vice versa. Declared here because refreshSoon clears it, and a
+  // const declared later would be a temporal-dead-zone error if that ever ran during
+  // the synchronous body of activate().
+  const compileDiags = vscode.languages.createDiagnosticCollection('target-compile');
+  context.subscriptions.push(compileDiags);
 
   // ---- diagnostics ----------------------------------------------------------
   const refresh = (doc: vscode.TextDocument) => {
@@ -120,6 +128,8 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   };
   const refreshSoon = (doc: vscode.TextDocument) => {
+    // Typing in any document in the window fires this; only TARGET files need it.
+    if (doc.languageId !== 'target') return;
     const key = doc.uri.toString();
     cancelRefresh(doc.uri);
     // A compile result describes the file as it was when it was compiled. Once it is
@@ -167,6 +177,7 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!e.affectsConfiguration('targetScript')) return;
       // installPath and bindsFolder both feed include resolution.
       index.clearResolutionCache();
+      clearInstallCache();
       for (const doc of vscode.workspace.textDocuments) refresh(doc);
     })
   );
@@ -219,11 +230,6 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     }, 3000);
   };
-
-  // Compile results live in their own collection so the live linter's updates do
-  // not wipe them, and vice versa.
-  const compileDiags = vscode.languages.createDiagnosticCollection('target-compile');
-  context.subscriptions.push(compileDiags);
 
   const requireInstall = (): TargetInstall | null => {
     const configured = vscode.workspace.getConfiguration('targetScript').get<string>('installPath');

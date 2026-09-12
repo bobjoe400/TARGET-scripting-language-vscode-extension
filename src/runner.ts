@@ -76,7 +76,27 @@ const CANDIDATE_ROOTS = [
  * `configuredScriptsDir` is the `targetScript.installPath` setting, which points at
  * the scripts folder; the install root is its parent.
  */
+/**
+ * Cached because this is synchronous statSync over the Windows mount and the answer
+ * cannot change between documents. It was being called once per document per refresh,
+ * so a save with a dozen scripts open spent ~100ms of the extension host's single
+ * thread repeating the same lookup.
+ */
+const installCache = new Map<string, TargetInstall | null>();
+
+export function clearInstallCache(): void {
+  installCache.clear();
+}
+
 export function findInstall(configuredScriptsDir?: string): TargetInstall | null {
+  const key = configuredScriptsDir?.trim() ?? '';
+  if (installCache.has(key)) return installCache.get(key)!;
+  const found = findInstallUncached(configuredScriptsDir);
+  installCache.set(key, found);
+  return found;
+}
+
+function findInstallUncached(configuredScriptsDir?: string): TargetInstall | null {
   const roots: string[] = [];
   if (configuredScriptsDir?.trim()) {
     const s = configuredScriptsDir.trim();
@@ -392,11 +412,17 @@ async function defaultStagingRoot(): Promise<string> {
 }
 
 /** Launches the script through TARGETGUI, which creates the virtual devices. */
-export async function runScript(scriptPath: string, install: TargetInstall): Promise<{ ok: boolean; error?: string; command?: string }> {
+export async function runScript(
+  scriptPath: string,
+  install: TargetInstall
+): Promise<{ ok: boolean; error?: string; command?: string }> {
   if (!install.targetGui) return { ok: false, error: 'TARGETGUI.exe not found in the TARGET install.' };
-  const winScript = await toWindowsPath(scriptPath);
-  const command = `"${install.targetGui}" -r "${winScript}"`;
   try {
+    // Inside the try: toWindowsPath shells out to wslpath, and a rejection here would
+    // escape the command handler as a generic "command failed" rather than the
+    // specific message this function exists to return.
+    const winScript = await toWindowsPath(scriptPath);
+    const command = `"${install.targetGui}" -r "${winScript}"`;
     const child = spawn(install.targetGui, ['-r', winScript], {
       cwd: path.dirname(install.targetGui),
       detached: true,
@@ -405,9 +431,10 @@ export async function runScript(scriptPath: string, install: TargetInstall): Pro
     child.unref();
     return { ok: true, command };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e), command };
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 }
+
 
 /** Stops a running script by closing TARGETGUI. */
 export async function stopScript(): Promise<{ ok: boolean; error?: string }> {

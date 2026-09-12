@@ -11,7 +11,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { usbKeyName } from './builtins';
+import { own, usbKeyName } from './builtins';
 
 export interface BindingRef {
   action: string;
@@ -106,12 +106,12 @@ function usbNameIndex(): Map<string, string> {
 /** The USB HID code for an Elite Dangerous key name, or null if it is not a key. */
 export function usbCodeForEdKey(edKey: string): string | null {
   const bare = edKey.replace(/^Key_/, '');
-  if (ED_MODIFIERS[bare]) return null; // a modifier, not a scancode
+  if (own(ED_MODIFIERS, bare)) return null; // a modifier, not a scancode
   const norm = (s: string) => s.toLowerCase().replace(/\s+/g, '');
   const index = usbNameIndex();
 
   const candidates = [
-    ED_KEY_ALIASES[bare],
+    own(ED_KEY_ALIASES, bare),
     bare,
     bare.replace(/^Numpad_/, 'Keypad '),
     bare.replace(/_/g, ' '),
@@ -153,7 +153,7 @@ export function parseBinds(file: string): BindingRef[] {
     )) {
       const modifiers: string[] = [];
       for (const mod of (slot[3] ?? '').matchAll(/<Modifier\s+Device="Keyboard"\s+Key="Key_([A-Za-z0-9_]+)"/g)) {
-        const flag = ED_MODIFIERS[mod[1]];
+        const flag = own(ED_MODIFIERS, mod[1]);
         if (flag) modifiers.push(flag);
       }
       out.push({ action, slot: slot[1], modifiers, file: base, ...({ key: slot[2] } as object) } as BindingRef & { key: string });

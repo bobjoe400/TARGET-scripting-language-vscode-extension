@@ -276,6 +276,20 @@ for (const [label, src, needle] of [
   } else fail('banner as doc', `got ${JSON.stringify((h3 || '').slice(0, 100))}`);
 }
 
+// ---- an unclosed call must not swallow the file ----------------------------
+// One missing ')' made every later position report as inside that call: completion
+// narrowed to its argument domain and a stale signature popup pinned itself.
+{
+  const healthy = complete('int f()\n{\n\tMapKey(&Joystick, TG1, DX1);\n}\n\nint g()\n{\n\t|\n}\n');
+  const broken = complete('int f()\n{\n\tMapKey(&Joystick, TG1, DX1;\n}\n\nint g()\n{\n\t|\n}\n');
+  if (healthy.length > 1000 && broken.length > 1000) {
+    pass++;
+    console.log(`  ok    an unclosed call does not narrow later completion (${broken.length} items)`);
+  } else {
+    failures.push(`unclosed call: healthy=${healthy.length} broken=${broken.length}`);
+  }
+}
+
 // ---- completion payload ----------------------------------------------------
 // The general list is thousands of items. Building every description up front sent
 // hundreds of kilobytes of markdown across the extension host boundary per keystroke,
