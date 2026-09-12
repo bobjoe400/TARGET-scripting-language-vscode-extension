@@ -34,6 +34,12 @@ Axis functions (`MapAxis`, `SetSCurve`, …) rank that device's axes first inste
 not. Completion and hover describe physical controls using the per-device diagrams
 TARGET installs - `APALT` is the Autopilot Select Switch, `CHF` is China Hat forward.
 
+The wording is Thrustmaster's own, copied verbatim from those PDFs, which are laid out
+as a caption followed by the script names for the controls it covers. Only the pairing
+is inferred, and captions describe a control *group* rather than a single position:
+`CHF`, `CHM` and `CHB` all read "China Hat", since that is the one caption the diagram
+gives them. Regenerate with `npm run gen`.
+
 **Hover and signature help** for all 171 builtins, with the real parameter lists and
 default values - and for your own functions too, including the comment block above
 them, looked up across the include graph so a call site shows what a function in

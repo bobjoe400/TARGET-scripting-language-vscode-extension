@@ -122,12 +122,19 @@ function extract(text, names) {
       run.push(glued[i]);
       i++;
     }
+    // Collect everything since the previous run of control names: the PDF is laid
+    // out as "caption CONTROLS caption CONTROLS", so that span is the caption.
     const label = [];
-    for (let k = runStart - 1; k >= 0 && label.length < 7; k--) {
+    for (let k = runStart - 1; k >= 0 && label.length < 24; k--) {
       if (isCtl(glued[k])) break;
       label.unshift(glued[k]);
     }
-    const lab = clean(label.join(' '));
+    // Clean BEFORE trimming. Words arrive split ("T rim", "AL T"), so counting raw
+    // tokens cuts words in half; rejoining first makes the count meaningful. Captions
+    // for neighbouring controls can run together, so keep only the trailing clause.
+    let lab = clean(label.join(' '));
+    const parts = lab.split(' ');
+    if (parts.length > 5) lab = parts.slice(-5).join(' ');
     if (!usable(lab)) continue;
     for (const n of run) if (names.has(n) && !out.has(n)) out.set(n, lab);
   }

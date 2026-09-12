@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.7.1
+
+- Fixed the label on the Warthog engine-operate switches, which read "Throttle Right
+  Engine Operate Left / right" - the first two words bled in from a neighbouring
+  caption. The extractor now cleans the text before trimming it, because words arrive
+  split across the PDF's text runs ("T rim", "AL T") and counting raw tokens cut words
+  in half.
+- Every label is Thrustmaster's own caption, copied verbatim from the per-device
+  diagrams. Only the pairing of caption to control name is inferred.
+
 ## 0.7.0
 
 Findings from the official manual, the per-device PDFs and further compiler probing.
