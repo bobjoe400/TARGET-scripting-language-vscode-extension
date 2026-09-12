@@ -127,6 +127,8 @@ export class TargetIndex {
     this.cache.delete(uri.toString());
     this.generation++;
     this.closureCache.clear();
+    // Creating or deleting a .tmc changes which folder includes anchor to.
+    if (/\.tmc$/i.test(uri.fsPath)) this.entryDirCache.clear();
     // Binding files are keyed on their own timestamps, so a script save does not
     // invalidate them; dropping the whole cache on every save made each hover
     // re-read every .binds file synchronously on the extension host thread.
@@ -139,6 +141,10 @@ export class TargetIndex {
   /** Called when settings change: include resolution depends on them. */
   clearResolutionCache(): void {
     this.resolveCache.clear();
+    // The entry anchor IS a resolution input now. Left behind, a header opened before
+    // its .tmc existed kept the fallback anchor - its own folder, the old wrong rule -
+    // for the rest of the session, and closureComplete could silently go false.
+    this.entryDirCache.clear();
     this.existsCache.clear();
     this.closureCache.clear();
     this.bindsCache.clear();

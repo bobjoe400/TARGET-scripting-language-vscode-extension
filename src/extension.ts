@@ -235,13 +235,16 @@ export function activate(context: vscode.ExtensionContext): void {
         e.affectsConfiguration('targetScript.installPath') ||
         e.affectsConfiguration('targetScript.bindsFolder');
       if (!pathsChanged) {
-        for (const doc of vscode.workspace.textDocuments) refreshSoon(doc);
+        // refreshDependent, not refreshSoon: the latter clears compileDiags, so merely
+        // toggling a setting wiped the compile results of every open script with no
+        // compile having run.
+        for (const doc of vscode.workspace.textDocuments) refreshDependent(doc);
         return;
       }
       // installPath and bindsFolder both feed include resolution.
       index.clearResolutionCache();
       clearInstallCache();
-      for (const doc of vscode.workspace.textDocuments) refreshSoon(doc);
+      for (const doc of vscode.workspace.textDocuments) refreshDependent(doc);
     })
   );
 
@@ -250,7 +253,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // walking every include graph with synchronous reads - and on a project living on
   // the Windows drive each of those stats costs hundreds of times what a native one
   // does.
-  for (const doc of vscode.workspace.textDocuments) refreshSoon(doc);
+  for (const doc of vscode.workspace.textDocuments) refreshDependent(doc);
 
   // ---- compile / run --------------------------------------------------------
   // Remembered so a command still works when the active tab is the extension page,
@@ -476,10 +479,14 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('targetScript.compile', async (resource?: vscode.Uri) => {
       if (!requireTrust('Checking a script for compile errors')) return;
       if (unsupportedHost()) return;
-      const install = requireInstall();
-      if (!install) return;
+      // The entry first: installPath is machine-overridable, so in a multi-root
+      // workspace the install has to be located with the entry script's own settings.
+      // Read at window level, one TargetInstall could compute the staging root while a
+      // different one ran the compile.
       const entry = await activeEntryScript(resource);
       if (!entry) return;
+      const install = requireInstall(entry);
+      if (!install) return;
 
       const result = await vscode.window.withProgress(
         { location: vscode.ProgressLocation.Window, title: `Compiling ${path.basename(entry)}…` },
@@ -569,10 +576,10 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('targetScript.run', async (resource?: vscode.Uri) => {
       if (!requireTrust('Running a script')) return;
       if (unsupportedHost()) return;
-      const install = requireInstall();
-      if (!install) return;
       const entry = await activeEntryScript(resource);
       if (!entry) return;
+      const install = requireInstall(entry);
+      if (!install) return;
 
       // Running creates the virtual devices and takes over the hardware, so a failing
       // compile is worth catching before TARGET is launched.
