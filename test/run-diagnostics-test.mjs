@@ -100,7 +100,10 @@ console.log(`  ${pass}/${pass + failures.length} rule assertions passed`);
 // -- the corpus must stay clean ------------------------------------------------
 const corpusDir = process.env.TARGET_CORPUS || path.join(repoRoot, 'test/fixtures');
 if (fs.existsSync(corpusDir)) {
-  const files = fs.readdirSync(corpusDir).filter((f) => /\.(tmc|tmh|ttm)$/i.test(f));
+  // DEMO.tmc is deliberately broken and is checked separately, below.
+  const files = fs
+    .readdirSync(corpusDir)
+    .filter((f) => /\.(tmc|tmh|ttm)$/i.test(f) && f !== 'DEMO.tmc');
   console.log(`\nCorpus false-positive check (${files.length} known-good files)`);
   console.log('----------------');
   const byCode = new Map();
@@ -143,6 +146,33 @@ if (fs.existsSync(corpusDir)) {
   // either. Hints about naming clarity are fine and expected.
   const warnTotal = [...byCode].filter(([k]) => k !== 'control-name-mismatch').reduce((a, [, v]) => a + v, 0);
   if (warnTotal) failures.push(`${warnTotal} warning-severity diagnostic(s) on known-good corpus code`);
+}
+
+// -- the demo file must keep demonstrating what it claims to ------------------
+const demoPath = path.join(corpusDir, 'DEMO.tmc');
+if (fs.existsSync(demoPath)) {
+  console.log('\nDemo file (deliberately broken)');
+  console.log('----------------');
+  const text = decode(fs.readFileSync(demoPath));
+  const model = buildModel(text);
+  const ds = computeDiagnostics(model, 'DEMO.tmc', { aliasBindings: collectAliasBindings(model) });
+  const codes = new Set(ds.map((d) => d.code));
+  const wanted = [
+    'not-in-target', 'arity', 'wrong-device-control', 'control-name-mismatch',
+    'rexec-handle', 'forbidden-in-exec', 'range', 'axmap2-zones',
+  ];
+  for (const w of wanted) {
+    if (codes.has(w)) pass++;
+    else failures.push(`DEMO.tmc no longer demonstrates "${w}"`);
+  }
+  console.log(`  ${ds.length} diagnostics, codes: ${[...codes].join(', ')}`);
+  // The lines marked correct in the demo must stay unflagged.
+  const flaggedLines = new Set(ds.map((d) => text.slice(0, d.start).split('\n').length));
+  const correctSection = text.split('\n').slice(13, 21);
+  let leaked = 0;
+  correctSection.forEach((_, i) => { if (flaggedLines.has(14 + i)) leaked++; });
+  if (leaked) failures.push(`${leaked} diagnostic(s) on the lines DEMO.tmc marks as correct`);
+  else { pass++; console.log('  none of the lines marked correct are flagged'); }
 }
 
 if (failures.length) {
