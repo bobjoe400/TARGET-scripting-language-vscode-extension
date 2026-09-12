@@ -14,6 +14,15 @@ import {
   TargetSymbolProvider,
 } from './providers';
 import { generated } from './builtins';
+import {
+  compileCheck,
+  detectHost,
+  findInstall,
+  resolveEntryScript,
+  runScript,
+  stopScript,
+  TargetInstall,
+} from './runner';
 
 const SEVERITY: Record<Severity, vscode.DiagnosticSeverity> = {
   error: vscode.DiagnosticSeverity.Error,
@@ -96,6 +105,165 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   for (const doc of vscode.workspace.textDocuments) refresh(doc);
+
+  // ---- compile / run --------------------------------------------------------
+  // Compile results live in their own collection so the live linter's updates do
+  // not wipe them, and vice versa.
+  const compileDiags = vscode.languages.createDiagnosticCollection('target-compile');
+  context.subscriptions.push(compileDiags);
+
+  const requireInstall = (): TargetInstall | null => {
+    const configured = vscode.workspace.getConfiguration('targetScript').get<string>('installPath');
+    const install = findInstall(configured);
+    if (!install) {
+      vscode.window
+        .showErrorMessage(
+          'Could not find the TARGET installation. Set `targetScript.installPath` to the folder containing target.tmh.',
+          'Open Settings'
+        )
+        .then((pick) => {
+          if (pick) vscode.commands.executeCommand('workbench.action.openSettings', 'targetScript.installPath');
+        });
+      return null;
+    }
+    return install;
+  };
+
+  /** The .tmc to act on: the active file, or the single .tmc beside an open header. */
+  const activeEntryScript = async (): Promise<string | null> => {
+    const doc = vscode.window.activeTextEditor?.document;
+    if (!doc || doc.languageId !== 'target') {
+      vscode.window.showErrorMessage('Open a TARGET script first.');
+      return null;
+    }
+    if (doc.isDirty) await doc.save();
+
+    const { entry, candidates } = resolveEntryScript(doc.uri.fsPath);
+    if (entry) return entry;
+    if (candidates.length === 0) {
+      vscode.window.showErrorMessage(
+        `No .tmc file found next to ${path.basename(doc.fileName)}. A header is compiled as part of the .tmc that includes it.`
+      );
+      return null;
+    }
+    const pick = await vscode.window.showQuickPick(
+      candidates.map((c) => ({ label: path.basename(c), description: c })),
+      { title: 'Which script is the entry point?' }
+    );
+    return pick?.description ?? null;
+  };
+
+  const unsupportedHost = (): boolean => {
+    if (detectHost() !== 'unsupported') return false;
+    vscode.window.showErrorMessage(
+      'Compiling and running require the Windows TARGET tools. This works on Windows, or from WSL where Windows executables can be launched.'
+    );
+    return true;
+  };
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('targetScript.compile', async () => {
+      if (unsupportedHost()) return;
+      const install = requireInstall();
+      if (!install) return;
+      const entry = await activeEntryScript();
+      if (!entry) return;
+
+      const result = await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Window, title: `Compiling ${path.basename(entry)}…` },
+        () => compileCheck(entry, install)
+      );
+
+      output.appendLine(`\n$ Interpreter.exe ${path.basename(entry)}  (compile check)`);
+      if (result.output.trim()) output.appendLine(result.output.trim());
+      if (result.error) output.appendLine(`error: ${result.error}`);
+
+      compileDiags.clear();
+      if (result.error) {
+        vscode.window.showErrorMessage(`Compile check failed: ${result.error}`);
+        return;
+      }
+
+      if (result.problems.length === 0 && result.ok) {
+        vscode.window.showInformationMessage(`${path.basename(entry)} compiles cleanly.`);
+        return;
+      }
+
+      const byFile = new Map<string, vscode.Diagnostic[]>();
+      for (const p of result.problems) {
+        const line = Math.max(0, p.line - 1);
+        const d = new vscode.Diagnostic(
+          new vscode.Range(line, 0, line, Number.MAX_SAFE_INTEGER),
+          p.message,
+          vscode.DiagnosticSeverity.Error
+        );
+        d.source = 'target-compiler';
+        const key = p.file;
+        if (!byFile.has(key)) byFile.set(key, []);
+        byFile.get(key)!.push(d);
+      }
+      for (const [file, diags] of byFile) compileDiags.set(vscode.Uri.file(file), diags);
+
+      const first = result.problems[0];
+      vscode.window
+        .showErrorMessage(
+          `${result.problems.length} compile error${result.problems.length === 1 ? '' : 's'}: ${first.message}`,
+          'Go to Error'
+        )
+        .then(async (pick) => {
+          if (!pick) return;
+          const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(first.file));
+          const editor = await vscode.window.showTextDocument(doc);
+          const pos = new vscode.Position(Math.max(0, first.line - 1), 0);
+          editor.selection = new vscode.Selection(pos, pos);
+          editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+        });
+    }),
+
+    vscode.commands.registerCommand('targetScript.run', async () => {
+      if (unsupportedHost()) return;
+      const install = requireInstall();
+      if (!install) return;
+      const entry = await activeEntryScript();
+      if (!entry) return;
+
+      // Running creates the virtual devices and takes over the hardware, so a failing
+      // compile is worth catching before TARGET is launched.
+      const check = await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Window, title: `Compiling ${path.basename(entry)}…` },
+        () => compileCheck(entry, install)
+      );
+      if (check.problems.length) {
+        const pick = await vscode.window.showErrorMessage(
+          `${path.basename(entry)} has ${check.problems.length} compile error(s). Run anyway?`,
+          'Run Anyway',
+          'Show Errors'
+        );
+        if (pick === 'Show Errors') {
+          await vscode.commands.executeCommand('targetScript.compile');
+          return;
+        }
+        if (pick !== 'Run Anyway') return;
+      }
+
+      const res = await runScript(entry, install);
+      output.appendLine(`\n$ ${res.command ?? ''}`);
+      if (!res.ok) {
+        vscode.window.showErrorMessage(`Could not start TARGET: ${res.error}`);
+        return;
+      }
+      vscode.window.showInformationMessage(`Running ${path.basename(entry)} in TARGET.`, 'Stop').then((pick) => {
+        if (pick === 'Stop') vscode.commands.executeCommand('targetScript.stop');
+      });
+    }),
+
+    vscode.commands.registerCommand('targetScript.stop', async () => {
+      if (unsupportedHost()) return;
+      const res = await stopScript();
+      if (res.ok) vscode.window.showInformationMessage('Stopped TARGET.');
+      else vscode.window.showErrorMessage(`Could not stop TARGET: ${res.error}`);
+    })
+  );
 }
 
 function toVsDiagnostic(doc: vscode.TextDocument, d: RawDiagnostic): vscode.Diagnostic {

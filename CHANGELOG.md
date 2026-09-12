@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.0
+
+- Compile and run from the editor, without opening TARGET.
+  - **TARGET: Check Script for Compile Errors** (`Ctrl+Shift+B`) compiles via
+    `Interpreter.exe` and reports errors in the Problems panel at the correct file
+    and line, including errors inside included headers. It asks for a function name
+    that does not exist, so the script is compiled but never executed and no
+    hardware is touched.
+  - **TARGET: Run Script** compiles, then launches via `TARGETGUI.exe -r`.
+  - **TARGET: Stop Running Script**.
+- Works on Windows and from WSL.
+- Compiling stages the TARGET headers and the project's scripts into a scratch
+  directory, because `Interpreter.exe` resolves includes from the working directory
+  only. Nothing is written into your project.
+
 ## 0.1.0
 
 First release.

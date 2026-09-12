@@ -2,7 +2,7 @@
   "name": "target-script",
   "displayName": "TARGET Script (Thrustmaster)",
   "description": "Language support for the Thrustmaster T.A.R.G.E.T. HOTAS scripting language (.tmc, .tmh, .ttm): syntax highlighting, device-aware completion, hover docs, outline and diagnostics.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "bobjoe400",
   "license": "MIT",
   "engines": {
@@ -66,7 +66,7 @@
         "targetScript.installPath": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Path to the TARGET installation's `scripts` folder (the one containing `target.tmh`). Leave empty to auto-detect the default install location. Used to resolve `include \"target.tmh\"`."
+          "markdownDescription": "Path to the TARGET installation`s `scripts` folder (the one containing `target.tmh`). Leave empty to auto-detect. Used to resolve `include \"target.tmh\"`, and to locate `TARGETGUI.exe` and `Interpreter.exe` for the compile and run commands."
         },
         "targetScript.diagnostics.enable": {
           "type": "boolean",
@@ -74,7 +74,61 @@
           "description": "Enable diagnostics (arity checks, EXEC restrictions, range checks, DirectX limits)."
         }
       }
-    }
+    },
+    "commands": [
+      {
+        "command": "targetScript.compile",
+        "title": "Check Script for Compile Errors",
+        "category": "TARGET",
+        "icon": "$(check)"
+      },
+      {
+        "command": "targetScript.run",
+        "title": "Run Script",
+        "category": "TARGET",
+        "icon": "$(play)"
+      },
+      {
+        "command": "targetScript.stop",
+        "title": "Stop Running Script",
+        "category": "TARGET",
+        "icon": "$(debug-stop)"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "targetScript.compile",
+          "when": "editorLangId == target"
+        },
+        {
+          "command": "targetScript.run",
+          "when": "editorLangId == target"
+        },
+        {
+          "command": "targetScript.stop"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "targetScript.run",
+          "when": "resourceLangId == target",
+          "group": "navigation@1"
+        },
+        {
+          "command": "targetScript.compile",
+          "when": "resourceLangId == target",
+          "group": "navigation@2"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "targetScript.compile",
+        "key": "ctrl+shift+b",
+        "when": "editorLangId == target"
+      }
+    ]
   },
   "scripts": {
     "compile": "tsc -p ./",
@@ -82,7 +136,7 @@
     "vscode:prepublish": "npm run compile",
     "gen": "node tools/gen-builtins.mjs && node tools/gen-grammar.mjs",
     "test:grammar": "node test/run-grammar-test.mjs",
-    "test": "npm run compile && node test/run-grammar-test.mjs && node test/run-diagnostics-test.mjs && node test/run-provider-test.mjs",
+    "test": "npm run compile && node test/run-grammar-test.mjs && node test/run-diagnostics-test.mjs && node test/run-provider-test.mjs && node test/run-runner-test.mjs",
     "package": "npx --yes @vscode/vsce@2 package --no-dependencies"
   },
   "devDependencies": {

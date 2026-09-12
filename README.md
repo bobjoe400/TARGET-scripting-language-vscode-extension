@@ -54,11 +54,44 @@ Names borrowed from another device that happen to land on the same index (`TG1` 
 `TS1` are both 0) are reported as a naming hint rather than an error, because that code
 does work and real scripts rely on it.
 
+## Compiling and running
+
+Three commands, from the Command Palette or the editor title bar:
+
+| Command | What it does |
+| --- | --- |
+| **TARGET: Check Script for Compile Errors** (`Ctrl+Shift+B`) | Compiles without running. Errors land in the Problems panel at the right file and line. |
+| **TARGET: Run Script** | Compiles, then launches the script with `TARGETGUI.exe -r`. |
+| **TARGET: Stop Running Script** | Closes TARGET. |
+
+Run a header (`.tmh`/`.ttm`) and it compiles the `.tmc` beside it, since a header on its
+own is not a compilation unit.
+
+**The compile check never runs your script**, so it cannot touch your HOTAS. It invokes
+`Interpreter.exe` asking for a function name that does not exist, which compiles every
+file and then stops before executing anything. Checking the 15-file Elite Dangerous
+script takes about 200 ms.
+
+`Run` is different — it really does start TARGET and create the virtual devices, exactly
+as the community `.cmd` launchers do. It compiles first and asks before launching if
+there are errors.
+
+Works on Windows, and from WSL (the Windows tools are invoked through interop).
+
+### Why compiling needs a staging directory
+
+`Interpreter.exe` resolves `include` against the working directory only — it has no
+search path — so no single directory can see both the TARGET headers and your project's
+own headers. The extension stages the four TARGET headers and your project's script
+files into a scratch directory, compiles there, and maps reported paths back to your
+real files. The scratch directory is removed afterwards; nothing is written into your
+project.
+
 ## Settings
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `targetScript.installPath` | auto-detect | The TARGET `scripts` folder, used to resolve `include "target.tmh"`. Set this if TARGET is not installed in the default location. |
+| `targetScript.installPath` | auto-detect | The TARGET `scripts` folder. Used to resolve `include "target.tmh"` and to locate `TARGETGUI.exe` and `Interpreter.exe`. Set this if TARGET is not in the default location. |
 | `targetScript.diagnostics.enable` | `true` | Turn diagnostics off entirely. |
 
 ## Where the data comes from
