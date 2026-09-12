@@ -309,6 +309,28 @@ if (fs.existsSync(corpusDir)) {
   // either. Hints about naming clarity are fine and expected.
   const warnTotal = [...byCode].filter(([k]) => k !== 'control-name-mismatch').reduce((a, [, v]) => a + v, 0);
   if (warnTotal) failures.push(`${warnTotal} warning-severity diagnostic(s) on known-good corpus code`);
+
+  // Every fixture in this repo is LF, while real TARGET files are CRLF - the vendor
+  // headers are, and so is anything Thrustmaster's own editor writes. That gap hid a
+  // bound that never matched on CRLF, so the corpus is swept in both forms.
+  console.log('\n  ...and again with CRLF line endings');
+  let crlfNoise = 0;
+  for (const f of files) {
+    const text = decode(fs.readFileSync(path.join(corpusDir, f))).replace(/\r?\n/g, '\r\n');
+    const ds = computeDiagnostics(buildModel(text), f, {
+      aliasBindings: corpusBindings,
+      knownSymbols: corpusSymbols,
+      closureComplete: true,
+      isEntryScript: f.toLowerCase().endsWith('.tmc'),
+    }).filter((d) => d.severity === 'error' || d.severity === 'warning');
+    if (ds.length) {
+      crlfNoise += ds.length;
+      console.log(`  NOISE ${f.padEnd(26)} ${ds.slice(0, 3).map((d) => d.code).join(', ')}`);
+    }
+  }
+  if (crlfNoise === 0) console.log(`  ok    all ${files.length} known-good files stay clean as CRLF too`);
+  else failures.push(`${crlfNoise} diagnostics on known-good code once converted to CRLF`);
+
 }
 
 // -- the demo file must keep demonstrating what it claims to ------------------

@@ -285,19 +285,26 @@ export function computeDiagnostics(
       if (t.value === 'define') {
         const name = sig[i + 1];
         const paren = sig[i + 2];
-        if (
-          name?.kind === TokKind.Ident &&
-          paren?.kind === TokKind.Punct &&
-          paren.value === '(' &&
-          name.end === paren.start
-        ) {
-          add(
-            t.start,
-            paren.end,
-            `TARGET has no function-like macros: \`define ${name.value}(...)\` is rejected by the compiler. Use a function instead. A space, as in \`define ${name.value} (1+2)\`, is an ordinary parenthesised value and is fine.`,
-            'error',
-            'not-in-target'
-          );
+        // What the compiler actually rejects is *using* a macro with arguments, not
+        // writing '(' next to the name: `define FOO(1+2)` compiles and works, with or
+        // without a space. So the parameter list is what identifies a function-like
+        // macro - a comma-separated list of bare identifiers - and the declaration is
+        // accepted, failing only at the point of use.
+        if (name?.kind === TokKind.Ident && paren?.kind === TokKind.Punct && paren.value === '(' && name.end === paren.start) {
+          const close = sig.findIndex((x, k) => k > i + 2 && x.kind === TokKind.Punct && x.value === ')');
+          const inner = close > i + 2 ? sig.slice(i + 3, close) : [];
+          const looksParameterised =
+            inner.length > 0 &&
+            inner.every((x, k) => (k % 2 === 0 ? x.kind === TokKind.Ident : x.kind === TokKind.Punct && x.value === ','));
+          if (looksParameterised) {
+            add(
+              t.start,
+              paren.end,
+              `TARGET has no function-like macros. The compiler accepts this declaration but rejects any use of \`${name.value}(...)\` with arguments. Use a function instead.`,
+              'warning',
+              'not-in-target'
+            );
+          }
         }
         continue;
       }

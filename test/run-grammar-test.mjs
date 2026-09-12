@@ -139,6 +139,24 @@ if (sweepFiles.length) {
   console.log(`\nNo corpus files in ${corpusDir} - skipping sweep.`);
 }
 
+// The grammar too: a rule that assumed LF would mis-scope every real TARGET file.
+if (sweepFiles.length) {
+  let crlfStuck = 0;
+  for (const file of sweepFiles) {
+    const text = decode(fs.readFileSync(file)).replace(/\r?\n/g, '\r\n');
+    const { endedClean } = await tokenizeFull(text);
+    if (!endedClean) {
+      crlfStuck++;
+      console.log(`  STUCK (CRLF) ${path.basename(file)}`);
+    }
+  }
+  if (crlfStuck === 0) {
+    console.log(`\n  All ${sweepFiles.length} files tokenize cleanly as CRLF as well.`);
+  } else {
+    failures.push(`${crlfStuck} file(s) leave the tokenizer stuck when converted to CRLF`);
+  }
+}
+
 if (failures.length) {
   console.log(`\n${failures.length} failure(s).`);
   process.exit(1);

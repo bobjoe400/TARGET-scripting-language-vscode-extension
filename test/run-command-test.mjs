@@ -271,12 +271,17 @@ const noScriptError = () =>
   if (!polled?.visible) {
     failures.push(`indicator was not shown before the poll test (errors=${JSON.stringify(stub.__recorded.errors)} warnings=${JSON.stringify(stub.__recorded.warnings)} infos=${JSON.stringify(stub.__recorded.infos)})`);
   } else {
-    await new Promise((r) => setTimeout(r, 3600));
+    // Wait on the condition rather than a fixed sleep, so the test does not need to
+    // know the poll interval.
+    const deadline = Date.now() + 12000;
+    while (polled.visible && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 250));
+    }
     if (!polled.visible) {
       pass++;
       console.log('  ok    indicator clears itself once TARGET exits (Stop Profile)');
     } else {
-      failures.push('indicator still visible 3.6s after TARGET exited');
+      failures.push('indicator still visible 12s after TARGET exited');
     }
   }
 

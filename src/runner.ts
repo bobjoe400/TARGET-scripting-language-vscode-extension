@@ -608,6 +608,16 @@ export const TARGET_IMAGES = { gui: IMAGE_GUI, editor: IMAGE_EDITOR };
  */
 export function isWindowsLocalPath(p: string): boolean {
   if (process.platform === 'win32') return /^[A-Za-z]:[\\/]/.test(p);
+  // Derived from the same place as everything else rather than assuming /mnt:
+  // automount.root is configurable, and `root = /` is a common choice, under which a
+  // perfectly ordinary local path would have been judged unreachable and staged on
+  // every single Run.
+  const root = windowsSystemRoot();
+  if (root) {
+    const mountBase = path.dirname(path.resolve(root)); // /mnt/c -> /mnt
+    const escaped = mountBase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (new RegExp(`^${escaped}/[a-z]/`, 'i').test(p)) return true;
+  }
   return /^\/mnt\/[a-z]\//i.test(p);
 }
 

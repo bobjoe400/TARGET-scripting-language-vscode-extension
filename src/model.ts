@@ -557,9 +557,14 @@ const truncate = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + '
 
 /** Where to stop pretending an unclosed call continues. */
 function unclosedCallEnd(text: string, open: number): number {
-  const blank = text.indexOf('\n\n', open);
-  const brace = text.indexOf('\n}', open);
-  const candidates = [blank, brace].filter((n) => n !== -1);
+  // Matched by pattern, not by literal '\n\n'. Real TARGET files are CRLF - the
+  // vendor headers and anything Thrustmaster's own editor writes - so a blank line is
+  // '\r\n\r\n' and the literal never matched, leaving this bound dead on exactly the
+  // files most users have.
+  const rest = text.slice(open);
+  const blank = rest.search(/\r?\n[ \t]*\r?\n/);
+  const brace = rest.search(/\r?\n\s*\}/);
+  const candidates = [blank, brace].filter((n) => n !== -1).map((n) => open + n);
   return candidates.length ? Math.min(...candidates) : text.length;
 }
 

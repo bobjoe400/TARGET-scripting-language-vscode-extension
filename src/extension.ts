@@ -1,5 +1,6 @@
 // Extension entry point: wires the providers up and keeps diagnostics current.
 
+import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { TargetIndex } from './index';
@@ -164,10 +165,13 @@ export function activate(context: vscode.ExtensionContext): void {
       refresh(doc);
       // A header's contents feed the symbol table of every script that includes it,
       // so those keep stale unknown-function and duplicate-symbol problems otherwise.
+      // Debounced rather than immediate: each refresh walks the include graph with
+      // synchronous reads against the TARGET headers, so refreshing every open script
+      // inline blocked the extension host for as long as that took.
       for (const other of vscode.workspace.textDocuments) {
         if (other.uri.toString() === doc.uri.toString()) continue;
-        if (other.languageId !== 'target') continue;
-        refresh(other);
+        if (other.languageId !== 'target' || other.uri.scheme !== 'file') continue;
+        refreshSoon(other);
       }
     }),
     vscode.workspace.onDidCloseTextDocument((doc) => {
@@ -237,7 +241,10 @@ export function activate(context: vscode.ExtensionContext): void {
         clearRunStatus();
         output.appendLine('TARGET is no longer running; cleared the status indicator.');
       }
-    }, 3000);
+      // Five seconds rather than three: each tick is a Windows process launched
+      // through WSL interop, and this runs for as long as a script is loaded - a whole
+      // flight session - for a boolean that changes once.
+    }, 5000);
   };
 
   const requireInstall = (): TargetInstall | null => {
@@ -315,7 +322,11 @@ export function activate(context: vscode.ExtensionContext): void {
     const projectDir = path.dirname(doc.uri.fsPath);
     for (const open of vscode.workspace.textDocuments) {
       if (open.languageId !== 'target' || !open.isDirty || open.uri.scheme !== 'file') continue;
-      if (path.dirname(open.uri.fsPath) !== projectDir) continue;
+      // Anything under the project root, because staging recurses into subfolders.
+      // Comparing only the immediate directory left dirty headers in sub/ to be
+      // compiled from their stale on-disk copy.
+      const rel = path.relative(projectDir, open.uri.fsPath);
+      if (rel.startsWith('..') || path.isAbsolute(rel)) continue;
       await open.save();
     }
 
@@ -412,6 +423,12 @@ export function activate(context: vscode.ExtensionContext): void {
 
       const byFile = new Map<string, vscode.Diagnostic[]>();
       for (const p of result.problems) {
+        // The compiler can name a file that is not in the project; attaching a
+        // Problems entry to a path that does not exist just creates a phantom row.
+        if (!fs.existsSync(p.file)) {
+          output.appendLine(`${p.file}:${p.line}  ${p.message}`);
+          continue;
+        }
         const line = Math.max(0, p.line - 1);
         const d = new vscode.Diagnostic(
           new vscode.Range(line, 0, line, Number.MAX_SAFE_INTEGER),

@@ -54,7 +54,12 @@ export class TargetIndex {
     // An already-open document is the source of truth over what is on disk, and it
     // owns the cache entry. Writing a disk-shaped entry here would make the two
     // readers evict each other on every call, reparsing a header on every keystroke.
-    const open = vscode.workspace.textDocuments.find((d) => d.uri.fsPath === p);
+    // Case-insensitively: Windows and macOS paths are, so an include written
+    // `ed_macros.tmh` resolving to ED_Macros.tmh would otherwise miss the open dirty
+    // buffer and parse the saved file instead.
+    const open = vscode.workspace.textDocuments.find(
+      (d) => d.uri.fsPath === p || d.uri.fsPath.toLowerCase() === p.toLowerCase()
+    );
     if (open) return this.getModel(open);
 
     const hit = this.cache.get(key);
@@ -208,7 +213,7 @@ export class TargetIndex {
    * Every file reachable from `startFile` through includes, including itself.
    * Cycles are common (headers including headers) and are handled by the seen set.
    */
-  includeClosure(startFile: string, startModel: DocModel, limit = 64): { file: string; model: DocModel }[] {
+  includeClosure(startFile: string, startModel: DocModel, limit = CLOSURE_LIMIT): { file: string; model: DocModel }[] {
     // Memoised per generation: a single diagnostics refresh walks the graph from
     // several directions, and the walk is the expensive part.
     const cacheKey = `${startFile}@${this.generation}`;
@@ -226,7 +231,7 @@ export class TargetIndex {
   private includeClosureUncached(
     startFile: string,
     startModel: DocModel,
-    limit = 64
+    limit = CLOSURE_LIMIT
   ): { file: string; model: DocModel }[] {
     const out: { file: string; model: DocModel }[] = [{ file: startFile, model: startModel }];
     const seen = new Set([startFile]);
@@ -257,7 +262,13 @@ export class TargetIndex {
     const model = this.getModel(doc);
     const symbols = new Set<string>();
     let complete = true;
-    for (const { file, model: m } of this.includeClosure(doc.uri.fsPath, model)) {
+    const closure = this.includeClosure(doc.uri.fsPath, model);
+    // Hitting the traversal cap means files were left out, so the table is partial -
+    // which is exactly the condition closureComplete exists to report. Without this,
+    // a large project produced confident "not defined" warnings for symbols that were
+    // simply never visited.
+    if (closure.length >= CLOSURE_LIMIT) complete = false;
+    for (const { file, model: m } of closure) {
       for (const d of m.decls) symbols.add(d.name);
       for (const inc of m.includes) {
         if (!this.resolveInclude(file, inc.path)) complete = false;
@@ -379,6 +390,9 @@ export class TargetIndex {
     return out;
   }
 }
+
+/** How many files one traversal will visit before giving up. */
+const CLOSURE_LIMIT = 64;
 
 /** Maximum `include` nesting TARGET allows; a 9-deep chain fails to compile. */
 export const MAX_INCLUDE_DEPTH = 8;
