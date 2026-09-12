@@ -5,15 +5,15 @@
 Tested against 236 scripts from 21 public repositories, with the real compiler as the
 reference. Four false positives found and fixed:
 
-- **A  that another script includes is a library, not an entry script.** Real
-  projects use the extension for both -  is included by
-   - and a library file needs no  of its own.
-- ** is not an increment.** It is a modifier plus a unary-plus
+- **A `.tmc` that another script includes is a library, not an entry script.** Real
+  projects use the extension for both - `DCS_F-14AB_Tomcat_JESTER.tmc` is included by
+  `DCS_F-14AB_Tomcat_main.tmc` - and a library file needs no `main()` of its own.
+- **`L_CTL++USB[0x09]` is not an increment.** It is a modifier plus a unary-plus
   scancode, the compiler accepts it, and scripts in the wild write it that way.
-- ** handles above 99 are a note, not an error.** The manual documents 0-99;
+- **`REXEC` handles above 99 are a note, not an error.** The manual documents 0-99;
   the compiler accepts any value, verified past 65536, and published DCS profiles use
   100 and 101.
-- ** inside  is a hint, not an error**, joining  -
+- **`LIST()` inside `EXEC()` is a hint, not an error**, joining `SetCustomCurve` -
   forbidden by the manual, accepted by the compiler, and used by a published script.
 
 ## 1.1.0

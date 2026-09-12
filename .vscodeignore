@@ -9,3 +9,6 @@ node_modules/**
 tsconfig.json
 .gitignore
 .claude/**
+
+# Other people's scripts, fetched for testing and never redistributed.
+corpus/**
