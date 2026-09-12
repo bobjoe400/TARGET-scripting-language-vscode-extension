@@ -4,6 +4,13 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { TargetIndex } from './index';
+import { BindingRef } from './binds';
+
+/** What a hover link asks the peek command to look up, since a hover is not the caret. */
+interface PeekTarget {
+  kind: 'key' | 'button';
+  code: string;
+}
 import { collectAliasBindings } from './model';
 import { computeDiagnostics, DIAG_SOURCE, RawDiagnostic, Severity } from './diagnostics';
 import {
@@ -88,6 +95,35 @@ export function activate(context: vscode.ExtensionContext): void {
       .getConfiguration('targetScript', resource ? vscode.Uri.file(resource) : undefined)
       .get<string>('installPath');
 
+  /**
+   * A lookup the unbound-key rule can use, or undefined when the rule is off.
+   *
+   * Opt-in because the answer is machine-local: it depends on which preset the game has
+   * loaded and which .binds files are on this disk. Measured on a real setup where the
+   * loaded preset was for different hardware than the script, 16% of the keys would
+   * have been reported - all of them correctly, and none of them usefully.
+   */
+  const unboundCheck = (
+    doc: vscode.TextDocument
+  ): ((code: string, modifiers: string[]) => boolean | null) | undefined => {
+    const on = vscode.workspace
+      .getConfiguration('targetScript', doc.uri)
+      .get<boolean>('diagnostics.unboundKeys');
+    if (!on) return undefined;
+    const binds = index.getBindsIndex(doc);
+    // Nothing to compare against is not the same as "bound to nothing".
+    if (!binds.files.length) return () => null;
+    return (code, modifiers) => {
+      const refs = binds.byUsbCode.get(code);
+      if (!refs?.length) return false;
+      const sorted = [...modifiers].sort();
+      return refs.some((r) => {
+        const a = [...r.modifiers].sort();
+        return a.length === sorted.length && a.every((v, i) => v === sorted[i]);
+      });
+    };
+  };
+
   const refresh = (doc: vscode.TextDocument) => {
     if (doc.languageId !== 'target') return;
     // Git diffs, timeline entries and other virtual documents have no path on disk;
@@ -137,6 +173,7 @@ export function activate(context: vscode.ExtensionContext): void {
       duplicateSymbols: graph?.duplicateSymbols,
       projectSymbols: project.symbols,
       projectComplete: project.complete,
+      isChordBound: unboundCheck(doc),
     });
     diagnostics.set(doc.uri, raw.map((d) => toVsDiagnostic(doc, d)));
   };
@@ -689,6 +726,81 @@ export function activate(context: vscode.ExtensionContext): void {
       // own, and the status bar already carries the running state and the stop action.
       vscode.window.showInformationMessage(
         `Launched ${path.basename(entry)} in TARGET${copied ? ' (from a copy on the Windows drive)' : ''}.`
+      );
+    }),
+
+    /**
+     * Every place the key or button under the cursor is bound - across every game and
+     * every preset, not just the active one.
+     *
+     * A peek rather than a bigger hover: it scrolls, takes the keyboard, shows the
+     * surrounding XML or Lua, and is the control VS Code already uses for "the same
+     * thing, in several files". The hover answers what this chord does right now; this
+     * answers where else it is spoken for.
+     */
+    vscode.commands.registerCommand('targetScript.peekBindings', async (target?: PeekTarget) => {
+      const ed = vscode.window.activeTextEditor;
+      if (!ed || ed.document.languageId !== 'target') return;
+      const doc = ed.document;
+      const pos = ed.selection.active;
+
+      // A hover follows the MOUSE, not the caret, so a link inside one has to name what
+      // it meant. Invoked from the menu or the palette there is no argument and the
+      // caret is the only thing to go on.
+      const usb = target?.kind === 'key' ? null : doc.getWordRangeAtPosition(pos, /USB\s*\[\s*0[xX][0-9A-Fa-f]+\s*\]/);
+      const dx = target?.kind === 'button' ? null : doc.getWordRangeAtPosition(pos, /\bDX\d+\b/);
+      // Deliberately unnarrowed: the point is to see the whole picture.
+      const binds = index.getBindsIndex(doc, false);
+      let refs: BindingRef[] = [];
+      let what = '';
+      if (target?.kind === 'key') {
+        refs = binds.byUsbCode.get(target.code) ?? [];
+        what = `USB[0x${target.code}]`;
+      } else if (target?.kind === 'button') {
+        refs = binds.byButton.get(Number(target.code)) ?? [];
+        what = `DX${target.code}`;
+      } else if (usb) {
+        const hex = /0[xX]([0-9A-Fa-f]+)/.exec(doc.getText(usb))![1].toUpperCase().replace(/^0+(?=.)/, '').padStart(2, '0');
+        refs = binds.byUsbCode.get(hex) ?? [];
+        what = doc.getText(usb);
+      } else if (dx) {
+        const n = Number(doc.getText(dx).slice(2));
+        refs = binds.byButton.get(n) ?? [];
+        what = doc.getText(dx);
+      } else {
+        vscode.window.showInformationMessage(
+          'Put the cursor on a USB[0x..] scancode or a DX button to see where it is bound.'
+        );
+        return;
+      }
+
+      if (!refs.length) {
+        vscode.window.showInformationMessage(
+          binds.files.length
+            ? `${what} is not bound in any of the ${binds.files.length} binding files found near this script.`
+            : `No game binding files were found near this script. Set targetScript.bindsFolder to point at them.`
+        );
+        return;
+      }
+
+      // One location per action per place it is declared; the same binding reached
+      // through two copies of a file is one place, not two.
+      const seen = new Set<string>();
+      const locations: vscode.Location[] = [];
+      for (const r of refs) {
+        const key = `${r.path}\u0000${r.line}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        locations.push(
+          new vscode.Location(vscode.Uri.file(r.path), new vscode.Position(Math.max(0, r.line - 1), 0))
+        );
+      }
+      await vscode.commands.executeCommand(
+        'editor.action.peekLocations',
+        doc.uri,
+        pos,
+        locations,
+        'peek'
       );
     }),
 

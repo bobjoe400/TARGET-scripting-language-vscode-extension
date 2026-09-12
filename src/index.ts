@@ -173,12 +173,17 @@ export class TargetIndex {
    * workspace root - which is where the community layouts keep them (a BindFiles
    * folder next to ScriptFiles).
    */
-  getBindsIndex(doc: vscode.TextDocument): BindsIndex {
+  /**
+   * @param narrow when false, every binding file found is read - all games, all presets.
+   *   The hover wants the narrowed answer for the active preset; "show me everywhere
+   *   this is bound" is a different question and wants the whole picture.
+   */
+  getBindsIndex(doc: vscode.TextDocument, narrow = true): BindsIndex {
     // The directory scan below is synchronous and runs on the extension host thread,
     // and a hover should not pay for a readdir of the workspace root. Its result is
     // held briefly, keyed on where we looked rather than on what we found.
     const settings = vscode.workspace.getConfiguration('targetScript', doc.uri);
-    const scanKey = `${doc.uri.fsPath}\u0000${settings.get<string>('bindsFolder') ?? ''}`;
+    const scanKey = `${narrow}\u0000${doc.uri.fsPath}\u0000${settings.get<string>('bindsFolder') ?? ''}`;
     const scanned = this.bindsScanCache.get(scanKey);
     if (scanned && Date.now() - scanned.at < 5000) return scanned.index;
 
@@ -224,7 +229,7 @@ export class TargetIndex {
     // Strictly a hint. It lives in the user's own roaming profile, not in the project,
     // so anyone who clones a script repo has none - and the behaviour without it must be
     // exactly what it was before. It only ever narrows, and never to nothing.
-    const associated = this.associatedGame(doc);
+    const associated = narrow ? this.associatedGame(doc) : null;
     if (associated) {
       const forGame = unique.filter((f) => bindingFormat(f) === associated);
       if (forGame.length) unique = forGame;
@@ -235,7 +240,7 @@ export class TargetIndex {
     // they bind the same keys to different actions, so merging them answers the question
     // with a pile of contradictions. When the active one is known, only it is read.
     let activePreset: string | null = null;
-    for (const dir of presetDirs) {
+    for (const dir of narrow ? presetDirs : []) {
       const names = activePresetNames(dir);
       const matched = names.find((n) => unique.some((f) => fileMatchesPreset(f, n)));
       if (matched) {
@@ -263,7 +268,7 @@ export class TargetIndex {
       .join('|');
     // Keyed on the file set: two documents in different folders would otherwise
     // evict each other on every hover.
-    const cacheKey = `${activePreset ?? ''}\u0000${unique.join('|')}`;
+    const cacheKey = `${narrow}\u0000${activePreset ?? ''}\u0000${unique.join('|')}`;
     const hit = this.bindsCache.get(cacheKey);
     if (hit && hit.stamp === stamp) {
       if (this.bindsScanCache.size > 16) this.bindsScanCache.clear();

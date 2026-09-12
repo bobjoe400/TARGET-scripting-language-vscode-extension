@@ -242,6 +242,34 @@ expectClean('SetSCurve valid',     'int f() { SetSCurve(&Joystick, JOYX, 0, 0, 0
 expectClean('negative curve ok',   'int f() { SetSCurve(&Joystick, JOYX, 0, 0, 0, -20, 0); }');
 expectClean('TrimDXAxis w/ CURRENT','int f() { TrimDXAxis(DX_X_AXIS, CURRENT); }');
 
+// --- keys the game does nothing with (opt-in) ------------------------------
+// Off unless asked for: the answer depends on which preset the game has loaded and
+// which .binds files are on this disk, so the same project reports differently on
+// another machine. An unrecognised modifier is NOT reported as unbound - that chord is
+// unknown, not empty, and it has its own report.
+{
+  const src = 'define A  L_ALT+USB[0x4F]\ndefine B  USB[0x4F]\ndefine C  L_BOGUS+USB[0x4F]\n';
+  const model = buildModel(src);
+  const bound = (code, mods) => (code === '4F' ? mods.length === 1 && mods[0] === 'L_ALT' : null);
+
+  const off = computeDiagnostics(model, 'x.tmh', {});
+  if (!off.some((d) => d.code === 'unbound-key')) {
+    pass++; console.log('  ok    unbound keys are silent unless asked for');
+  } else failures.push('unbound-key fired with no lookup supplied');
+
+  const on = computeDiagnostics(model, 'x.tmh', { isChordBound: bound }).filter((d) => d.code === 'unbound-key');
+  const msgs = on.map((d) => d.message);
+  if (on.length === 1 && /0x4F/.test(msgs[0]) && on[0].severity === 'info') {
+    pass++; console.log('  ok    only the chord the game ignores is reported, as information');
+  } else failures.push(`unbound-key: ${on.length} -> ${JSON.stringify(msgs)}`);
+
+  // Nothing to compare against must not read as "bound to nothing".
+  const noData = computeDiagnostics(model, 'x.tmh', { isChordBound: () => null }).filter((d) => d.code === 'unbound-key');
+  if (noData.length === 0) {
+    pass++; console.log('  ok    no binding files means no answer, not a wrong one');
+  } else failures.push(`unbound-key with no data: ${noData.length}`);
+}
+
 for (const f of failures) console.log(`  FAIL  ${f}`);
 console.log(`  ${pass}/${pass + failures.length} rule assertions passed`);
 

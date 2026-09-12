@@ -31,7 +31,7 @@ const commands = stub.__recorded.commands;
 
 console.log('Command layer');
 console.log('-------------');
-for (const id of ['targetScript.compile', 'targetScript.run', 'targetScript.stop']) {
+for (const id of ['targetScript.compile', 'targetScript.run', 'targetScript.stop', 'targetScript.peekBindings']) {
   if (commands.has(id)) { pass++; console.log(`  ok    ${id} registered`); }
   else failures.push(`${id} was not registered`);
 }
@@ -321,6 +321,42 @@ const noScriptError = () =>
     console.log('  ok    run and compile refuse to execute in an untrusted workspace');
   } else {
     failures.push(`trust gate: run refused=${refusedRun} compile refused=${refusedCompile}`);
+  }
+}
+
+// --- peek: every place a key is bound, across games and presets ------------
+// The hover answers what this chord does in the active preset; this answers where
+// else it is spoken for, so it reads the binding files UNNARROWED. Driven through
+// editor.action.peekLocations with real Location objects - a markdown command link
+// cannot call that directly, since its arguments arrive as plain JSON.
+{
+  const bindsDoc = mkDoc(entry);
+  stub.__reset();
+  stub.workspace.textDocuments = [bindsDoc];
+  stub.window.activeTextEditor = { document: bindsDoc, selection: { active: new stub.Position(0, 0) } };
+
+  // 0x18 is bound in the sample .binds; asked for explicitly, as a hover link does.
+  await commands.get('targetScript.peekBindings')({ kind: 'key', code: '18' });
+  const peek = stub.__recorded.executed.find((e) => e.id === 'editor.action.peekLocations');
+  if (peek && Array.isArray(peek.args[2]) && peek.args[2].length >= 1 && peek.args[2][0].uri) {
+    pass++;
+    console.log(`  ok    peek opens ${peek.args[2].length} location(s) for a bound key`);
+  } else {
+    failures.push(`peekBindings: ${JSON.stringify(stub.__recorded.executed.map((e) => e.id))}`);
+  }
+
+  // An unbound code says so rather than opening an empty peek.
+  stub.__reset();
+  stub.workspace.textDocuments = [bindsDoc];
+  stub.window.activeTextEditor = { document: bindsDoc, selection: { active: new stub.Position(0, 0) } };
+  await commands.get('targetScript.peekBindings')({ kind: 'key', code: 'FF' });
+  const opened = stub.__recorded.executed.some((e) => e.id === 'editor.action.peekLocations');
+  const told = stub.__recorded.infos.some((m) => /not bound|No game binding files/i.test(String(m)));
+  if (!opened && told) {
+    pass++;
+    console.log('  ok    an unbound key is reported, not shown as an empty peek');
+  } else {
+    failures.push(`unbound peek: opened=${opened} told=${told}`);
   }
 }
 

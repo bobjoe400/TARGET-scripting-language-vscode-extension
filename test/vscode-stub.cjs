@@ -41,7 +41,7 @@ const enumOf = (names) => Object.fromEntries(names.map((n, i) => [n, i]));
 const config = new Map();
 
 // Recorded interactions, so a test can assert what the extension told the user.
-const recorded = { errors: [], infos: [], warnings: [], commands: new Map(), quickPicks: [], statusBarItems: [] };
+const recorded = { errors: [], infos: [], warnings: [], commands: new Map(), quickPicks: [], statusBarItems: [] , executed: []};
 let quickPickAnswer = undefined;
 let warningAnswer = undefined;
 const noop = () => ({ dispose() {} });
@@ -68,7 +68,10 @@ module.exports = {
   },
   commands: {
     registerCommand: (id, fn) => { recorded.commands.set(id, fn); return { dispose() {} }; },
-    executeCommand: async () => undefined,
+    executeCommand: async (id, ...args) => {
+      recorded.executed.push({ id, args });
+      return undefined;
+    },
   },
   workspace: {
     // A normal workspace is trusted; the untrusted case is exercised explicitly.
@@ -123,6 +126,7 @@ module.exports = {
     recorded.infos.length = 0;
     recorded.warnings.length = 0;
     recorded.quickPicks.length = 0;
+    recorded.executed.length = 0;
     quickPickAnswer = undefined;
     warningAnswer = undefined;
     module.exports.window.activeTextEditor = undefined;

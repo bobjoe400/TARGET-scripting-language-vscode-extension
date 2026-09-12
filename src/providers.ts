@@ -423,16 +423,16 @@ export class TargetHoverProvider implements vscode.HoverProvider {
         const describesChord = !inComment && (chord.modifiers.length > 0 || chord.unknown.length > 0);
         const parts =
           bound.length || describesChord
-            ? renderBindings(bound, chord, label, binds.activePreset, true)
+            ? renderBindings(bound, chord, label, binds.activePreset, true, { kind: 'key', code: normalised })
             : [`**${escapeMarkdown(label)}**`];
         // The hover covers the whole chord, so the underline matches what it describes.
         const chordStart = describesChord
           ? new vscode.Position(usbRange.start.line, usbRange.start.character - (/((?:(?:[A-Za-z_]\w*|USB\s*\[[^\]]*\])\s*\+\s*)+)$/.exec(lineText.slice(0, usbRange.start.character))?.[1].length ?? 0))
           : usbRange.start;
-        return new vscode.Hover(
-          new vscode.MarkdownString(parts.join('\n\n'), true),
-          new vscode.Range(chordStart, usbRange.end)
-        );
+        const body = new vscode.MarkdownString(parts.join('\n\n'), true);
+        // A narrow grant: only this command, never blanket trust.
+        body.isTrusted = { enabledCommands: ['targetScript.peekBindings'] };
+        return new vscode.Hover(body, new vscode.Range(chordStart, usbRange.end));
       }
     }
 
@@ -687,7 +687,8 @@ export function renderBindings(
   chord: Chord,
   keyLabel: string | null,
   activePreset: string | null,
-  showChord = false
+  showChord = false,
+  peek?: { kind: 'key' | 'button'; code: string }
 ): string[] {
   const out: string[] = [];
 
@@ -702,11 +703,10 @@ export function renderBindings(
   }
 
   const exact = all.filter((r) => chordMatches(r, chord.modifiers));
-  const others = all.filter((r) => !chordMatches(r, chord.modifiers));
   const chordLabel = [...chord.modifiers, keyLabel ?? 'this key'].map((p) => code(p)).join(' + ');
 
   /** One row per action per place it is declared, slots folded together. */
-  const rows = (refs: BindingRef[], note?: (r: BindingRef) => string | undefined): string => {
+  const rows = (refs: BindingRef[]): string => {
     const folded = new Map<string, { ref: BindingRef; slots: Set<string> }>();
     for (const r of refs) {
       const key = `${r.action}\u0000${r.path}\u0000${r.line}`;
@@ -721,8 +721,6 @@ export function renderBindings(
       .map(({ ref, slots }) => {
         const target = `${vscode.Uri.file(ref.path).toString()}#L${ref.line}`;
         const bits: string[] = [];
-        const n = note?.(ref);
-        if (n) bits.push(n);
         if (manyFiles) bits.push(code(ref.file));
         if (slots.size && ![...slots].some((sl) => sl === 'primary' || sl === '')) {
           bits.push([...slots].join(' & '));
@@ -751,18 +749,17 @@ export function renderBindings(
     return out;
   }
 
-  // The case the old hover concealed: this chord does nothing, and the rows it was
-  // showing belonged to other lines of the script. Reached with no bindings at all too,
-  // which is the common case for a mistyped chord.
+  // The chord does nothing. That IS the answer, and it is the whole answer: what the
+  // same key does under OTHER modifiers belongs to other lines of the script, which is
+  // the reason those rows were dropped from the match case. Bringing them back here
+  // under a different heading was the same noise relabelled. Anyone who does want the
+  // whole picture has the peek, which is built for exactly that.
   const games = [...new Set(all.map((r) => r.game))];
   const where = games.length ? games.map((g) => `**${g}**`).join(' or ') : 'any binding file found';
   out.push(`Nothing in ${where} is bound to ${chordLabel}.`);
-  if (others.length) {
-    out.push(
-      'Same key, other modifiers:',
-      rows(others, (r) => (r.modifiers.length ? `needs ${r.modifiers.join(' + ')}` : 'no modifier')),
-      source(others)
-    );
+  if (peek) {
+    const args = encodeURIComponent(JSON.stringify([peek]));
+    out.push(`[$(search) Show everywhere this is bound](command:targetScript.peekBindings?${args})`);
   }
   return out;
 }

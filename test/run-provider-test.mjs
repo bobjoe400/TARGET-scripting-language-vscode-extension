@@ -624,9 +624,13 @@ for (const [label, src, needle] of [
     } else failures.push(`bare chord: ${JSON.stringify(bare.slice(0, 200))}`);
 
     // Nothing bound to this chord is a real answer, and the old hover concealed it.
-    const none = renderBindings(refs, parseChord('R_ALT+'), 'Right Arrow', null).join('\n');
-    if (/Nothing in \*\*Elite Dangerous\*\* is bound to/.test(none) && /Same key, other modifiers/.test(none) && /needs L_ALT/.test(none)) {
-      pass++; console.log('  ok    an unbound chord says so, and shows the near misses');
+    // It is also the WHOLE answer: what the same key does under other modifiers belongs
+    // to other lines of the script, which is why those rows are absent from the match
+    // case. Repeating them here was the same noise under a new heading; the peek exists
+    // for anyone who does want the whole picture.
+    const none = renderBindings(refs, parseChord('R_ALT+'), 'Right Arrow', null, true, { kind: 'key', code: '4F' }).join('\n');
+    if (/Nothing in \*\*Elite Dangerous\*\* is bound to/.test(none) && !/needs L_ALT/.test(none) && !/IncreaseWeaponsPower/.test(none) && /peekBindings/.test(none)) {
+      pass++; console.log('  ok    an unbound chord says only that, and offers the peek');
     } else failures.push(`unbound: ${JSON.stringify(none.slice(0, 220))}`);
 
     // An unrecognised term must never fall back to the bare key - the user's own corpus

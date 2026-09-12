@@ -2,7 +2,7 @@
   "name": "target-script",
   "displayName": "TARGET Script (Thrustmaster)",
   "description": "Language support for the Thrustmaster T.A.R.G.E.T. HOTAS scripting language (.tmc, .tmh, .ttm): syntax highlighting, device-aware completion, hover docs, outline and diagnostics.",
-  "version": "0.18.0",
+  "version": "0.19.0",
   "publisher": "bobjoe400",
   "license": "MIT",
   "engines": {
@@ -79,6 +79,11 @@
           "default": "",
           "markdownDescription": "Folder to search for game binding files: Elite Dangerous `.binds`, DCS World `.diff.lua`, or Star Citizen ActionMaps `.xml`. Leave empty to search beside the script, one level up, and in the workspace root.",
           "scope": "machine-overridable"
+        },
+        "targetScript.diagnostics.unboundKeys": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Report keys the game's current bindings do nothing with, as Information in the Problems panel. Off by default: the answer depends on which preset the game has loaded and which binding files are on this machine, so the same project reports differently elsewhere."
         }
       }
     },
@@ -100,6 +105,11 @@
         "title": "Stop Running Script",
         "category": "TARGET",
         "icon": "$(debug-stop)"
+      },
+      {
+        "command": "targetScript.peekBindings",
+        "title": "Show Where This Key Is Bound",
+        "category": "TARGET Script"
       }
     ],
     "menus": {
@@ -115,6 +125,10 @@
         {
           "command": "targetScript.stop",
           "when": "editorLangId == target || targetScript.running"
+        },
+        {
+          "command": "targetScript.peekBindings",
+          "when": "editorLangId == target"
         }
       ],
       "editor/title": [
@@ -127,6 +141,13 @@
           "command": "targetScript.compile",
           "when": "resourceLangId == target",
           "group": "navigation@2"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "targetScript.peekBindings",
+          "when": "editorLangId == target",
+          "group": "navigation@1"
         }
       ]
     }

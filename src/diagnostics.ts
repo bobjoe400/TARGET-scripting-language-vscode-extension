@@ -7,7 +7,7 @@
 import * as path from 'path';
 import { DocModel, CallNode } from './model';
 import { TokKind, lex } from './lexer';
-import { SCRIPT_MODIFIERS, SCRIPT_STATE_FLAGS } from './binds';
+import { SCRIPT_MODIFIERS, SCRIPT_STATE_FLAGS, parseChord } from './binds';
 import {
   functionsByName,
   constantsByName,
@@ -184,6 +184,16 @@ export interface DiagnosticOptions {
    */
   projectSymbols?: Set<string>;
   projectComplete?: boolean;
+  /**
+   * Whether the game binds a chord: true, false, or null when nothing can be said.
+   *
+   * Off unless the user asks for it, because the answer depends on machine-local state -
+   * which preset the game has loaded, and which .binds files happen to be on this disk.
+   * A clone of the same project on another machine would light up differently, and a
+   * script written for one stick while another preset is loaded would light up almost
+   * everywhere.
+   */
+  isChordBound?: (usbCode: string, modifiers: string[]) => boolean | null;
   /**
    * True only when every `include` in the graph was resolved. When a file could not
    * be found, the symbol table is incomplete and the checks that rely on it are
@@ -637,6 +647,35 @@ export function computeDiagnostics(
       );
     }
 
+  }
+
+  // ---- a key the game does nothing with -----------------------------------
+  if (opts.isChordBound) {
+    const seen = new Set<string>();
+    for (const t of model.tokens) {
+      if (t.kind !== TokKind.Ident || t.value !== 'USB') continue;
+      const m = /^USB\s*\[\s*0[xX]([0-9A-Fa-f]+)\s*\]/.exec(model.text.slice(t.start));
+      if (!m) continue;
+      const end = t.start + m[0].length;
+      const code = m[1].toUpperCase().replace(/^0+(?=.)/, '').padStart(2, '0');
+      const lineStart = model.text.lastIndexOf('\n', t.start) + 1;
+      const chord = parseChord(model.text.slice(lineStart, t.start));
+      // An unrecognised term means the chord is not known, so it cannot be called
+      // unbound; that case has its own report.
+      if (chord.unknown.length) continue;
+      const bound = opts.isChordBound(code, chord.modifiers);
+      if (bound !== false) continue;
+      const label = [...chord.modifiers, `0x${code}`].join(' + ');
+      if (seen.has(label + lineStart)) continue;
+      seen.add(label + lineStart);
+      add(
+        t.start,
+        end,
+        `The game's current bindings do nothing with ${label}. This depends on which preset the game has loaded, so it is informational only.`,
+        'info',
+        'unbound-key'
+      );
+    }
   }
 
   // ---- a name used in a define's value that nothing declares ---------------
