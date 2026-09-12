@@ -74,6 +74,10 @@ const T = [
   ['EXEC device inside',      'EXEC("SetSCurve(&Joystick, JOYX, 0,0,0,5,0);");', 'Joystick', 'support.class.device'],
   ['EXEC number inside',      'EXEC("tgTriggerMode(1);");', '1', 'constant.numeric'],
   ['EXEC nested string',      'EXEC("fnVPOutput(\\"not used\\");");', '\\"', 'string.quoted.double.nested'],
+  // An unterminated string inside EXEC must bail at end of line like the top-level
+  // one, or typing `EXEC("` recolours the rest of the file as embedded code.
+  ['code after an unterminated EXEC string',
+    'int f()\n{\n\tMapKey(&Joystick, TG1, EXEC("foo();\n}\nint later = 5;\n', 'int', 'storage.type'],
 ];
 
 console.log('Grammar assertions');

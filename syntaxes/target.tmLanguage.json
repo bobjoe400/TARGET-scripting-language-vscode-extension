@@ -149,7 +149,7 @@
         {
           "name": "meta.embedded.target",
           "begin": "\"",
-          "end": "\"",
+          "end": "\"|(?=$)",
           "beginCaptures": {
             "0": {
               "name": "punctuation.definition.string.begin.target"

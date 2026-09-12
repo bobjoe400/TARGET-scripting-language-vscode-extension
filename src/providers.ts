@@ -374,15 +374,15 @@ export class TargetHoverProvider implements vscode.HoverProvider {
       const m = /0[xX]([0-9A-Fa-f]+)/.exec(doc.getText(usbRange));
       const name = m ? usbKeyName(m[1]) : null;
       if (name) {
+        const normalised = m![1].toUpperCase().replace(/^0+(?=.)/, '').padStart(2, '0');
         const parts = [
           `**${name}**`,
-          `USB HID keyboard code \`0x${m![1].toUpperCase()}\`, sent through the virtual keyboard.`,
+          `USB HID keyboard code \`0x${normalised}\`, sent through the virtual keyboard.`,
         ];
         // What the game does with that key, if a .binds file is to hand. The script
-        // itself cannot say: it sends keystrokes and the game decides.
-        const bound = this.index
-          .getBindsIndex(doc)
-          .byUsbCode.get(m![1].toUpperCase().padStart(2, '0'));
+        // itself cannot say: it sends keystrokes and the game decides. Looked up by the
+        // same normalised code, or USB[0x018] found its key name and missed its binding.
+        const bound = this.index.getBindsIndex(doc).byUsbCode.get(normalised);
         if (bound?.length) {
           const shown = bound.slice(0, 6).map((b) => {
             const mods = b.modifiers.length ? `${b.modifiers.join('+')}+ ` : '';

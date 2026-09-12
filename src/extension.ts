@@ -73,6 +73,8 @@ export function activate(context: vscode.ExtensionContext): void {
   // the synchronous body of activate().
   const compileDiags = vscode.languages.createDiagnosticCollection('target-compile');
   context.subscriptions.push(compileDiags);
+  /** Files the last compile put diagnostics on, so the next one can clear them. */
+  const lastCompileFiles = new Set<string>();
 
   // ---- diagnostics ----------------------------------------------------------
   const refresh = (doc: vscode.TextDocument) => {
@@ -128,11 +130,15 @@ export function activate(context: vscode.ExtensionContext): void {
   // problems stale until it was touched again.
   const debounces = new Map<string, NodeJS.Timeout>();
   const cancelRefresh = (uri: vscode.Uri) => {
-    const key = uri.toString();
-    const t = debounces.get(key);
-    if (t) {
-      clearTimeout(t);
-      debounces.delete(key);
+    // Both keys: a dependent refresh is armed under a 'dep:' prefix, and cancelling
+    // only the plain key let it fire after the close handler had already deleted the
+    // diagnostics - resurrecting problems for a closed file that nothing would clear.
+    for (const key of [uri.toString(), `dep:${uri.toString()}`]) {
+      const t = debounces.get(key);
+      if (t) {
+        clearTimeout(t);
+        debounces.delete(key);
+      }
     }
   };
   /** Re-runs the live rules for a dependent file, leaving its compile results alone. */
@@ -266,6 +272,23 @@ export function activate(context: vscode.ExtensionContext): void {
       // through WSL interop, and this runs for as long as a script is loaded - a whole
       // flight session - for a boolean that changes once.
     }, 5000);
+  };
+
+  /**
+   * Files the entry script reaches through its includes, so staging can carry the ones
+   * that live outside its own folder - `include "../common/x.tmh"` is ordinary.
+   */
+  const closureFilesFor = (entry: string): string[] => {
+    const open = vscode.workspace.textDocuments.find(
+      (d) => d.uri.scheme === 'file' && d.uri.fsPath === entry
+    );
+    try {
+      const model = open ? index.getModel(open) : index.getModelForPath(entry);
+      if (!model) return [];
+      return index.includeClosure(entry, model).map((c) => c.file);
+    } catch {
+      return [];
+    }
   };
 
   const requireInstall = (): TargetInstall | null => {
@@ -416,8 +439,11 @@ export function activate(context: vscode.ExtensionContext): void {
 
       // Only this entry script's own results; clear() wiped every file in the window,
       // so compiling one project erased another project's errors.
+      // Everything the previous compile wrote, not just what this one reports: a file
+      // whose error is fixed drops out of the list and would otherwise stay red.
+      for (const f of lastCompileFiles) compileDiags.delete(vscode.Uri.file(f));
+      lastCompileFiles.clear();
       compileDiags.delete(vscode.Uri.file(entry));
-      for (const p of result.problems) compileDiags.delete(vscode.Uri.file(p.file));
       if (result.error) {
         vscode.window.showErrorMessage(`Compile check failed: ${result.error}`);
         return;
@@ -461,7 +487,10 @@ export function activate(context: vscode.ExtensionContext): void {
         if (!byFile.has(key)) byFile.set(key, []);
         byFile.get(key)!.push(d);
       }
-      for (const [file, diags] of byFile) compileDiags.set(vscode.Uri.file(file), diags);
+      for (const [file, diags] of byFile) {
+        compileDiags.set(vscode.Uri.file(file), diags);
+        lastCompileFiles.add(file);
+      }
 
       const first = result.problems[0];
       vscode.window
@@ -599,6 +628,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
 
     vscode.commands.registerCommand('targetScript.stop', async () => {
+      if (!requireTrust('Stopping TARGET')) return;
       if (unsupportedHost()) return;
       const res = await stopScript();
       clearRunStatus();

@@ -93,7 +93,11 @@ expect('too many args',       'int f() { MapKey(&Joystick, TG1, 0, 0, 9, 9); }',
 expect('SEQ inside EXEC',     'int f() { MapKey(&Joystick, S1, EXEC("SEQ(a,b);")); }', 'forbidden-in-exec');
 expect('CHAIN inside EXEC',   'int f() { MapKey(&Joystick, S1, EXEC("CHAIN(a,b);")); }', 'forbidden-in-exec');
 expect('EXEC inside EXEC',    'int f() { MapKey(&Joystick, S1, EXEC("EXEC(\\"x();\\");")); }', 'forbidden-in-exec');
-expect('SetCustomCurve EXEC', 'int f() { MapKey(&Joystick, S1, EXEC("SetCustomCurve(&Joystick, JOYX, 0);")); }', 'forbidden-in-exec');
+// Thrustmaster's manual forbids this, their own shipped samples do it, and it
+// compiles - so it is a hint that names the disagreement, not an error.
+expect('SetCustomCurve in EXEC is disputed', 'int f() { MapKey(&Joystick, S1, EXEC("SetCustomCurve(&Joystick, JOYX, 0);")); }', 'disputed-in-exec');
+expect('EXEC second argument is checked too', 'int f() { MapKey(&Joystick, S1, EXEC("a();", "SEQ(x,y);")); }', 'forbidden-in-exec');
+expectClean('single-token define is a value',  'define ZOOM(DX5)\nint f() { return ZOOM; }');
 expect('forbidden in REXEC',  'int f() { REXEC(0, 500, "SEQ(a,b);"); }', 'forbidden-in-exec');
 expect('REXEC handle high',   'int f() { REXEC(100, 500, "fn();"); }', 'rexec-handle');
 expect('REXEC handle neg',    'int f() { REXEC(-1, 500, "fn();"); }', 'rexec-handle');

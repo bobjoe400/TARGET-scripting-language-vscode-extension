@@ -14,6 +14,7 @@ import {
   devices,
   NOT_IN_TARGET,
   FORBIDDEN_IN_EXEC,
+  DISPUTED_IN_EXEC,
   own,
 } from './builtins';
 
@@ -293,8 +294,12 @@ export function computeDiagnostics(
         if (name?.kind === TokKind.Ident && paren?.kind === TokKind.Punct && paren.value === '(' && name.end === paren.start) {
           const close = sig.findIndex((x, k) => k > i + 2 && x.kind === TokKind.Punct && x.value === ')');
           const inner = close > i + 2 ? sig.slice(i + 3, close) : [];
+          // At least one comma. With a single token there is nothing to distinguish a
+          // parameter list from a parenthesised body, and `define ZOOM(DX5)` - an
+          // ordinary object-like macro that compiles - matched the looser test.
           const looksParameterised =
-            inner.length > 0 &&
+            inner.length >= 3 &&
+            inner.some((x) => x.kind === TokKind.Punct && x.value === ',') &&
             inner.every((x, k) => (k % 2 === 0 ? x.kind === TokKind.Ident : x.kind === TokKind.Punct && x.value === ','));
           if (looksParameterised) {
             add(
@@ -655,9 +660,13 @@ export function computeDiagnostics(
     // ---- constructs forbidden inside EXEC / REXEC ----------------------------
     if (call.name === 'EXEC' || call.name === 'REXEC') {
       // EXEC's code is its first argument; REXEC's is its third.
-      const codeArgIndex = call.name === 'EXEC' ? 0 : 2;
-      const arg = call.args[codeArgIndex];
-      if (arg) checkExecBody(arg.start, arg.end, call.name);
+      // EXEC(alias cmdon, int cmdoff) carries code in BOTH arguments - the shipped
+      // DCS FC2 A-10A.tmc uses that form - so only checking the first under-reported.
+      const codeArgIndexes = call.name === 'EXEC' ? [0, 1] : [2];
+      for (const i of codeArgIndexes) {
+        const arg = call.args[i];
+        if (arg) checkExecBody(arg.start, arg.end, call.name);
+      }
     }
 
     // ---- REXEC handle must be 0..99 -----------------------------------------
@@ -871,6 +880,16 @@ export function computeDiagnostics(
       if (t.kind !== TokKind.Ident) continue;
       const next = toks[k + 1];
       if (!next || next.kind !== TokKind.Punct || next.value !== '(') continue;
+      if (DISPUTED_IN_EXEC.has(t.value)) {
+        add(
+          baseOffset + t.start,
+          baseOffset + t.end,
+          `The manual says ${t.value}() cannot be used inside ${outer}(), but Thrustmaster's own sample scripts do exactly this and it compiles. If it does not behave, move it into a named function and call that from ${outer}().`,
+          'info',
+          'disputed-in-exec'
+        );
+        continue;
+      }
       if (!FORBIDDEN_IN_EXEC.has(t.value)) continue;
       add(
         baseOffset + t.start,

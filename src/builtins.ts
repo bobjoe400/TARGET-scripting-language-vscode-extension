@@ -162,13 +162,26 @@ export const NOT_IN_TARGET: Record<string, string> = {
  * The manual enumerates them exactly: "using SEQ, CHAIN, EXEC, TEMPO, AXIS, LIST
  * inside an EXEC is forbidden. This limit can be overcome by creating a function which
  * contains the SEQ, CHAIN, EXEC, TEMPO, AXIS, LIST and calls up that function in the
- * EXEC statement." SetCustomCurve is documented separately with the same restriction.
+ * EXEC statement." SetCustomCurve is documented separately, but see DISPUTED_IN_EXEC.
  *
  * REXEC is deliberately absent. It is not in the manual's list, and the manual shows
  * EXEC("StopAutoRepeat(4);") as the supported way to interact with a running REXEC, so
  * flagging it would be asserting a restriction nothing supports.
  */
-export const FORBIDDEN_IN_EXEC = new Set(['SEQ', 'CHAIN', 'EXEC', 'TEMPO', 'AXIS', 'LIST', 'SetCustomCurve']);
+export const FORBIDDEN_IN_EXEC = new Set(['SEQ', 'CHAIN', 'EXEC', 'TEMPO', 'AXIS', 'LIST']);
+
+/**
+ * Documented as forbidden inside EXEC, but contradicted by Thrustmaster's own code.
+ *
+ * The manual states plainly: "a SetCustomCurve Statement cannot be used in an EXEC
+ * function." Yet DCS BlackShark.tmc, DCS FC2 A-10A.tmc and DCS FC2 Mig29.tmc - all
+ * shipped in the TARGET install - do exactly that, and those samples are what users
+ * copy. Compile acceptance settles nothing either way, since SEQ inside EXEC also
+ * compiles and is genuinely forbidden; the restriction is a runtime one and needs
+ * hardware to test. So this is a hint naming the disagreement, not an error on code
+ * that ships with the product.
+ */
+export const DISPUTED_IN_EXEC = new Set(['SetCustomCurve']);
 
 /**
  * The set of values an argument can sensibly take.

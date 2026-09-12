@@ -172,6 +172,24 @@ await check(
   }
 }
 
+// Includes reaching outside the script's own folder - a shared library a level up -
+// were dropped by staging, so the checker reported "File not found" on a project the
+// real compiler builds.
+{
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'parent-inc-'));
+  fs.mkdirSync(path.join(root, 'proj'));
+  fs.mkdirSync(path.join(root, 'common'));
+  fs.writeFileSync(path.join(root, 'common', 'helper.tmh'), 'int helperFn(int a) { return a; }\n');
+  const entry = path.join(root, 'proj', 'x.tmc');
+  fs.writeFileSync(entry, 'include "target.tmh"\ninclude "../common/helper.tmh"\nint main() { return helperFn(1); }\n');
+  const r = await R.compileCheck(entry, install, {
+    closureFiles: [entry, path.join(root, 'common', 'helper.tmh')],
+  });
+  if (r.ok) { pass++; console.log('  ok    an include from a parent folder compiles'); }
+  else failures.push(`parent include: ${r.problems.map((p) => p.message).join(' | ')}`);
+  fs.rmSync(root, { recursive: true, force: true });
+}
+
 // The real corpus, if it is on this machine, must still compile.
 const realProject = 'C:\\Thrustmaster\\ED_TargetScript_T16000\\ScriptFiles\\ED_ENHANCED_T16000.tmc';
 const realWsl = '/mnt/c/Thrustmaster/ED_TargetScript_T16000/ScriptFiles/ED_ENHANCED_T16000.tmc';

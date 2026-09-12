@@ -182,6 +182,18 @@ function listScriptFiles(root: string, prefix = '', depth = 0): string[] {
   return out;
 }
 
+/** Deepest directory containing all the given paths. */
+function commonAncestor(dirs: string[]): string {
+  const parts = dirs.filter(Boolean).map((d) => path.resolve(d).split(path.sep));
+  if (parts.length === 0) return process.cwd();
+  const first = parts[0];
+  let i = 0;
+  for (; i < first.length; i++) {
+    if (!parts.every((p) => p[i] === first[i])) break;
+  }
+  return first.slice(0, i).join(path.sep) || path.sep;
+}
+
 const safeIsDir = (p: string) => {
   try {
     return fs.statSync(p).isDirectory();
@@ -260,15 +272,22 @@ export interface CompileResult {
 export async function compileCheck(
   scriptPath: string,
   install: TargetInstall,
-  opts: { stagingRoot?: string } = {}
+  opts: { stagingRoot?: string; closureFiles?: string[] } = {}
 ): Promise<CompileResult> {
   if (!install.interpreter) {
     return { ok: false, problems: [], output: '', error: 'Interpreter.exe not found in the TARGET install.' };
   }
 
   const projectDir = path.dirname(scriptPath);
+  // Includes may reach outside the script's own folder - `include "../common/x.tmh"`
+  // is ordinary for a shared library - and staging only the directory tree dropped
+  // those, reporting "File not found" on a project the real compiler builds. Mirroring
+  // from the common ancestor of everything in the include graph preserves the relative
+  // paths the includes are written with.
+  const stageRoot = commonAncestor([projectDir, ...(opts.closureFiles ?? []).map((f) => path.dirname(f))]);
   const stagingRoot = opts.stagingRoot ?? (await defaultStagingRoot());
   const stage = path.join(stagingRoot, `target-compile-${process.pid}-${Date.now()}`);
+  const entryDirInStage = path.join(stage, path.relative(stageRoot, projectDir));
 
   try {
     fs.mkdirSync(stage, { recursive: true });
@@ -281,16 +300,24 @@ export async function compileCheck(
     // The TARGET headers first, so a project file of the same name wins if it exists.
     // They get origin entries too: without them an error the compiler reports inside
     // target.tmh maps to a same-named path in the user's project, which is not there.
+    // Beside the entry script, because the interpreter resolves includes against its
+    // working directory and that is now the entry's own place in the mirrored tree.
+    fs.mkdirSync(entryDirInStage, { recursive: true });
     for (const h of TARGET_HEADERS) {
       const src = path.join(install.scripts, h);
       if (safeIsFile(src)) {
-        copyFileBytes(src, path.join(stage, h));
+        copyFileBytes(src, path.join(entryDirInStage, h));
         origin.set(h.toLowerCase(), src);
       }
     }
 
-    for (const rel of listScriptFiles(projectDir)) {
-      const src = path.join(projectDir, rel);
+    // Everything under the project, plus anything the include graph reaches outside it.
+    const sources = new Set<string>(listScriptFiles(projectDir).map((r) => path.join(projectDir, r)));
+    for (const f of opts.closureFiles ?? []) if (safeIsFile(f)) sources.add(f);
+
+    for (const src of sources) {
+      const rel = path.relative(stageRoot, src);
+      if (rel.startsWith('..')) continue; // outside the mirrored tree; cannot be staged
       const bytes = fs.readFileSync(src);
       const bom = bomKind(bytes);
       if (bom) bomFiles.push({ file: src, kind: bom });
@@ -302,7 +329,9 @@ export async function compileCheck(
     }
 
     const main = path.basename(scriptPath);
-    const { stdout, stderr, timedOut } = await runTool(install.interpreter, [main, NO_RUN_SENTINEL], stage);
+    // Run from where the entry script landed, so its own relative includes resolve
+    // exactly as they do in the real project.
+    const { stdout, stderr, timedOut } = await runTool(install.interpreter, [main, NO_RUN_SENTINEL], entryDirInStage);
     const output = `${stdout}${stderr}`.replace(/\r/g, '');
     if (timedOut) {
       return { ok: false, problems: [], output, error: 'Interpreter.exe did not finish within 60 seconds.' };
@@ -414,13 +443,20 @@ function runTool(
     let timedOut = false;
     child.stdout?.on('data', (d) => (stdout += d.toString()));
     child.stderr?.on('data', (d) => (stderr += d.toString()));
-    child.on('error', reject);
-    child.on('close', () => resolve({ stdout, stderr, timedOut }));
     const timer = setTimeout(() => {
       timedOut = true;
       child.kill();
     }, timeoutMs);
-    child.on('close', () => clearTimeout(timer));
+    // Cleared on error as well as close: a spawn failure otherwise left a live handle
+    // and a kill() aimed at a process that never started.
+    child.on('error', (e) => {
+      clearTimeout(timer);
+      reject(e);
+    });
+    child.on('close', () => {
+      clearTimeout(timer);
+      resolve({ stdout, stderr, timedOut });
+    });
   });
 }
 
@@ -498,15 +534,22 @@ export async function stopScript(): Promise<{ ok: boolean; error?: string }> {
  */
 export function resolveEntryScript(filePath: string): { entry: string | null; candidates: string[] } {
   if (/\.tmc$/i.test(filePath)) return { entry: filePath, candidates: [filePath] };
-  const dir = path.dirname(filePath);
+  // Beside the header first, then up the tree: a header in sub/ belongs to the .tmc in
+  // its parent, and reporting "no .tmc found next to it" was a confident wrong answer.
+  let dir = path.dirname(filePath);
   let candidates: string[] = [];
-  try {
-    candidates = fs
-      .readdirSync(dir)
-      .filter((f) => /\.tmc$/i.test(f))
-      .map((f) => path.join(dir, f));
-  } catch {
-    /* unreadable */
+  for (let up = 0; up < 4 && candidates.length === 0; up++) {
+    try {
+      candidates = fs
+        .readdirSync(dir)
+        .filter((f) => /\.tmc$/i.test(f))
+        .map((f) => path.join(dir, f));
+    } catch {
+      /* unreadable */
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
   }
   return { entry: candidates.length === 1 ? candidates[0] : null, candidates };
 }

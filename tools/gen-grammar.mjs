@@ -142,7 +142,10 @@ const grammar = {
           // Adjacent string literals concatenate, so each is matched on its own.
           name: 'meta.embedded.target',
           begin: '"',
-          end: '"',
+          // Bails at end of line like the top-level string rule. Without it, typing
+          // `EXEC("` recoloured every following line as embedded code until the
+          // closing quote was typed.
+          end: '"|(?=$)',
           beginCaptures: { 0: { name: 'punctuation.definition.string.begin.target' } },
           endCaptures: { 0: { name: 'punctuation.definition.string.end.target' } },
           contentName: 'meta.embedded.block.target',

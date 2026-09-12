@@ -89,7 +89,7 @@ split over a dozen headers and Thrustmaster's editor has no navigation at all.
 
 | Check | Example |
 | --- | --- |
-| Constructs forbidden inside `EXEC`/`REXEC` | `EXEC("SEQ(a,b);")` — the manual forbids `SEQ`, `CHAIN`, `EXEC`, `REXEC`, `TEMPO`, `AXIS`, `LIST`, `SetCustomCurve` there |
+| Constructs forbidden inside `EXEC`/`REXEC` | `EXEC("SEQ(a,b);")` — the manual forbids `SEQ`, `CHAIN`, `EXEC`, `TEMPO`, `AXIS` and `LIST` there. `REXEC` is not on that list and is not flagged. `SetCustomCurve` is a hint rather than an error: the manual forbids it, but Thrustmaster's own shipped samples do it |
 | Argument count | `MapKeyIOUMD` takes 2–8 arguments |
 | `REXEC` handle range | must be 0–99 |
 | `AXMAP2` zones vs events | the counts must match |
