@@ -34,6 +34,7 @@ import {
   usbKeyName,
   VARIADIC,
   devicesForHandle,
+  functionSignature,
 } from './builtins';
 
 export const TARGET_SELECTOR: vscode.DocumentSelector = { language: 'target' };
@@ -220,7 +221,7 @@ export class TargetCompletionProvider implements vscode.CompletionItemProvider {
             const f = functionsByName.get(n);
             if (!f) continue;
             const it: LazyItem = new vscode.CompletionItem(n, vscode.CompletionItemKind.Function);
-            it.detail = f.signature;
+            it.detail = functionSignature(f);
             it.__doc = { kind: 'function', name: n };
             it.sortText = `0_${n}`;
             items.push(it);
@@ -316,7 +317,7 @@ export class TargetCompletionProvider implements vscode.CompletionItemProvider {
     for (const f of functions) {
       if (f.internal) continue;
       const it: LazyItem = new vscode.CompletionItem(f.name, vscode.CompletionItemKind.Function);
-      it.detail = f.signature;
+      it.detail = functionSignature(f);
       it.__doc = { kind: 'function', name: f.name };
       it.sortText = `2_${f.name}`;
       items.push(it);
@@ -532,7 +533,7 @@ export class TargetSignatureProvider implements vscode.SignatureHelpProvider {
     if (fn) {
       const variadicNote = VARIADIC.has(fn.name) ? 'Takes any number of arguments.' : '';
       const sig = new vscode.SignatureInformation(
-        VARIADIC.has(fn.name) ? `${fn.returnType} ${fn.name}(...)` : fn.signature,
+        functionSignature(fn),
         new vscode.MarkdownString([variadicNote, fn.doc].filter(Boolean).join('\n\n'))
       );
       sig.parameters = fn.params.map((p) => {

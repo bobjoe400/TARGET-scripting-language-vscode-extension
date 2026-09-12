@@ -2,7 +2,7 @@
   "name": "tm-target-script",
   "displayName": "T.A.R.G.E.T. Script (Unofficial)",
   "description": "Unofficial language support for the Thrustmaster T.A.R.G.E.T. HOTAS scripting language (.tmc, .tmh, .ttm): syntax highlighting, device-aware completion, hover docs, outline and diagnostics.",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "publisher": "bobjoe400",
   "license": "MIT",
   "engines": {

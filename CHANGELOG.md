@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.2.1
+
+- **`printf` and `sprintf` say what they take.** `sys.tmh` declares `int printf(){}` -
+  the host binds it at load time - so the table honestly recorded a function taking
+  nothing, which reads as the opposite of the truth next to 315 corpus calls using
+  format specifiers. They now show `int printf(alias fmt, ...)` with the specifiers the
+  published scripts actually use, and the note that a newline is `\x0a` rather than
+  `\n`, which is true of every printf in 236 scripts.
+- The signature shown in the completion list, signature help and hover now comes from
+  one place, so they cannot disagree.
+
 ## 1.2.0
 
 Tested against 236 scripts from 21 public repositories, with the real compiler as the

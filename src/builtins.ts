@@ -449,8 +449,54 @@ export function describeParam(fnName: string, paramName: string): string | null 
  */
 export const VARIADIC = new Set(['SEQ', 'CHAIN', 'AXMAP2', 'LIST', 'printf', 'sprintf']);
 
+/**
+ * What a variadic builtin actually takes, since its declaration cannot say.
+ *
+ * `int printf(){}` in sys.tmh is the whole declaration - the body is empty and the
+ * host binds it at load time - so the generated table is honest but useless: it shows
+ * a function taking nothing, next to scripts calling it with a format string and three
+ * arguments.
+ *
+ * These are cint's implementations, and the shapes below are what 236 published scripts
+ * actually use: %d 351 times, %s 177, %i 28, %u 6, and %0.2f / %0.3f for floats. The
+ * newline is worth stating outright - TARGET scripts write `\x0a`, and `\n` appears in
+ * none of them.
+ */
+export const VARIADIC_DOCS: Record<string, { args: string; doc: string }> = {
+  printf: {
+    args: 'alias fmt, ...',
+    doc:
+      'Prints to the TARGET event log. Takes a C format string followed by one argument ' +
+      'per specifier: `%d` or `%i` for an int, `%u` unsigned, `%s` for a string, `%f` for ' +
+      'a float (`%0.2f` to set the precision).\n\nWrite a newline as `\\x0a` — TARGET ' +
+      'scripts use the hex escape, not `\\n`.',
+  },
+  sprintf: {
+    args: 'alias dst, alias fmt, ...',
+    doc:
+      'Formats into a string rather than printing it. Same specifiers as `printf`, with ' +
+      'the destination first.',
+  },
+  SEQ: { args: '...', doc: 'Each press runs the next argument in turn, wrapping at the end.' },
+  CHAIN: { args: '...', doc: 'Runs its arguments one after another on a single press.' },
+  LIST: { args: '...', doc: 'A list of values, used by the axis-mapping functions.' },
+  AXMAP2: { args: '...', doc: 'Zone boundaries followed by the event for each zone.' },
+};
+
+/**
+ * The signature to show. For a variadic builtin the declared one reads `int printf()`,
+ * which says the opposite of the truth, so the real argument shape replaces it - in the
+ * completion list and signature help as well as the hover, or they disagree.
+ */
+export function functionSignature(f: BuiltinFunction): string {
+  const extra = own(VARIADIC_DOCS, f.name);
+  return extra ? f.signature.replace(/\(\s*\)/, `(${extra.args})`) : f.signature;
+}
+
 export function describeFunction(f: BuiltinFunction): string {
-  const parts = ['```c', f.signature, '```'];
+  const extra = own(VARIADIC_DOCS, f.name);
+  const parts = ['```c', functionSignature(f), '```'];
+  if (extra) parts.push('', extra.doc);
   if (f.doc) parts.push('', f.doc);
   const layered = f.params
     .map((p) => ({ p, d: describeParam(f.name, p.name) }))

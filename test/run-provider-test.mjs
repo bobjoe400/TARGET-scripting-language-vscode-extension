@@ -842,6 +842,31 @@ for (const [label, src, needle] of [
     nfs4.rmSync(root, { recursive: true, force: true });
   }
 
+  // --- variadic builtins say what they take ---------------------------------
+  // sys.tmh declares `int printf(){}` - the host binds it at load time - so the
+  // generated table honestly records a function taking nothing, next to 315 corpus
+  // calls using %d and %s. The declared signature is replaced everywhere it is shown,
+  // or the completion list and the hover disagree.
+  {
+    const { functionSignature, describeFunction, functionsByName } =
+      require(path.join(repoRoot, 'out/builtins.js'));
+    const printf = functionsByName.get('printf');
+    const sig = functionSignature(printf);
+    const doc = describeFunction(printf);
+    if (sig === 'int printf(alias fmt, ...)' && !/int printf\(\)/.test(doc)) {
+      pass++; console.log('  ok    a variadic builtin shows what it actually takes');
+    } else failures.push(`variadic signature: ${sig}`);
+    // Only what 236 published scripts evidence: %d/%s/%i/%u/%f, and \x0a for a newline.
+    if (/%d/.test(doc) && /%s/.test(doc) && /x0a/.test(doc)) {
+      pass++; console.log('  ok    printf documents the specifiers the corpus actually uses');
+    } else failures.push('printf docs');
+    // A non-variadic builtin is untouched.
+    const mk = functionsByName.get('MapKey');
+    if (functionSignature(mk) === mk.signature) {
+      pass++; console.log('  ok    an ordinary builtin keeps its declared signature');
+    } else failures.push('non-variadic signature changed');
+  }
+
   // --- Star Citizen: which stick is js3? -------------------------------------
   // The LIVE actionmaps.xml records the device per instance; an EXPORTED mapping
   // carries the same element with no Product, and so does a slot with nothing plugged
