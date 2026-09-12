@@ -208,6 +208,60 @@ const noScriptError = () =>
   runner.stageProjectForRun = realStage;
 }
 
+
+// ---- the running indicator must track reality ------------------------------
+// A notification carrying a button cannot be dismissed programmatically, so it went
+// on claiming a script was running after it had stopped. The state lives in a status
+// bar item instead, which can be hidden.
+{
+  const runner = require(path.join(repoRoot, 'out/runner.js'));
+  const realProcs = runner.listTargetProcesses;
+  const realRun = runner.runScript;
+  const realStop = runner.stopScript;
+  const realStage = runner.stageProjectForRun;
+
+  runner.listTargetProcesses = async () => ({ gui: false, editor: false });
+  runner.runScript = async () => ({ ok: true, command: 'fake' });
+  runner.stopScript = async () => ({ ok: true });
+  runner.stageProjectForRun = async () => ({ ok: true, staging: { entry: 'C:\\s\\c.tmc', dir: 'C:\\s' } });
+
+  const bar = () => stub.__recorded.statusBarItems.find((i) => String(i.command) === 'targetScript.stop');
+
+  stub.__reset();
+  stub.workspace.textDocuments = [mkDoc(entry)];
+  stub.__setWarningAnswer('Copy to Windows and Run');
+  await commands.get('targetScript.run')();
+
+  const item = bar();
+  if (item && item.visible && /TARGET/.test(item.text)) {
+    pass++;
+    console.log(`  ok    run shows a status bar indicator ("${item.text}")`);
+  } else {
+    failures.push(`status bar not shown after run: ${JSON.stringify(item)}`);
+  }
+
+  // The launch notification must carry no button, or it would never disappear.
+  if (stub.__recorded.infos.length === 1) {
+    pass++;
+    console.log('  ok    launch notification auto-dismisses (no buttons)');
+  } else {
+    failures.push(`expected exactly one launch notification, got ${stub.__recorded.infos.length}`);
+  }
+
+  await commands.get('targetScript.stop')();
+  if (item && !item.visible) {
+    pass++;
+    console.log('  ok    stop hides the indicator');
+  } else {
+    failures.push('status bar still visible after stop');
+  }
+
+  runner.listTargetProcesses = realProcs;
+  runner.runScript = realRun;
+  runner.stopScript = realStop;
+  runner.stageProjectForRun = realStage;
+}
+
 for (const f of failures) console.log(`  FAIL  ${f}`);
 console.log(`\n  ${pass}/${pass + failures.length} command assertions passed`);
 if (failures.length) process.exit(1);

@@ -41,7 +41,7 @@ const enumOf = (names) => Object.fromEntries(names.map((n, i) => [n, i]));
 const config = new Map();
 
 // Recorded interactions, so a test can assert what the extension told the user.
-const recorded = { errors: [], infos: [], warnings: [], commands: new Map(), quickPicks: [] };
+const recorded = { errors: [], infos: [], warnings: [], commands: new Map(), quickPicks: [], statusBarItems: [] };
 let quickPickAnswer = undefined;
 let warningAnswer = undefined;
 const noop = () => ({ dispose() {} });
@@ -87,10 +87,19 @@ module.exports = {
       throw new Error('not open');
     },
   },
+  StatusBarAlignment: { Left: 1, Right: 2 },
   window: {
     activeTextEditor: undefined,
     visibleTextEditors: [],
     createOutputChannel: () => ({ appendLine() {}, show() {}, dispose() {} }),
+    createStatusBarItem: () => {
+      const item = {
+        text: '', tooltip: '', command: undefined, visible: false,
+        show() { this.visible = true; }, hide() { this.visible = false; }, dispose() {},
+      };
+      recorded.statusBarItems.push(item);
+      return item;
+    },
     onDidChangeActiveTextEditor: noop,
     showErrorMessage: (msg) => { recorded.errors.push(msg); return Promise.resolve(undefined); },
     showWarningMessage: (msg, ...rest) => {

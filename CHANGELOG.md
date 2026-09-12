@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.2
+
+- The running indicator now tracks reality. It was a notification carrying a Stop
+  button, and a notification with buttons stays until the user dismisses it and
+  cannot be closed by the extension, so it went on claiming a script was running
+  after it had stopped.
+  - Running state now lives in a status bar item, which is hidden as soon as it no
+    longer applies. Clicking it stops TARGET.
+  - TARGET is polled every three seconds; when it is no longer running the indicator
+    clears itself, however TARGET was closed.
+  - The launch notification has no buttons, so it fades on its own.
+
 ## 0.3.1
 
 - Fixed: running a script stored in the WSL filesystem handed TARGET a

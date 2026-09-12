@@ -126,6 +126,40 @@ export function activate(context: vscode.ExtensionContext): void {
   rememberTarget(vscode.window.activeTextEditor);
   context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(rememberTarget));
 
+  // Running state belongs in the status bar, not a notification: a notification
+  // carrying a button stays until the user dismisses it and cannot be closed
+  // programmatically, so it goes on claiming a script is running long after it
+  // stopped. A status bar item can be updated and hidden to match reality.
+  const runStatus = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+  runStatus.command = 'targetScript.stop';
+  context.subscriptions.push(runStatus);
+
+  let runPoll: NodeJS.Timeout | undefined;
+  const clearRunStatus = () => {
+    if (runPoll) {
+      clearInterval(runPoll);
+      runPoll = undefined;
+    }
+    runStatus.hide();
+  };
+  context.subscriptions.push({ dispose: clearRunStatus });
+
+  /** Shows the indicator and watches until TARGET is gone. */
+  const beginRunStatus = (scriptName: string) => {
+    clearRunStatus();
+    runStatus.text = `$(debug-stop) TARGET: ${scriptName}`;
+    runStatus.tooltip = `${scriptName} was launched in TARGET. Click to stop TARGET.`;
+    runStatus.show();
+    runPoll = setInterval(async () => {
+      const procs = await listTargetProcesses();
+      if (!procs.gui) {
+        // TARGET was closed, from its own window or anywhere else.
+        clearRunStatus();
+        output.appendLine('TARGET is no longer running; cleared the status indicator.');
+      }
+    }, 3000);
+  };
+
   // Compile results live in their own collection so the live linter's updates do
   // not wipe them, and vice versa.
   const compileDiags = vscode.languages.createDiagnosticCollection('target-compile');
@@ -365,19 +399,18 @@ export function activate(context: vscode.ExtensionContext): void {
       // TARGET is launched detached, so this reports the launch, not a confirmed run:
       // anything TARGET itself objects to appears in its own window.
       const copied = toRun !== entry;
-      vscode.window
-        .showInformationMessage(
-          `Launched ${path.basename(entry)} in TARGET${copied ? ' (from a copy on the Windows drive)' : ''}.`,
-          'Stop'
-        )
-        .then((pick) => {
-          if (pick === 'Stop') vscode.commands.executeCommand('targetScript.stop');
-        });
+      beginRunStatus(path.basename(entry));
+      // No button on this one: a notification with buttons never goes away on its
+      // own, and the status bar already carries the running state and the stop action.
+      vscode.window.showInformationMessage(
+        `Launched ${path.basename(entry)} in TARGET${copied ? ' (from a copy on the Windows drive)' : ''}.`
+      );
     }),
 
     vscode.commands.registerCommand('targetScript.stop', async () => {
       if (unsupportedHost()) return;
       const res = await stopScript();
+      clearRunStatus();
       if (res.ok) vscode.window.showInformationMessage('Stopped TARGET.');
       else vscode.window.showErrorMessage(`Could not stop TARGET: ${res.error}`);
     })

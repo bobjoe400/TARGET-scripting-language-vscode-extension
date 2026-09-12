@@ -90,6 +90,10 @@ Three commands, from the Command Palette or the editor title bar:
 | **TARGET: Run Script** | Compiles, then launches the script with `TARGETGUI.exe -r`. |
 | **TARGET: Stop Running Script** | Closes TARGET. |
 
+While a script is running, a `TARGET: <script>` indicator sits in the status bar; click
+it to stop. It clears itself once TARGET is no longer running, whether you stopped it
+from here or closed TARGET's own window.
+
 Run a header (`.tmh`/`.ttm`) and it compiles the `.tmc` beside it, since a header on its
 own is not a compilation unit.
 
