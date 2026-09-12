@@ -1,0 +1,42 @@
+# Publishes to the Visual Studio Marketplace with no stored token.
+#
+# `--oidc` asks GitHub Actions for a token scoped to marketplace.visualstudio.com and
+# exchanges it for a short-lived Marketplace credential. Nothing long-lived is kept
+# anywhere - which is the point, with Azure DevOps PATs retiring on 1 December 2026.
+#
+# It does NOT fall back to a PAT if the exchange fails, so a misconfigured trusted
+# publishing policy shows up as a failed run rather than as a silent alternative path.
+#
+# Before the first run, configure a trusted publishing policy for this repository and
+# this workflow on the Marketplace publisher page. The publisher must already exist.
+name: Publish
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # Required: without it the OIDC token cannot be requested and the publish fails.
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # The suite that does not need TARGET installed. The toolchain suite shells out
+      # to the real Interpreter.exe and is skipped here by design - it exits cleanly
+      # when TARGET is absent rather than failing.
+      - run: npm test
+
+      - run: npx @vscode/vsce publish --oidc
