@@ -535,7 +535,7 @@ for (const [label, src, needle] of [
 {
   const { usbCodeForEdKey, ED_MODIFIERS, buildBindsIndex, activePresetNames, fileMatchesPreset, bindingFormat, parseChord, chordMatches } =
     require(path.join(repoRoot, 'out/binds.js'));
-  const { renderBindings, escapeMarkdown, shortKeyName } = require(path.join(repoRoot, 'out/providers.js'));
+  const { renderBindings, escapeMarkdown, shortKeyName, code } = require(path.join(repoRoot, 'out/providers.js'));
   const NOCHORD = { modifiers: [], unknown: [] };
 
   // Key resolution must be exact: Home and Keypad-7 are different keys.
@@ -645,6 +645,46 @@ for (const [label, src, needle] of [
     if (!chordMatches(mk('X', ['L_ALT', 'L_CTL'], 1), ['L_ALT']) && chordMatches(mk('X', ['L_ALT'], 1), ['L_ALT'])) {
       pass++; console.log('  ok    chords match on the whole set, not a subset');
     } else failures.push('chord subset');
+
+    // The chord belongs to the LINE, not to the binding list. Rendered only when the
+    // key happened to have bindings, the warning went missing in exactly the case that
+    // needs it: a mistyped modifier on a key the game does not use. All nine
+    // `L+CTL+USB[...]` lines in the real corpus were silent.
+    const orphan = renderBindings([], parseChord('L+CTL+'), '1', null).join('\n');
+    if (/is not a modifier/.test(orphan) && /Nothing in .* is bound to/.test(orphan)) {
+      pass++; console.log('  ok    a bad chord is reported even when the key has no bindings');
+    } else failures.push(`orphan chord: ${JSON.stringify(orphan)}`);
+
+    // PULSE and friends share the + position but say HOW the key is sent, not which key.
+    // PULSE alone appears 268 times in the corpus.
+    const pulse = parseChord('PULSE+L_ALT+');
+    if (pulse.unknown.length === 0 && pulse.modifiers.join() === 'L_ALT' && parseChord('SHF+').modifiers.join() === 'L_SHIFT') {
+      pass++; console.log('  ok    key-state flags are not mistaken for modifiers, and SHF resolves');
+    } else failures.push(`state flags: ${JSON.stringify(pulse)} / ${JSON.stringify(parseChord('SHF+'))}`);
+
+    // One action in both slots of one file is one binding, not two identical rows.
+    const dual = renderBindings(
+      [mk('UIFocusMode', [], 3), { ...mk('UIFocusMode', [], 3), slot: 'Secondary' }],
+      NOCHORD, 'k', null
+    ).join('\n');
+    if ((dual.match(/UIFocusMode/g) || []).length === 1) {
+      pass++; console.log('  ok    one action in two slots is one row');
+    } else failures.push(`slot fold: ${JSON.stringify(dual)}`);
+
+    // Two DCS aircraft disagree; which one said what is the point.
+    const twoFiles = renderBindings(
+      [{ ...mk('Gear', [], 5), file: 'F18.diff.lua', path: '/tmp/F18.diff.lua' },
+       { ...mk('Flaps', [], 9), file: 'A10.diff.lua', path: '/tmp/A10.diff.lua' }],
+      NOCHORD, 'DX3', null
+    ).join('\n');
+    if (/Gear.*F18\.diff\.lua/s.test(twoFiles) && /Flaps.*A10\.diff\.lua/s.test(twoFiles)) {
+      pass++; console.log('  ok    rows name their file when more than one is on screen');
+    } else failures.push(`multi-file: ${JSON.stringify(twoFiles)}`);
+
+    // USB 0x35 is the ` key, and DCS action names are freeform. A fixed fence breaks.
+    if (code('`') === '`` ` ``' && code('a') === '`a`' && code('a`b') === '``a`b``') {
+      pass++; console.log('  ok    a backtick in a key or action name still renders');
+    } else failures.push(`code fence: ${code('`')} / ${code('a`b')}`);
 
     // The hover widget scrolls and remembers its size, so truncating hid answers it
     // would have shown.

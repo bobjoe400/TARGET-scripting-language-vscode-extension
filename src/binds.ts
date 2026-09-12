@@ -120,19 +120,27 @@ export function fileMatchesPreset(file: string, preset: string): boolean {
  *
  * TARGET spells the same modifier two ways and both appear in real scripts. target.tmh
  * defines L_SHIFT..R_WIN as bit flags to OR onto a scancode; defines.tmh defines CTL,
- * ALT, LCTL, LALT and friends as key IDs in the 1000 range. They are NOT synonyms for
- * "either side": CTL and LCTL are both 1224, so a bare CTL is the LEFT control key, and
- * there is no bare SHIFT constant at all. USB[0xE0]..USB[0xE7] are the same eight keys
- * again, as raw HID codes, which is the idiom the vendor header itself uses.
+ * SHF, ALT, LCTL, LALT and friends as key IDs in the 1000 range. They are NOT synonyms
+ * for "either side": CTL and LCTL are both 1224, and SHF and LSHF are both 1225, so an
+ * unqualified one is the LEFT key. USB[0xE0]..USB[0xE7] are the same eight keys again as
+ * raw HID codes, which is the idiom the vendor header itself uses.
  */
 export const SCRIPT_MODIFIERS: Record<string, string> = {
   L_SHIFT: 'L_SHIFT', R_SHIFT: 'R_SHIFT', L_CTL: 'L_CTL', R_CTL: 'R_CTL',
   L_ALT: 'L_ALT', R_ALT: 'R_ALT', L_WIN: 'L_WIN', R_WIN: 'R_WIN',
   CTL: 'L_CTL', LCTL: 'L_CTL', RCTL: 'R_CTL',
   ALT: 'L_ALT', LALT: 'L_ALT', RALT: 'R_ALT',
-  LSHF: 'L_SHIFT', RSHF: 'R_SHIFT',
+  SHF: 'L_SHIFT', LSHF: 'L_SHIFT', RSHF: 'R_SHIFT',
   LWIN: 'L_WIN', RWIN: 'R_WIN',
 };
+
+/**
+ * Flags that share the `+` position with a modifier but say how the key is sent, not
+ * which key it is: PULSE+L_ALT+USB[0x4F] still sends L_ALT + Right Arrow. They are
+ * recognised so they are neither matched against the game's modifiers nor reported as
+ * unknown - PULSE alone appears 268 times in the known-good corpus.
+ */
+export const SCRIPT_STATE_FLAGS = new Set(['PULSE', 'DOWN', 'UP', 'LOCK', 'KEYON', 'DELAY', 'REL']);
 
 /** The same eight keys as raw HID codes. */
 export const USB_MODIFIERS: Record<string, string> = {
@@ -272,6 +280,7 @@ export function parseChord(before: string): Chord {
     const term = raw.trim();
     if (!term) continue;
     const usb = /^USB\s*\[\s*0[xX]([0-9A-Fa-f]+)\s*\]$/.exec(term);
+    if (SCRIPT_STATE_FLAGS.has(term)) continue;
     const name = usb ? own(USB_MODIFIERS, usb[1].toUpperCase().padStart(2, '0')) : own(SCRIPT_MODIFIERS, term);
     if (name) modifiers.add(name);
     else unknown.push(term);
