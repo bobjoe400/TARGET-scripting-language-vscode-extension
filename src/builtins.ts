@@ -2,6 +2,7 @@
 // Regenerate with `npm run gen`; never edit src/data/builtins.json by hand.
 
 import raw from './data/builtins.json';
+import * as manualDocs from './data/manual-docs.json';
 import rawLabels from './data/device-labels.json';
 import rawUsb from './data/usb-codes.json';
 
@@ -503,11 +504,28 @@ export function functionSignature(f: BuiltinFunction): string {
  *   signature - VS Code renders detail above the documentation, so including it here
  *   too printed `int printf(alias fmt, ...)` twice in the same panel.
  */
+/**
+ * The Script Editor manual's description of a builtin, where it has one.
+ *
+ * Extracted by tools/gen-manual-docs.mjs, conservatively: 12 of the 171 builtins, ten
+ * of which the headers do not comment at all. The manual is prose written for a reader,
+ * not a reference, so most functions simply are not described in it.
+ */
+export function manualDoc(name: string): string | undefined {
+  return own((manualDocs as { docs: Record<string, string> }).docs, name);
+}
+
 export function describeFunction(f: BuiltinFunction, withSignature = true): string {
   const extra = own(VARIADIC_DOCS, f.name);
   const parts = withSignature ? ['```c', functionSignature(f), '```'] : [];
   if (extra) parts.push('', extra.doc);
   if (f.doc) parts.push('', f.doc);
+  // The manual's own words, attributed. Shown alongside a header comment rather than
+  // instead of it: the two answer different questions, and the header's is often a
+  // note about the parameters - SetJCurve's is "in, out = percents" - while the manual
+  // says what the function is for.
+  const fromManual = manualDoc(f.name);
+  if (fromManual) parts.push('', `${f.name} ${fromManual}`, '', '*\u2014 TARGET Script Editor manual*');
   // What each parameter means, and what it accepts. The values come from the constants
   // table - the same domain the completion list narrows to - so a function with no
   // comment anywhere in the headers still says something true about its arguments.

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.4.0
+
+- **Descriptions from Thrustmaster's own manual**, for twelve builtins - ten of which
+  the headers do not comment at all. `TEMPO` now reads "gives the pilot the possibility
+  of having 2 functions on a single button", attributed to the manual, rather than a
+  bare signature.
+- Shown alongside a header comment rather than instead of it: `SetJCurve`'s header says
+  "in, out = percents" and the manual says what the function is for.
+
 ## 1.3.1
 
 - **A hover now says what an argument accepts.** 96 of the 171 builtins carry no

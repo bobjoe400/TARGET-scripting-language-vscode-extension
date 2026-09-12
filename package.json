@@ -2,7 +2,7 @@
   "name": "tm-target-script",
   "displayName": "T.A.R.G.E.T. Script (Unofficial)",
   "description": "Unofficial language support for the Thrustmaster T.A.R.G.E.T. HOTAS scripting language (.tmc, .tmh, .ttm): syntax highlighting, device-aware completion, hover docs, outline and diagnostics.",
-  "version": "1.3.1",
+  "version": "1.4.0",
   "publisher": "bobjoe400",
   "license": "MIT",
   "engines": {
@@ -163,7 +163,7 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "vscode:prepublish": "npm run compile",
-    "gen": "node tools/gen-builtins.mjs && node tools/gen-grammar.mjs && node tools/gen-device-labels.mjs && node tools/gen-usb-codes.mjs",
+    "gen": "node tools/gen-builtins.mjs && node tools/gen-grammar.mjs && node tools/gen-device-labels.mjs && node tools/gen-usb-codes.mjs && node tools/gen-manual-docs.mjs",
     "test:grammar": "node test/run-grammar-test.mjs",
     "test": "npm run compile && node test/run-grammar-test.mjs && node test/run-diagnostics-test.mjs && node test/run-provider-test.mjs && node test/run-include-test.mjs && node test/run-command-test.mjs && node test/run-runner-test.mjs",
     "package": "NODE_OPTIONS=\"--require ./tools/node18-file-shim.cjs\" npx --yes @vscode/vsce@2 package --no-dependencies",

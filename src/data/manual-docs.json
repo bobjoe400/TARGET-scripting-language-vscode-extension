@@ -1,0 +1,22 @@
+{
+  "$generated": {
+    "by": "tools/gen-manual-docs.mjs",
+    "from": "/mnt/c/Program Files (x86)/Thrustmaster/TARGET/Resources/TARGET_SCRIPT_EDITOR_basics.pdf",
+    "bytes": 700963,
+    "at": "2026-09-12"
+  },
+  "docs": {
+    "DeferCall": "is a command used to call up a function after a programmed delay.",
+    "MapKeyIOUMD": "allows you to generate up to 6 different outputs on a single button (although in doing so, it obviously becomes more difficult to remember all the outputs!).",
+    "MapKeyR": "works exactly like MapKey, except that the function is activated when the controller button turns \"OFF\".",
+    "CHAIN": "is the command that gives you the ability to have multiple outputs by pressing a button once.",
+    "TEMPO": "gives the pilot the possibility of having 2 functions on a single button.",
+    "REXEC": "is a function built to repeat an EXEC until you want to stop by releasing the button or sending the order to stop.",
+    "SetSCurve": "is the function used to fine-tune your Joystick axis and rudder axes response.",
+    "SetJCurve": "is dedicated to adjusting the sensitivity of the axes used to control a throttle, mixture, propeller pitch and brakes.",
+    "SetCustomCurve": "gives you the opportunity to do exactly what you want.",
+    "LockAxis": "is a Function that \"freezes\" the value of a particular axis.",
+    "AXMAP1": "is the first one. In mode 1, it is the \"direction\" of the axis that defines the output event (keystrokes, for example).",
+    "AXMAP2": "is the second Digital axis mode. AXMAP2 generates functions that only depend on the zone."
+  }
+}

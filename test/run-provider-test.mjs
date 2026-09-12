@@ -845,6 +845,33 @@ for (const [label, src, needle] of [
     nfs4.rmSync(root, { recursive: true, force: true });
   }
 
+  // --- the manual's own descriptions ----------------------------------------
+  // Extracting these needed a positional PDF reader: the naive one interleaved the
+  // manual's columns and turned "creating" into "cr eating", which is why this was
+  // written off as impossible once. Conservative by design - 12 of 171 - because a
+  // wrong description shown as fact next to the reader's code is worse than none.
+  {
+    const { describeFunction: df2, functionsByName: fbn2, manualDoc } =
+      require(path.join(repoRoot, 'out/builtins.js'));
+    const tempo = df2(fbn2.get('TEMPO'));
+    if (/2 functions on a single button/.test(tempo) && /Script Editor manual/.test(tempo)) {
+      pass++; console.log('  ok    the manual\'s description reaches the hover, attributed');
+    } else failures.push(`TEMPO hover: ${JSON.stringify(tempo.slice(0, 140))}`);
+
+    // Shown alongside a header comment, not instead of it - they answer different
+    // questions. SetJCurve's header says "in, out = percents"; the manual says what it
+    // is for.
+    const jc = df2(fbn2.get('SetJCurve'));
+    if (/percents/.test(jc) && /sensitivity of the axes/.test(jc)) {
+      pass++; console.log('  ok    a header comment and the manual are both kept');
+    } else failures.push(`SetJCurve hover: ${JSON.stringify(jc.slice(0, 160))}`);
+
+    // Nothing invented for a function the manual does not describe.
+    if (!manualDoc('SetKBLayout')) {
+      pass++; console.log('  ok    no description is invented where the manual has none');
+    } else failures.push('SetKBLayout gained a manual doc from nowhere');
+  }
+
   // --- a hover says what an argument accepts --------------------------------
   // 96 of the 171 builtins carry no documentation: the headers do not comment them, and
   // the manual's PDF text is too interleaved to extract prose from without shipping
