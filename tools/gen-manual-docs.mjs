@@ -26,23 +26,37 @@ const MANUALS = [
 const VERB =
   '(?:is|are|allows|lets|works|gives|provides|generates|returns|sets|defines|creates|maps|protects|simulates|reads|dedicated)';
 
+/** Something from the language or the hardware, so the sentence says something. */
+const CONCRETE =
+  /\b(axis|axes|button|key|keystroke|event|layer|delay|value|zone|output|curve|device|joystick|throttle|trigger|function|script|shift|mouse|directx|led|sequence|deadzone)\b/i;
+
 /** The sentence the manual uses to introduce `name`, or null. */
 export function definitionFor(text, name) {
   // The manual heads a section with the function's name and then repeats it to start
   // the sentence - "MapKeyIOUMD MapKeyIOUMD allows you to..." - which is a far stronger
   // signal than a passing mention elsewhere in the prose.
   const patterns = [
-    new RegExp(`\\b${name}\\s+${name}\\s+(${VERB}\\b[\\s\\S]{30,300}?[.!])(?:\\s|$)`),
-    new RegExp(`\\b${name}\\s+(${VERB}\\b[\\s\\S]{30,300}?[.!])(?:\\s|$)`),
+    new RegExp(`\\b${name}\\s+${name}\\s+(${VERB}\\b[\\s\\S]{18,300}?[.!])(?:\\s|$)`, 'g'),
+    new RegExp(`\\b${name}\\s+(${VERB}\\b[\\s\\S]{18,300}?[.!])(?:\\s|$)`, 'g'),
   ];
-  for (const re of patterns) {
-    const m = re.exec(text);
-    if (!m) continue;
-    const s = m[1].trim().replace(/\s+/g, ' ');
+  // Every match, not just the first, and a low minimum length so each sentence is judged
+  // on its own. A section often opens with one that leans on the paragraph above it -
+  // "AXMAP2 is the second Digital axis mode" - and follows it with one that stands
+  // alone; with a longer floor the two matched as a single candidate and both were lost.
+  const candidates = patterns.flatMap((re) => [...text.matchAll(re)].map((m) => m[1]));
+  for (const raw of candidates) {
+    const s = raw.trim().replace(/\s+/g, ' ');
     if (/[;{}]|\/\/|\(&|=/.test(s)) continue;                       // ran into code
     if (/^is forbidden|^is not|^are not/.test(s)) continue;          // a restriction
     if (/illustration|example of|for instance/i.test(s)) continue;   // about an example
     if (s.split(' ').length < 6) continue;
+    // A sentence that leans on context the reader does not have. "AXMAP1 is the first
+    // one." means nothing in a hover, however well it reads after the paragraph above it.
+    if (/^is the (?:first|second|third|next|other|same|last)\b/i.test(s)) continue;
+    // And one that says nothing at all. "SetCustomCurve gives you the opportunity to do
+    // exactly what you want" is true of most functions and informs no one, so a
+    // description has to mention something in the language to earn its place.
+    if (!CONCRETE.test(s)) continue;
     return s;
   }
   return null;

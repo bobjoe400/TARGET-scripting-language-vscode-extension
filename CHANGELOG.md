@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.2
+
+- Two of the twelve manual descriptions were not worth showing and have been dropped:
+  one said nothing ("gives you the opportunity to do exactly what you want") and one
+  leaned on context the reader does not have ("is the first one"). Ten remain, eight
+  for builtins the headers do not comment.
+
 ## 1.4.1
 
 - **Every description in a hover now says where it came from.** Most of what the
