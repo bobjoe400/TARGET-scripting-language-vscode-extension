@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.0
+
+- Flags C syntax the TARGET parser rejects. Every entry was confirmed against the
+  real compiler, not inferred from the language's C-like appearance:
+  `++`, `--`, all compound assignments (`+=`, `|=`, `<<=`, ...), `||`, the ternary
+  `? :`, `#include` / `#define` with a `#`, and `include <angle.h>`.
+- `&&` is deliberately not flagged. In TARGET it is address-of-address - `&&tmp`
+  appears throughout `target.tmh` - not logical and. `&` and `|` are the logical
+  operators.
+- Operators are rebuilt from adjacent punctuation only when the characters touch, so
+  `a & &b` is not read as `&&`, and comment banners such as `//-----` or `||||||`
+  cannot be mistaken for code.
+
 ## 0.3.2
 
 - The running indicator now tracks reality. It was a notification carrying a Stop

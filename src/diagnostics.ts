@@ -115,6 +115,34 @@ const RANGE_RULES: Record<string, RangeRule[]> = {
   ],
 };
 
+/**
+ * Operators a C programmer reaches for that TARGET's parser rejects outright.
+ * Every entry was confirmed against the real compiler rather than inferred.
+ *
+ * `&&` is deliberately absent: in TARGET it is address-of-address (`&&tmp` appears
+ * throughout target.tmh), not logical and. `&` and `|` serve as the logical
+ * operators, and both are accepted.
+ */
+const REJECTED_OPERATORS: Record<string, string> = {
+  '++': 'TARGET has no `++`. Write `i = i + 1`.',
+  '--': 'TARGET has no `--`. Write `i = i - 1`.',
+  '+=': 'TARGET has no compound assignment. Write `x = x + y`.',
+  '-=': 'TARGET has no compound assignment. Write `x = x - y`.',
+  '*=': 'TARGET has no compound assignment. Write `x = x * y`.',
+  '/=': 'TARGET has no compound assignment. Write `x = x / y`.',
+  '%=': 'TARGET has no compound assignment. Write `x = x % y`.',
+  '&=': 'TARGET has no compound assignment. Write `x = x & y`.',
+  '|=': 'TARGET has no compound assignment. Write `x = x | y`.',
+  '^=': 'TARGET has no compound assignment. Write `x = x ^ y`.',
+  '<<=': 'TARGET has no compound assignment. Write `x = x << y`.',
+  '>>=': 'TARGET has no compound assignment. Write `x = x >> y`.',
+  '||': 'TARGET has no `||`. Use `|`, which TARGET uses for logical or.',
+  '?': 'TARGET has no ternary `? :`. Use `if` / `else`.',
+};
+
+/** Multi-character operators TARGET does accept, so they are stepped over intact. */
+const VALID_OPERATORS = ['<<', '>>', '==', '!=', '<=', '>=', '&&'];
+
 /** Keywords that parse as a call because they are followed by a parenthesis. */
 const CONTROL_WORDS = new Set(['if', 'while', 'do', 'else', 'return', 'switch', 'for', 'goto', 'break', 'sizeof']);
 
@@ -166,6 +194,9 @@ export function computeDiagnostics(
     if (why) add(t.start, t.end, why, 'error', 'not-in-target');
   }
 
+  // ---- operators and directives TARGET's parser rejects ---------------------
+  checkRejectedSyntax();
+
   // ---- include "target.tmh" must come first ---------------------------------
   if (fileName.toLowerCase().endsWith('.tmc')) {
     const first = model.includes[0];
@@ -189,6 +220,84 @@ export function computeDiagnostics(
 
   for (const call of model.allCalls) {
     checkCall(call);
+  }
+
+  /**
+   * Flags C syntax the TARGET parser refuses. Operators are rebuilt from adjacent
+   * punctuation tokens, and only when the characters actually touch: `a & &b` is
+   * two operators, `a && b` is one. Comments and strings never reach here, so a
+   * `//-----` banner or a `||||||` divider cannot be mistaken for code.
+   */
+  function checkRejectedSyntax(): void {
+    const toks = model.tokens.filter((t) => t.kind !== TokKind.Comment);
+    for (let i = 0; i < toks.length; i++) {
+      const t = toks[i];
+
+      // `#include` / `#define`: TARGET's directives carry no '#'.
+      if (t.kind === TokKind.Punct && t.value === '#') {
+        const next = toks[i + 1];
+        if (next?.kind === TokKind.Ident && (next.value === 'include' || next.value === 'define')) {
+          add(
+            t.start,
+            next.end,
+            `TARGET has no preprocessor. Write \`${next.value}\` without the '#'.`,
+            'error',
+            'not-in-target'
+          );
+          i++;
+          continue;
+        }
+      }
+
+      // `include <file>`: TARGET takes a quoted filename only.
+      if (t.kind === TokKind.Ident && t.value === 'include') {
+        const next = toks[i + 1];
+        if (next?.kind === TokKind.Punct && next.value === '<') {
+          add(
+            t.start,
+            next.end,
+            'TARGET includes take a quoted filename: `include "file.tmh"`. Angle brackets are not supported, and there is no C standard library to include.',
+            'error',
+            'not-in-target'
+          );
+          continue;
+        }
+      }
+
+      if (t.kind !== TokKind.Punct) continue;
+
+      // Longest match first, so `<<=` is not read as a valid `<<`.
+      const joined = (n: number): string | null => {
+        let out = t.value;
+        for (let k = 1; k < n; k++) {
+          const prev = toks[i + k - 1];
+          const cur = toks[i + k];
+          if (!cur || cur.kind !== TokKind.Punct || prev.end !== cur.start) return null;
+          out += cur.value;
+        }
+        return out;
+      };
+
+      const three = joined(3);
+      if (three && REJECTED_OPERATORS[three]) {
+        add(t.start, toks[i + 2].end, REJECTED_OPERATORS[three], 'error', 'not-in-target');
+        i += 2;
+        continue;
+      }
+      const two = joined(2);
+      if (two && REJECTED_OPERATORS[two]) {
+        add(t.start, toks[i + 1].end, REJECTED_OPERATORS[two], 'error', 'not-in-target');
+        i += 1;
+        continue;
+      }
+      if (two && VALID_OPERATORS.includes(two)) {
+        i += 1;
+        continue;
+      }
+      if (REJECTED_OPERATORS[t.value]) {
+        add(t.start, t.end, REJECTED_OPERATORS[t.value], 'error', 'not-in-target');
+      }
+    }
   }
 
   /**

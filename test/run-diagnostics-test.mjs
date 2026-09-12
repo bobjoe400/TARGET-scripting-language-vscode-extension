@@ -113,6 +113,30 @@ expect('tmc missing include', 'int main() { }', 'missing-target-include', 'main.
 expect('tmc wrong first inc', 'include "other.tmh"\nint main() { }', 'target-include-order', 'main.tmc');
 expect('CHAIN no delay',      'int f() { MapKey(&Joystick, S1, CHAIN(a,b,c,d,e,f,g)); }', 'chain-no-delay');
 
+// -- C syntax the TARGET parser rejects, each confirmed against the real compiler --
+expect('i++',            'int f() { int i; i++; }', 'not-in-target');
+expect('++i',            'int f() { int i; ++i; }', 'not-in-target');
+expect('i--',            'int f() { int i; i--; }', 'not-in-target');
+expect('+= compound',    'int f() { int i; i += 1; }', 'not-in-target');
+expect('|= compound',    'int f() { int i; i |= 1; }', 'not-in-target');
+expect('<<= compound',   'int f() { int i; i <<= 1; }', 'not-in-target');
+expect('|| logical or',  'int f() { int i; if(i == 1 || i == 2) i = 3; }', 'not-in-target');
+expect('ternary',        'int f() { int i; i = i ? 1 : 0; }', 'not-in-target');
+expect('#define',        '#define X 5\nint f() { return X; }', 'not-in-target');
+expect('#include',       '#include "target.tmh"\nint f() { return 0; }', 'not-in-target');
+expect('angle include',  'include <stdint.h>\nint f() { return 0; }', 'not-in-target');
+
+// ...and the equivalents TARGET does accept must stay silent.
+expectClean('i = i + 1',        'int f() { int i; i = i + 1; }');
+expectClean('& as logical and', 'int f() { int i; if(i == 1 & i != 2) i = 3; }');
+expectClean('| as logical or',  'int f() { int i; if(i == 1 | i == 2) i = 3; }');
+expectClean('bitwise shifts',   'int f() { int i; i = i << 1; i = i >> 1; }');
+expectClean('comparisons',      'int f() { int i; if(i == 1) i = 2; if(i != 1) i = 3; if(i <= 4) i = 5; if(i >= 6) i = 7; }');
+// && is address-of-address in TARGET, not logical and, and is used in target.tmh.
+expectClean('&& address-of-address', 'int f() { int tmp; ASMAlloc(1, &&tmp, &tmp); }');
+expectClean('unary minus and not',   'int f() { int i; int j; i = -j; i = !j; }');
+expectClean('quoted include',        'include "target.tmh"\nint f() { return 0; }');
+
 // -- structure a runnable script needs, none of which TARGET's compiler checks --
 expectFull('no main()',            'include "target.tmh"\n\nint helper(int a) { return a; }\n', 'missing-main');
 expectFull('main without Init()',  'include "target.tmh"\n\nint main()\n{\n\tMapKey(&Joystick, TG1, DX1);\n}\n', 'missing-init');
