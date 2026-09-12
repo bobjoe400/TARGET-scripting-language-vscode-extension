@@ -633,6 +633,14 @@ for (const [label, src, needle] of [
       pass++; console.log('  ok    an unbound chord says only that, and offers the peek');
     } else failures.push(`unbound: ${JSON.stringify(none.slice(0, 220))}`);
 
+    // The peek is a control, not another row of information, so it belongs on the
+    // matching hover too - it answers a question the reader may have, where the
+    // near-miss rows pre-empted one they did not ask.
+    const matched = renderBindings(refs, parseChord('L_ALT+'), 'Right Arrow', null, true, { kind: 'key', code: '4F' }).join('\n');
+    if (/peekBindings/.test(matched) && /ItemWheelRight/.test(matched)) {
+      pass++; console.log('  ok    the peek is offered on a matching hover as well');
+    } else failures.push(`peek on match: ${JSON.stringify(matched.slice(0, 200))}`);
+
     // An unrecognised term must never fall back to the bare key - the user's own corpus
     // has nine lines reading `L+CTL+USB[0x1E]`, where L is defined nowhere.
     const typo = parseChord('L+CTL+');

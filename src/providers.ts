@@ -442,7 +442,13 @@ export class TargetHoverProvider implements vscode.HoverProvider {
 
     // supportThemeIcons: the $(warning) codicon in the chord warning renders only with
     // it, and the sanitizer has a bespoke allowance for exactly that span.
-    const md = (s: string) => new vscode.Hover(new vscode.MarkdownString(s, true), range);
+    const md = (s: string) => {
+      const body = new vscode.MarkdownString(s, true);
+      // A narrow grant: only this command, never blanket trust. Without it the peek
+      // link on a DX hover renders and then does nothing when clicked.
+      body.isTrusted = { enabledCommands: ['targetScript.peekBindings'] };
+      return new vscode.Hover(body, range);
+    };
 
     const fn = functionsByName.get(word);
     if (fn) return md(describeFunction(fn));
@@ -474,7 +480,14 @@ export class TargetHoverProvider implements vscode.HoverProvider {
       // Inserted before the trailing declaration note rather than after it: the game
       // action is the answer, and it was sandwiched between two dim provenance lines.
       if (forButton?.length) {
-        const bindings = renderBindings(forButton, { modifiers: [], unknown: [] }, word, this.index.getBindsIndex(doc).activePreset);
+        const bindings = renderBindings(
+          forButton,
+          { modifiers: [], unknown: [] },
+          word,
+          this.index.getBindsIndex(doc).activePreset,
+          false,
+          dxNumber ? { kind: 'button', code: dxNumber[1] } : undefined
+        );
         const note = parts.findIndex((p) => p.startsWith('*'));
         if (note === -1) parts.push(...bindings);
         else parts.splice(note, 0, ...bindings);
@@ -739,6 +752,13 @@ export function renderBindings(
     return `*${games.join(', ')} \u00b7 ${preset ? `preset ${code(preset)}` : files.map((f) => code(f)).join(', ')}*`;
   };
 
+  // A control rather than another row of information, which is why it belongs on every
+  // binding hover and the near-miss list did not: it answers a question the reader may
+  // have instead of pre-empting one they did not ask.
+  const peekLink = peek
+    ? `[$(search) Show everywhere this is bound](command:targetScript.peekBindings?${encodeURIComponent(JSON.stringify([peek]))})`
+    : null;
+
   if (exact.length) {
     // The decoded chord, confirmed back to the reader. Dropping this went too far: the
     // line carries `USB[0x1E]` and a hand-written `// LALT+1` comment, so "L_ALT + 1" is
@@ -746,6 +766,7 @@ export function renderBindings(
     // extension read the same line you did.
     if (showChord) out.push(chordLabel);
     out.push(rows(exact), source(exact));
+    if (peekLink) out.push(peekLink);
     return out;
   }
 
@@ -757,9 +778,6 @@ export function renderBindings(
   const games = [...new Set(all.map((r) => r.game))];
   const where = games.length ? games.map((g) => `**${g}**`).join(' or ') : 'any binding file found';
   out.push(`Nothing in ${where} is bound to ${chordLabel}.`);
-  if (peek) {
-    const args = encodeURIComponent(JSON.stringify([peek]));
-    out.push(`[$(search) Show everywhere this is bound](command:targetScript.peekBindings?${args})`);
-  }
+  if (peekLink) out.push(peekLink);
   return out;
 }
