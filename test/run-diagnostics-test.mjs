@@ -137,6 +137,12 @@ expectClean('&& address-of-address', 'int f() { int tmp; ASMAlloc(1, &&tmp, &tmp
 expectClean('unary minus and not',   'int f() { int i; int j; i = -j; i = !j; }');
 expectClean('quoted include',        'include "target.tmh"\nint f() { return 0; }');
 
+// -- the DirectX button ceiling, where the sources disagree ---------------------
+expect('DX40 above the ceiling',  'int f() { MapKey(&Joystick, TG1, DX40); }', 'directx-button-ceiling');
+expect('DX128 above the ceiling', 'int f() { MapKey(&Joystick, TG1, DX128); }', 'directx-button-ceiling');
+expectClean('DX32 is at the limit', 'int f() { MapKey(&Joystick, TG1, DX32); }');
+expectClean('DX11 well under',      'int f() { MapKey(&Joystick, TG1, DX11); }');
+
 // -- structure a runnable script needs, none of which TARGET's compiler checks --
 expectFull('no main()',            'include "target.tmh"\n\nint helper(int a) { return a; }\n', 'missing-main');
 expectFull('main without Init()',  'include "target.tmh"\n\nint main()\n{\n\tMapKey(&Joystick, TG1, DX1);\n}\n', 'missing-init');

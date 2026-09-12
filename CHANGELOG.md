@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.1
+
+- Notes DX buttons above DX32 as a hint. This was previously dropped on the reasoning
+  that `defines.tmh` names DX1..DX128, so the manual's 32-button ceiling no longer
+  applied. That reasoning was wrong: naming a constant is not the same as the virtual
+  device exposing it. The sources disagree and none can be settled without hardware -
+  Thrustmaster's manual (2011) says 32, `defines.tmh` (2024) names 128, and community
+  documentation for current TARGET reports 56 on the combined virtual device - so the
+  message states the disagreement rather than picking a number, and is a hint rather
+  than a warning.
+- The 8-axis half of that limit needs no check: `defines.tmh` defines exactly eight
+  `DX_*_AXIS` constants, so a ninth cannot be named.
+
 ## 0.5.0
 
 - Hover, completion and signature help now show the comment block above a function,

@@ -62,6 +62,7 @@ split over a dozen headers and Thrustmaster's editor has no navigation at all.
 | Event handler passed to `Init()` does not exist | fails at runtime with `Symbol not found` |
 | Handler that never calls `DefaultMapping()` | mappings and shift layers never take effect |
 | Call to a function defined nowhere | a typo that TARGET only discovers mid-flight |
+| DX buttons above `DX32` | a hint: the ceiling is disputed and exceeding it fails silently |
 | C keywords TARGET lacks | `for`, `switch`, `continue`, `typedef`, `enum`, `const`, … |
 
 Names borrowed from another device that happen to land on the same index (`TG1` and

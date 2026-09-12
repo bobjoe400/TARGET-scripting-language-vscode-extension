@@ -196,6 +196,7 @@ export function computeDiagnostics(
 
   // ---- operators and directives TARGET's parser rejects ---------------------
   checkRejectedSyntax();
+  checkDirectXButtonCeiling();
 
   // ---- include "target.tmh" must come first ---------------------------------
   if (fileName.toLowerCase().endsWith('.tmc')) {
@@ -220,6 +221,42 @@ export function computeDiagnostics(
 
   for (const call of model.allCalls) {
     checkCall(call);
+  }
+
+  /**
+   * Notes DX buttons above 32, where the sources genuinely disagree and the
+   * consequence is silent.
+   *
+   *   Thrustmaster's own manual (v1.5, shipped 2011) states the virtual controller
+   *   "will never be able to declare more axes and DirectX buttons than the official
+   *   DirectX limits (32 buttons and 8 axes)".
+   *
+   *   defines.tmh, updated 2024, names DX1 through DX128.
+   *
+   *   Community documentation for current TARGET reports 56 usable DX buttons on the
+   *   combined virtual device.
+   *
+   * The number that actually reaches a game also depends on the game: Elite Dangerous
+   * reads 32. None of this can be settled without the hardware, so this is a hint
+   * rather than a warning, and it says what is uncertain instead of picking a side.
+   */
+  function checkDirectXButtonCeiling(): void {
+    const reported = new Set<string>();
+    for (const t of model.tokens) {
+      if (t.kind !== TokKind.Ident) continue;
+      const m = /^DX(\d+)$/.exec(t.value);
+      if (!m) continue;
+      const n = parseInt(m[1], 10);
+      if (n <= 32 || reported.has(t.value)) continue;
+      reported.add(t.value);
+      add(
+        t.start,
+        t.end,
+        `${t.value} is above DX32. Thrustmaster's manual gives the DirectX limit as 32 buttons, defines.tmh names up to DX128, and current TARGET is reported to expose 56 on the combined virtual device. A button above the limit is simply never seen by the game, and many games (Elite Dangerous among them) read only 32. Keyboard combinations are the usual way around it.`,
+        'info',
+        'directx-button-ceiling'
+      );
+    }
   }
 
   /**
