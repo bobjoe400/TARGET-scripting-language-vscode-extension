@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.1
+
+- Renamed to **T.A.R.G.E.T. Script (Unofficial)**. The old name read as though
+  Thrustmaster published or supported this, which would have sent people to them with
+  bug reports that are not theirs to answer.
+- The README says plainly that this is a community extension, and where its bugs go.
+
 ## 1.0.0
 
 First release on the Marketplace. Everything below shipped during development and is

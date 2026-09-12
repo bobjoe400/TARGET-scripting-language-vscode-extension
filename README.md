@@ -1,7 +1,12 @@
-# TARGET Script for VS Code
+# T.A.R.G.E.T. Script for VS Code
 
 Language support for the Thrustmaster **T.A.R.G.E.T.** HOTAS scripting language
 (`.tmc`, `.tmh`, `.ttm`).
+
+> **Unofficial.** This is a community extension. It is not made, supported or endorsed
+> by Thrustmaster / Guillemot, and bug reports about it belong
+> [here](https://github.com/bobjoe400/TARGET-scripting-language-vscode-extension/issues)
+> rather than with them.
 
 Thrustmaster's bundled editor is little more than a text box with a Compile button,
 and nothing else existed for this language — the usual advice was "use C# highlighting,
@@ -348,4 +353,6 @@ real-world Elite Dangerous TARGET script.
 
 ## License
 
-MIT
+MIT. "Thrustmaster" and "T.A.R.G.E.T." are trademarks of Guillemot Corporation S.A.,
+used here only to say what this extension is for. The extension is not affiliated with
+them.
