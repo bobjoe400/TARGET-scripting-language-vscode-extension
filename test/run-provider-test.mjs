@@ -681,7 +681,18 @@ for (const [label, src, needle] of [
       pass++; console.log('  ok    rows name their file when more than one is on screen');
     } else failures.push(`multi-file: ${JSON.stringify(twoFiles)}`);
 
-    // USB 0x35 is the ` key, and DCS action names are freeform. A fixed fence breaks.
+    // The decoded chord, confirmed back to the reader. The line carries `USB[0x1E]` and a
+  // hand-written `// LALT+1` comment, so "L_ALT + 1" is the one part nothing else
+  // verifies - and seeing it is how you know the extension read the same line you did.
+  {
+    const withChord = renderBindings([mk('X', ['L_ALT'], 3)], parseChord('L_ALT+'), '1', null, true).join('\n');
+    const without = renderBindings([mk('X', ['L_ALT'], 3)], parseChord('L_ALT+'), '1', null, false).join('\n');
+    if (/`L_ALT` \+ `1`/.test(withChord) && !/`L_ALT` \+ `1`/.test(without)) {
+      pass++; console.log('  ok    the decoded chord is echoed back on a match');
+    } else failures.push(`chord echo: ${JSON.stringify(withChord)}`);
+  }
+
+  // USB 0x35 is the ` key, and DCS action names are freeform. A fixed fence breaks.
     if (code('`') === '`` ` ``' && code('a') === '`a`' && code('a`b') === '``a`b``') {
       pass++; console.log('  ok    a backtick in a key or action name still renders');
     } else failures.push(`code fence: ${code('`')} / ${code('a`b')}`);

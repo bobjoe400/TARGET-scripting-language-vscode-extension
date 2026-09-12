@@ -423,7 +423,7 @@ export class TargetHoverProvider implements vscode.HoverProvider {
         const describesChord = !inComment && (chord.modifiers.length > 0 || chord.unknown.length > 0);
         const parts =
           bound.length || describesChord
-            ? renderBindings(bound, chord, label, binds.activePreset)
+            ? renderBindings(bound, chord, label, binds.activePreset, true)
             : [`**${escapeMarkdown(label)}**`];
         // The hover covers the whole chord, so the underline matches what it describes.
         const chordStart = describesChord
@@ -686,7 +686,8 @@ export function renderBindings(
   all: BindingRef[],
   chord: Chord,
   keyLabel: string | null,
-  activePreset: string | null
+  activePreset: string | null,
+  showChord = false
 ): string[] {
   const out: string[] = [];
 
@@ -741,6 +742,11 @@ export function renderBindings(
   };
 
   if (exact.length) {
+    // The decoded chord, confirmed back to the reader. Dropping this went too far: the
+    // line carries `USB[0x1E]` and a hand-written `// LALT+1` comment, so "L_ALT + 1" is
+    // the one part of it nothing else verifies - and seeing it is how you know the
+    // extension read the same line you did.
+    if (showChord) out.push(chordLabel);
     out.push(rows(exact), source(exact));
     return out;
   }

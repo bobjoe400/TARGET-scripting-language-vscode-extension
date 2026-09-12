@@ -61,9 +61,13 @@ function rejoin(name) {
   const out = [];
   for (const tok of name.split(/\s+/).filter(Boolean)) {
     const prev = out[out.length - 1];
-    const fragment = /^[a-z]{1,3}$/.test(tok);
-    const attachable = prev && (/[a-z]$/.test(prev) || /^[A-Z]$/.test(prev)) && /^[A-Za-z]+$/.test(prev);
-    if (fragment && attachable) out[out.length - 1] = prev + tok;
+    // Short lowercase runs are the usual PDF split. The other shape is a break right
+    // after a capital - "I nsert", "(Ctrl-P ause)" - where the tail can be any length,
+    // so that is allowed only when the previous token ends in an upper-case letter.
+    const shortFragment = /^[a-z]{1,3}$/.test(tok) && /^[A-Za-z]+$/.test(prev ?? '');
+    const afterCapital = /^[a-z]/.test(tok) && /[A-Z]$/.test(prev ?? '');
+    const attachable = prev && (/[A-Za-z]$/.test(prev) || /^[A-Z]$/.test(prev));
+    if ((shortFragment || afterCapital) && attachable) out[out.length - 1] = prev + tok;
     else out.push(tok);
   }
   return out.join(' ');
