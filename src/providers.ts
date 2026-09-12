@@ -6,7 +6,7 @@ import * as vscode from 'vscode';
 import { TargetIndex } from './index';
 import { callContextAt, collectAliasBindings, Decl, DocModel } from './model';
 import { TokKind, tokenAt } from './lexer';
-import { BindingRef, humanizeAction, GAME_ELITE } from './binds';
+import { BindingRef, Chord, chordMatches, parseChord, GAME_ELITE } from './binds';
 import {
   allUsbCodes,
   anyControlLabel,
@@ -399,19 +399,27 @@ export class TargetHoverProvider implements vscode.HoverProvider {
       const name = m ? usbKeyName(m[1]) : null;
       if (name) {
         const normalised = m![1].toUpperCase().replace(/^0+(?=.)/, '').padStart(2, '0');
-        const parts = [
-          // Escaped: several key names are punctuation, and "Keypad *" rendered as
-          // literal asterisks around a broken bold span.
-          `**${escapeMarkdown(name)}**`,
-          `USB HID keyboard code \`0x${normalised}\`, sent through the virtual keyboard.`,
-        ];
-        // What the game does with that key, if a .binds file is to hand. The script
-        // itself cannot say: it sends keystrokes and the game decides. Looked up by the
-        // same normalised code, or USB[0x018] found its key name and missed its binding.
+        // The modifiers written before the key are part of what this line sends, so they
+        // are part of the question. Read backwards rather than widened into the trigger
+        // regex, which still matches USB[0x4F] alone.
+        const lineText = doc.lineAt(usbRange.start).text;
+        const chord = parseChord(lineText.slice(0, usbRange.start.character));
+        const label = shortKeyName(name);
         const binds = this.index.getBindsIndex(doc);
         const bound = binds.byUsbCode.get(normalised);
-        if (bound?.length) parts.push(...renderBindings(bound, binds.activePreset));
-        return new vscode.Hover(new vscode.MarkdownString(parts.join('\n\n')), usbRange);
+        // No restatement of the token being hovered: `USB[0x4F]` is under the pointer,
+        // and naming the key is only worth a line when nothing else can be said.
+        const parts = bound?.length
+          ? renderBindings(bound, chord, label, binds.activePreset)
+          : [`**${escapeMarkdown(label)}**`, `USB HID keyboard code \`0x${normalised}\`.`];
+        // The hover covers the whole chord, so the underline matches what it describes.
+        const chordStart = chord.modifiers.length || chord.unknown.length
+          ? new vscode.Position(usbRange.start.line, usbRange.start.character - (/((?:(?:[A-Za-z_]\w*|USB\s*\[[^\]]*\])\s*\+\s*)+)$/.exec(lineText.slice(0, usbRange.start.character))?.[1].length ?? 0))
+          : usbRange.start;
+        return new vscode.Hover(
+          new vscode.MarkdownString(parts.join('\n\n')),
+          new vscode.Range(chordStart, usbRange.end)
+        );
       }
     }
 
@@ -447,8 +455,9 @@ export class TargetHoverProvider implements vscode.HoverProvider {
         : dxDefault
           ? this.index.getBindsIndex(doc).byButton.get(dxDefault.dx)
           : undefined;
+      // A virtual button carries no modifier, so every binding on it is an exact match.
       if (forButton?.length) {
-        parts.push(...renderBindings(forButton, this.index.getBindsIndex(doc).activePreset));
+        parts.push(...renderBindings(forButton, { modifiers: [], unknown: [] }, word, this.index.getBindsIndex(doc).activePreset));
       }
       return md(parts.join('\n\n'));
     }
@@ -607,6 +616,19 @@ function locateRange(model: DocModel, d: Decl): vscode.Range {
 }
 
 /**
+ * The USB table names a key by both its cases - "u U", "s S" - which is the table's
+ * notation for unshifted and shifted, not the key's name. Showing both reads as a
+ * stutter, so the pair collapses to one.
+ */
+export function shortKeyName(name: string): string {
+  const parts = name.split(/\s+/);
+  // Two short tokens is the table's unshifted/shifted pair - "u U", "1 !". The first is
+  // the key. A name like "Keypad *" is not that shape and survives whole.
+  if (parts.length === 2 && parts.every((p) => p.length <= 2)) return parts[0];
+  return name;
+}
+
+/**
  * Markdown-safe text: key names are often punctuation, and "Keypad *" rendered as
  * literal asterisks around a broken bold span.
  *
@@ -626,65 +648,65 @@ export function escapeMarkdown(text: string): string {
  * folded to one line per action, the slot carried as a suffix, and the game's
  * CamelCase names written out.
  */
-export function renderBindings(bound: BindingRef[], activePreset: string | null): string[] {
-  const LIMIT = 8;
-  const byGame = new Map<string, BindingRef[]>();
-  for (const b of bound) {
-    if (!byGame.has(b.game)) byGame.set(b.game, []);
-    byGame.get(b.game)!.push(b);
+export function renderBindings(
+  all: BindingRef[],
+  chord: Chord,
+  keyLabel: string | null,
+  activePreset: string | null
+): string[] {
+  const out: string[] = [];
+
+  // An unrecognised term is never dropped. Answering for the bare key would describe a
+  // line the author did not write - the same failure as ignoring the modifier entirely.
+  if (chord.unknown.length) {
+    const names = chord.unknown.map((u) => `\`${u}\``).join(', ');
+    out.push(
+      `\u26a0 ${names} ${chord.unknown.length > 1 ? 'are not modifiers' : 'is not a modifier'} this extension knows, ` +
+        `so the game bindings below may not be the ones this line triggers.`
+    );
   }
 
-  const line = (action: string, info: { slots: Set<string>; modifiers: string[] }): string => {
+  const exact = all.filter((r) => chordMatches(r, chord.modifiers));
+  const others = all.filter((r) => !chordMatches(r, chord.modifiers));
+  const chordLabel = [...chord.modifiers, keyLabel ?? 'this key'].map((p) => `\`${p}\``).join(' + ');
+
+  // The action name is the game's own, verbatim: it is what you would search the
+  // binding file for. Rewriting it for looks made it un-findable, and the link does the
+  // job the prettier name was standing in for.
+  const row = (r: BindingRef, note?: string): string => {
+    const target = `${vscode.Uri.file(r.path).toString()}#L${r.line}`;
     const bits: string[] = [];
-    // The modifier is the part that changes what the key does on its own, so it leads.
-    if (info.modifiers.length) bits.push(`with ${escapeMarkdown(info.modifiers.join(' + '))}`);
-    // "primary" is the default slot, and repeating it down every line was noise. A
-    // binding that exists only in the secondary slot is worth saying.
-    if (info.slots.size === 1 && !info.slots.has('primary') && !info.slots.has('')) {
-      bits.push([...info.slots][0]);
-    }
-    const suffix = bits.length ? ` \u2014 ${bits.join(', ')}` : '';
-    return `- ${escapeMarkdown(humanizeAction(action))}${suffix}`;
+    if (note) bits.push(note);
+    if (r.slot && r.slot.toLowerCase() !== 'primary') bits.push(r.slot.toLowerCase());
+    return `- [\`${r.action}\`](${target})${bits.length ? ` \u2014 ${bits.join(', ')}` : ''}`;
   };
 
-  const out: string[] = [];
-  for (const [game, refs] of byGame) {
-    const byFile = new Map<string, Map<string, { slots: Set<string>; modifiers: string[] }>>();
-    for (const b of refs) {
-      if (!byFile.has(b.file)) byFile.set(b.file, new Map());
-      const actions = byFile.get(b.file)!;
-      const existing = actions.get(b.action);
-      if (existing) {
-        existing.slots.add(b.slot.toLowerCase());
-        if (!existing.modifiers.length) existing.modifiers = b.modifiers;
-      } else {
-        actions.set(b.action, { slots: new Set([b.slot.toLowerCase()]), modifiers: b.modifiers });
-      }
-    }
+  // Never truncated. The hover widget scrolls, resizes, and remembers the size the user
+  // dragged it to, so cutting the list short only hid answers it would have shown.
+  const source = (refs: BindingRef[]): string => {
+    const games = [...new Set(refs.map((r) => r.game))];
+    const files = [...new Set(refs.map((r) => r.file))];
+    const preset = activePreset && games.length === 1 && games[0] === GAME_ELITE ? activePreset : null;
+    return `*${games.join(', ')} \u00b7 ${preset ? `preset \`${preset}\`` : files.map((f) => `\`${f}\``).join(', ')}*`;
+  };
 
-    if (byFile.size === 1) {
-      const [file, actions] = [...byFile][0];
-      // A preset is an Elite Dangerous idea; for the others the file itself is the name
-      // worth showing, since it is per-aircraft or per-export.
-      const heading =
-        activePreset !== null && game === GAME_ELITE
-          ? `In your active ${game} preset, **${escapeMarkdown(activePreset)}**:`
-          : `In **${escapeMarkdown(file)}** (${game}):`;
-      const rows = [...actions].slice(0, LIMIT).map(([a, i]) => line(a, i));
-      if (actions.size > LIMIT) rows.push(`- \u2026and ${actions.size - LIMIT} more`);
-      out.push(heading, rows.join('\n'));
-      continue;
-    }
+  if (exact.length) {
+    out.push(exact.map((r) => row(r)).join('\n'), source(exact));
+    return out;
+  }
 
-    // Several files of one game disagree - different aircraft in DCS, or no active
-    // preset identified - so which said what is the point. Named, not merged.
-    out.push(`${game} \u2014 bound in ${byFile.size} files:`);
-    const perFile = Math.max(2, Math.floor(LIMIT / byFile.size));
-    for (const [file, actions] of byFile) {
-      const rows = [...actions].slice(0, perFile).map(([a, i]) => line(a, i));
-      if (actions.size > perFile) rows.push(`- \u2026and ${actions.size - perFile} more`);
-      out.push(`**${escapeMarkdown(file)}**\n${rows.join('\n')}`);
-    }
+  // The case the old hover actively concealed: this chord does nothing, and the rows it
+  // was showing belonged to other lines of the script.
+  const games = [...new Set(all.map((r) => r.game))];
+  out.push(`Nothing in ${games.map((g) => `**${g}**`).join(' or ')} is bound to ${chordLabel}.`);
+  if (others.length) {
+    out.push(
+      'Same key, other modifiers:',
+      others
+        .map((r) => row(r, r.modifiers.length ? `needs ${r.modifiers.join(' + ')}` : 'no modifier'))
+        .join('\n'),
+      source(others)
+    );
   }
   return out;
 }

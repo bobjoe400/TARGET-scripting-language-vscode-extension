@@ -533,9 +533,10 @@ for (const [label, src, needle] of [
 // script authors name their defines however they like - of 200 defines in the corpus
 // only 15 match a game action name.
 {
-  const { usbCodeForEdKey, ED_MODIFIERS, buildBindsIndex, activePresetNames, fileMatchesPreset, humanizeAction, bindingFormat } =
+  const { usbCodeForEdKey, ED_MODIFIERS, buildBindsIndex, activePresetNames, fileMatchesPreset, bindingFormat, parseChord, chordMatches } =
     require(path.join(repoRoot, 'out/binds.js'));
-  const { renderBindings, escapeMarkdown } = require(path.join(repoRoot, 'out/providers.js'));
+  const { renderBindings, escapeMarkdown, shortKeyName } = require(path.join(repoRoot, 'out/providers.js'));
+  const NOCHORD = { modifiers: [], unknown: [] };
 
   // Key resolution must be exact: Home and Keypad-7 are different keys.
   const resolutions = [
@@ -563,22 +564,36 @@ for (const [label, src, needle] of [
 
   // And it reaches the editor: hovering the scancode says what the game does.
   const h = hoverAt('int f() { MapKey(&Joystick, TG1, USB[0x1|8]); }', path.join(FIX, 'bindsdemo.tmc'));
-  // Written the way a reader says it, not the way the game spells it internally.
-  if (h && /Deploy Hardpoint Toggle/.test(h)) { pass++; console.log('  ok    hover shows the game action a key is bound to'); }
+  // The game's own spelling, linked to the line that decides it.
+  if (h && /\[`DeployHardpointToggle`\]\(file:[^)]*#L\d+\)/.test(h)) { pass++; console.log('  ok    hover shows the game action a key is bound to'); }
   else failures.push(`binds hover: ${JSON.stringify((h || '').slice(0, 200))}`);
 
   // --- the hover has to be readable, not just correct -----------------------
   // A Bindings folder accumulates every preset the player has tried, and the community
   // layouts ship more beside the script. Merging them produced a hover that repeated one
   // action four times and hid the rest behind "and 6 more".
-  if (humanizeAction('DeployHardpointToggle') === 'Deploy Hardpoint Toggle' && humanizeAction('ToggleReverseThrottleInputFreeCam') === 'Toggle Reverse Throttle Input Free Cam') {
-    pass++; console.log('  ok    game action names are written out');
-  } else failures.push(`humanize: ${humanizeAction('DeployHardpointToggle')}`);
+  // The game's own spelling is kept verbatim: it is the string you would search the
+  // binding file for, and prettifying it made it un-findable.
+  {
+    const md = renderBindings(buildBindsIndex([bindsFile]).byUsbCode.get('18'), NOCHORD, 'u', null).join('\n');
+    if (/`DeployHardpointToggle`/.test(md) && !/Deploy Hardpoint Toggle/.test(md)) {
+      pass++; console.log('  ok    the game\'s own action name is shown verbatim');
+    } else failures.push(`verbatim: ${JSON.stringify(md.slice(0, 160))}`);
+    // ...and links to the line that decides it, needing no command and no trust grant.
+    if (/\]\(file:\/\/[^)]*#L\d+\)/.test(md)) {
+      pass++; console.log('  ok    each action links to its line in the binding file');
+    } else failures.push(`link: ${JSON.stringify(md.slice(0, 160))}`);
+  }
 
   // "Keypad *" used to render as literal asterisks around a broken bold span.
   if (escapeMarkdown('Keypad *') === 'Keypad \\*' && escapeMarkdown('Clicker-ENHANCED_W') === 'Clicker-ENHANCED\\_W') {
     pass++; console.log('  ok    punctuation key names survive markdown');
   } else failures.push(`escape: ${escapeMarkdown('Keypad *')} / ${escapeMarkdown('Clicker-ENHANCED_W')}`);
+
+  // "u U" is the USB table's unshifted/shifted notation, not the key's name.
+  if (shortKeyName('u U') === 'u' && shortKeyName('1 !') === '1' && shortKeyName('Keypad *') === 'Keypad *' && shortKeyName('Right Arrow') === 'Right Arrow') {
+    pass++; console.log('  ok    a doubled key name collapses, a two-word name does not');
+  } else failures.push(`shortKeyName: ${shortKeyName('u U')} / ${shortKeyName('Keypad *')}`);
 
   // The same preset installed in the game's folder AND shipped beside the script is one
   // fact, not two.
@@ -588,17 +603,58 @@ for (const [label, src, needle] of [
   else failures.push(`dedupe: ${JSON.stringify(dedup)}`);
 
   {
-    const refs = [
-      { action: 'CyclePreviousSubsystem', slot: 'Secondary', key: 'Key_K', modifiers: [], file: 'A.binds', game: 'Elite Dangerous', kind: 'key' },
-      { action: 'FixCameraWorldToggle', slot: 'Primary', key: 'Key_K', modifiers: [], file: 'A.binds', game: 'Elite Dangerous', kind: 'key' },
-      { action: 'RecallDismissShip', slot: 'Secondary', key: 'Key_K', modifiers: ['L_ALT'], file: 'A.binds', game: 'Elite Dangerous', kind: 'key' },
-    ];
-    const md = renderBindings(refs, 'MyPreset').join('\n');
-    const primaryNoise = /Fix Camera World Toggle \u2014 primary/.test(md);
-    if (/active Elite Dangerous preset/.test(md) && /Recall Dismiss Ship \u2014 with L\\_ALT, secondary/.test(md) && !primaryNoise) {
-      pass++; console.log('  ok    bindings render one line per action, modifiers called out');
-    } else failures.push(`render: ${JSON.stringify(md)}`);
+    const mk = (action, modifiers, line) => ({
+      action, slot: 'Secondary', key: 'Key_K', modifiers, file: 'A.binds',
+      path: '/tmp/A.binds', line, game: 'Elite Dangerous', kind: 'key',
+    });
+    const refs = [mk('UI_Right', [], 5), mk('IncreaseWeaponsPower', ['L_SHIFT'], 9), mk('ItemWheelRight', ['L_ALT'], 14)];
+
+    // The line `L_ALT+USB[0x4F]` sends a different key from `USB[0x4F]`, and a binding
+    // needing L_SHIFT does not fire for either. Listing all three was the extension
+    // describing two other lines of the user's script as if they were this one.
+    const alt = renderBindings(refs, parseChord('L_ALT+'), 'Right Arrow', null).join('\n');
+    if (/ItemWheelRight/.test(alt) && !/IncreaseWeaponsPower/.test(alt) && !/UI_Right/.test(alt)) {
+      pass++; console.log('  ok    only bindings for the modifiers actually on the line');
+    } else failures.push(`chord filter: ${JSON.stringify(alt.slice(0, 200))}`);
+
+    const bare = renderBindings(refs, NOCHORD, 'Right Arrow', null).join('\n');
+    if (/UI_Right/.test(bare) && !/ItemWheelRight/.test(bare)) {
+      pass++; console.log('  ok    a bare key does not inherit modified bindings');
+    } else failures.push(`bare chord: ${JSON.stringify(bare.slice(0, 200))}`);
+
+    // Nothing bound to this chord is a real answer, and the old hover concealed it.
+    const none = renderBindings(refs, parseChord('R_ALT+'), 'Right Arrow', null).join('\n');
+    if (/Nothing in \*\*Elite Dangerous\*\* is bound to/.test(none) && /Same key, other modifiers/.test(none) && /needs L_ALT/.test(none)) {
+      pass++; console.log('  ok    an unbound chord says so, and shows the near misses');
+    } else failures.push(`unbound: ${JSON.stringify(none.slice(0, 220))}`);
+
+    // An unrecognised term must never fall back to the bare key - the user's own corpus
+    // has nine lines reading `L+CTL+USB[0x1E]`, where L is defined nowhere.
+    const typo = parseChord('L+CTL+');
+    const typoMd = renderBindings(refs, typo, 'Right Arrow', null).join('\n');
+    if (typo.unknown.includes('L') && typo.modifiers.join() === 'L_CTL' && /`L` is not a modifier/.test(typoMd)) {
+      pass++; console.log('  ok    an unknown modifier is reported, not silently dropped');
+    } else failures.push(`typo chord: ${JSON.stringify(typo)}`);
+
+    // CTL and LCTL are both 1224 in defines.tmh: a bare CTL is the LEFT control key.
+    if (parseChord('CTL+').modifiers.join() === 'L_CTL' && parseChord('USB[0xE1]+').modifiers.join() === 'L_SHIFT') {
+      pass++; console.log('  ok    both spellings of a modifier resolve the same way');
+    } else failures.push(`modifier spellings: ${JSON.stringify(parseChord('CTL+'))}`);
+
+    // Set equality, not subset: a two-modifier binding is a different key.
+    if (!chordMatches(mk('X', ['L_ALT', 'L_CTL'], 1), ['L_ALT']) && chordMatches(mk('X', ['L_ALT'], 1), ['L_ALT'])) {
+      pass++; console.log('  ok    chords match on the whole set, not a subset');
+    } else failures.push('chord subset');
+
+    // The hover widget scrolls and remembers its size, so truncating hid answers it
+    // would have shown.
+    const many = Array.from({ length: 30 }, (_, i) => mk(`Action${i}`, [], i + 1));
+    const all = renderBindings(many, NOCHORD, 'k', null).join('\n');
+    if (/Action29/.test(all) && !/more/.test(all)) {
+      pass++; console.log('  ok    a long list is never truncated');
+    } else failures.push(`truncation: ${(all.match(/Action\d+/g) || []).length} of 30 shown`);
   }
+
 
   // --- the other games TARGET scripts are written for ----------------------
   // Elite Dangerous is not the only one, and .binds is not the only format. DCS writes
@@ -635,17 +691,17 @@ for (const [label, src, needle] of [
 
     // And the hover names each game rather than merging them into one list.
     const both = [...(all.byButton.get(30) ?? []), ...(all.byButton.get(6) ?? [])];
-    const md = renderBindings(both, null).join('\n');
-    if (/Star Citizen/.test(md) && /DCS World/.test(md) && /Eject/.test(md)) {
+    const md = renderBindings(both, NOCHORD, 'DX30', null).join('\n');
+    if (/Star Citizen/.test(md) && /DCS World/.test(md) && /v_eject/.test(md)) {
       pass++; console.log('  ok    a button bound in two games is reported per game');
     } else failures.push(`multi-game render: ${JSON.stringify(md.slice(0, 200))}`);
 
-    // Star Citizen's category prefix is its own bookkeeping; DCS names are already
-    // written for a person and must survive untouched.
-    if (humanizeAction('v_ifcs_toggle_vector_decoupling') === 'Ifcs Toggle Vector Decoupling' &&
-        humanizeAction('Gun Trigger - SECOND DETENT (Press to shoot)') === 'Gun Trigger - SECOND DETENT (Press to shoot)') {
-      pass++; console.log('  ok    each game\'s naming style is read on its own terms');
-    } else failures.push(`humanize games: ${humanizeAction('v_ifcs_toggle_vector_decoupling')}`);
+    // Every parser records the line, so the link lands on the action itself.
+    const dcsRef = d.byButton.get(6)[0];
+    const scRef = c.byButton.get(30)[0];
+    if (dcsRef.line > 1 && scRef.line > 1 && dcsRef.path.endsWith('Sample.diff.lua')) {
+      pass++; console.log(`  ok    every format records a line to link to (DCS L${dcsRef.line}, SC L${scRef.line})`);
+    } else failures.push(`lines: dcs=${dcsRef.line} sc=${scRef.line}`);
     void edButtons;
   }
 

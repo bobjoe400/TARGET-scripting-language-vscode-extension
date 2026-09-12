@@ -24,7 +24,12 @@ export interface BindingRef {
   /** The game's own token, e.g. Key_U, Joy_25, JOY_BTN6, js3_button30. */
   key: string;
   modifiers: string[];
+  /** Basename, for display. */
   file: string;
+  /** Absolute path, for the link back to the file that decides this. */
+  path: string;
+  /** 1-based line of the action in that file. */
+  line: number;
   /** The game this binding belongs to, for the hover to name. */
   game: string;
   kind: InputKind;
@@ -109,6 +114,31 @@ export function fileMatchesPreset(file: string, preset: string): boolean {
   const base = path.basename(file).replace(/\.binds$/i, '');
   return base === preset || new RegExp(`^${preset.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\.[\\d.]+)?$`).test(base);
 }
+
+/**
+ * How a modifier written in a script maps onto the name the binding files use.
+ *
+ * TARGET spells the same modifier two ways and both appear in real scripts. target.tmh
+ * defines L_SHIFT..R_WIN as bit flags to OR onto a scancode; defines.tmh defines CTL,
+ * ALT, LCTL, LALT and friends as key IDs in the 1000 range. They are NOT synonyms for
+ * "either side": CTL and LCTL are both 1224, so a bare CTL is the LEFT control key, and
+ * there is no bare SHIFT constant at all. USB[0xE0]..USB[0xE7] are the same eight keys
+ * again, as raw HID codes, which is the idiom the vendor header itself uses.
+ */
+export const SCRIPT_MODIFIERS: Record<string, string> = {
+  L_SHIFT: 'L_SHIFT', R_SHIFT: 'R_SHIFT', L_CTL: 'L_CTL', R_CTL: 'R_CTL',
+  L_ALT: 'L_ALT', R_ALT: 'R_ALT', L_WIN: 'L_WIN', R_WIN: 'R_WIN',
+  CTL: 'L_CTL', LCTL: 'L_CTL', RCTL: 'R_CTL',
+  ALT: 'L_ALT', LALT: 'L_ALT', RALT: 'R_ALT',
+  LSHF: 'L_SHIFT', RSHF: 'R_SHIFT',
+  LWIN: 'L_WIN', RWIN: 'R_WIN',
+};
+
+/** The same eight keys as raw HID codes. */
+export const USB_MODIFIERS: Record<string, string> = {
+  E0: 'L_CTL', E1: 'L_SHIFT', E2: 'L_ALT', E3: 'L_WIN',
+  E4: 'R_CTL', E5: 'R_SHIFT', E6: 'R_ALT', E7: 'R_WIN',
+};
 
 /**
  * Elite Dangerous key names that do not simply match a name in the manual's table.
@@ -213,6 +243,65 @@ export function usbCodeForEdKey(edKey: string): string | null {
   return null;
 }
 
+export interface Chord {
+  /** Canonical modifier names, sorted, e.g. ['L_ALT']. */
+  modifiers: string[];
+  /** Terms that are not modifiers this code knows. */
+  unknown: string[];
+}
+
+/**
+ * The modifiers written before a key on a script line.
+ *
+ * `L_ALT+USB[0x4F]` and `USB[0x4F]` send different things, and a binding that needs
+ * L_SHIFT does not fire for either of them - so the modifiers are part of the question,
+ * not decoration. The hover used to match on the scancode alone and present every
+ * binding on that key as if it were an answer.
+ *
+ * An unrecognised term is reported rather than dropped: falling back to the bare key
+ * would answer a question the author did not ask. The user's own corpus has nine lines
+ * reading `L+CTL+USB[0x1E]`, where `L` is defined nowhere - a typo for `L_CTL`, and
+ * exactly the case that must not silently become "no modifier".
+ */
+export function parseChord(before: string): Chord {
+  const modifiers = new Set<string>();
+  const unknown: string[] = [];
+  const m = /((?:(?:[A-Za-z_]\w*|USB\s*\[[^\]]*\])\s*\+\s*)+)$/.exec(before);
+  if (!m) return { modifiers: [], unknown: [] };
+  for (const raw of m[1].split('+')) {
+    const term = raw.trim();
+    if (!term) continue;
+    const usb = /^USB\s*\[\s*0[xX]([0-9A-Fa-f]+)\s*\]$/.exec(term);
+    const name = usb ? own(USB_MODIFIERS, usb[1].toUpperCase().padStart(2, '0')) : own(SCRIPT_MODIFIERS, term);
+    if (name) modifiers.add(name);
+    else unknown.push(term);
+  }
+  return { modifiers: [...modifiers].sort(), unknown };
+}
+
+/** Whether a binding fires for exactly this chord. Set equality, not subset. */
+export function chordMatches(ref: BindingRef, chord: string[]): boolean {
+  const a = [...ref.modifiers].sort();
+  if (a.length !== chord.length) return false;
+  return a.every((v, i) => v === chord[i]);
+}
+
+/** Turns a character offset into a 1-based line, scanning the file once. */
+function lineCounter(text: string): (offset: number) => number {
+  const starts: number[] = [0];
+  for (let i = 0; i < text.length; i++) if (text.charCodeAt(i) === 10) starts.push(i + 1);
+  return (offset: number) => {
+    let lo = 0;
+    let hi = starts.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (starts[mid] <= offset) lo = mid;
+      else hi = mid - 1;
+    }
+    return lo + 1;
+  };
+}
+
 /** Parses one .binds file into its action bindings. */
 export function parseBinds(file: string): BindingRef[] {
   // Through the same BOM sniffing as every other read: this was the one place that
@@ -221,10 +310,12 @@ export function parseBinds(file: string): BindingRef[] {
   if (xml === null) return [];
   const out: BindingRef[] = [];
   const base = path.basename(file);
+  const lineAt = lineCounter(xml);
   // <ActionName> ... <Primary Device="Keyboard" Key="Key_U"><Modifier .../></Primary>
   for (const block of xml.matchAll(/<([A-Za-z_][\w]*)>([\s\S]*?)<\/\1>/g)) {
     const action = block[1];
     const body = block[2];
+    const line = lineAt(block.index ?? 0);
     // Either self-closing, or an element whose body carries the modifier keys. The
     // closing tag must not be optional: with a lazy body and an optional close, the
     // body matches empty and every modifier is lost.
@@ -242,6 +333,8 @@ export function parseBinds(file: string): BindingRef[] {
         key: `Joy_${slot[2]}`,
         modifiers: [],
         file: base,
+        path: file,
+        line,
         game: GAME_ELITE,
         kind: 'button',
         button: Number(slot[2]),
@@ -255,7 +348,7 @@ export function parseBinds(file: string): BindingRef[] {
         const flag = own(ED_MODIFIERS, mod[1]);
         if (flag) modifiers.push(flag);
       }
-      out.push({ action, slot: slot[1], key: slot[2], modifiers, file: base, game: GAME_ELITE, kind: 'key' });
+      out.push({ action, slot: slot[1], key: slot[2], modifiers, file: base, path: file, line, game: GAME_ELITE, kind: 'key' });
     }
   }
   return out;
@@ -274,6 +367,7 @@ export function parseDcsDiff(file: string): BindingRef[] {
   const text = readTextFile(file);
   if (text === null) return [];
   const base = path.basename(file);
+  const lineAt = lineCounter(text);
   const out: BindingRef[] = [];
   let section: 'added' | 'removed' | null = null;
   let pending: { token: string; button: number }[] = [];
@@ -286,7 +380,8 @@ export function parseDcsDiff(file: string): BindingRef[] {
     }
     if (m[1] === 'name') {
       const action = (m[2] ?? '').replace(/\\(.)/g, '$1').trim();
-      if (action) for (const p of pending) out.push({ action, slot: '', key: p.token, modifiers: [], file: base, game: GAME_DCS, kind: 'button', button: p.button });
+      const line = lineAt(m.index ?? 0);
+      if (action) for (const p of pending) out.push({ action, slot: '', key: p.token, modifiers: [], file: base, path: file, line, game: GAME_DCS, kind: 'button', button: p.button });
       pending = [];
       continue;
     }
@@ -306,6 +401,7 @@ export function parseStarCitizen(file: string): BindingRef[] {
   const xml = readTextFile(file);
   if (xml === null) return [];
   const base = path.basename(file);
+  const lineAt = lineCounter(xml);
   const out: BindingRef[] = [];
   for (const m of xml.matchAll(
     /<action\s+name=['"]([^'"]+)['"]\s*>([\s\S]*?)<\/action>/g
@@ -314,7 +410,7 @@ export function parseStarCitizen(file: string): BindingRef[] {
     for (const r of m[2].matchAll(/<rebind\s+[^>]*input=['"]([^'"]+)['"]/g)) {
       const btn = /^(?:js\d+_)?button(\d+)$/i.exec(r[1].trim());
       if (!btn) continue;
-      out.push({ action, slot: '', key: r[1].trim(), modifiers: [], file: base, game: GAME_STAR_CITIZEN, kind: 'button', button: Number(btn[1]) });
+      out.push({ action, slot: '', key: r[1].trim(), modifiers: [], file: base, path: file, line: lineAt(m.index ?? 0), game: GAME_STAR_CITIZEN, kind: 'button', button: Number(btn[1]) });
     }
   }
   return out;
@@ -380,25 +476,3 @@ export function buildBindsIndex(files: string[], activePreset: string | null = n
   };
 }
 
-/**
- * The game's action name as a reader would say it: DeployHardpointToggle ->
- * "Deploy Hardpoint Toggle". Acronyms and digits are kept together.
- */
-export function humanizeAction(action: string): string {
-  // DCS names its commands in full already - "Gun Trigger - SECOND DETENT (Press to
-  // shoot)" - and any reformatting of those only does damage.
-  if (/\s/.test(action)) return action;
-  // Star Citizen: lowercase words joined by underscores, behind a short category prefix
-  // (v_ for vehicle). The prefix is the game's own bookkeeping and reads as noise.
-  if (/^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$/.test(action)) {
-    const parts = action.split('_');
-    if (parts.length > 1 && parts[0].length <= 2) parts.shift();
-    return parts.map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-  }
-  // Elite Dangerous: CamelCase run together.
-  return action
-    .replace(/_/g, ' ')
-    .replace(/([a-z\d])([A-Z])/g, '$1 $2')
-    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
-    .trim();
-}
