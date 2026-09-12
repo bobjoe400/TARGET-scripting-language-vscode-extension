@@ -115,6 +115,51 @@ function stageRootCase(label, projectDir, closure, expected) {
   }
 }
 
+// --- files outside the mirrored tree ---------------------------------------
+// When the staging root falls back to the project folder, anything the include graph
+// reached outside it used to be dropped, which guaranteed a "File not found" the real
+// compiler never gives. They are placed beside the entry instead - but must never land
+// on top of one of the project's own files.
+{
+  const inst = R.findInstall();
+  if (inst) {
+    // Home is refused as a staging root, so a sibling of the project under it is
+    // genuinely outside the mirrored tree.
+    const proj = path.join(os.homedir(), '.target-test-proj');
+    const other = path.join(os.homedir(), '.target-test-lib');
+    const clean = () => { for (const d of [proj, other]) fs.rmSync(d, { recursive: true, force: true }); };
+    const head = path.join(inst.scripts, 'target.tmh');
+    const entry = path.join(proj, 'x.tmc');
+    const script = 'include "target.tmh"\r\ninclude "common.tmh"\r\n\r\nint main()\r\n{\r\n\tMapKey(&Joystick, TG1, DX1);\r\n}\r\n';
+
+    clean();
+    for (const d of [proj, other]) fs.mkdirSync(d, { recursive: true });
+    fs.writeFileSync(path.join(other, 'common.tmh'), 'int libFn()\r\n{\r\n\treturn 7;\r\n}\r\n');
+    fs.writeFileSync(entry, script);
+    let r = await R.compileCheck(entry, inst, { closureFiles: [head, path.join(other, 'common.tmh')] });
+    if (!r.ok) failures.push(`an outside header is staged: ${JSON.stringify(r.problems)} ${r.error ?? ''}`);
+    else { pass++; console.log('  ok    a header outside the project is staged, not dropped'); }
+
+    const staged = await R.stageProjectForRun(entry, inst, { closureFiles: [head, path.join(other, 'common.tmh')] });
+    if (!staged.ok) failures.push(`run staging failed: ${staged.error}`);
+    else if (!fs.existsSync(path.join(staged.staging.dir, 'common.tmh')))
+      failures.push('run staging dropped the outside header the compile had staged');
+    else { pass++; console.log('  ok    running stages the same outside header compiling does'); }
+
+    // Now the project has its own common.tmh, and the outside one of that name cannot
+    // compile. The project's must win; if the stranger overwrites it the compiler
+    // reports an error against a file that is correct on disk.
+    fs.writeFileSync(path.join(proj, 'common.tmh'), 'int projectFn()\r\n{\r\n\treturn 1;\r\n}\r\n');
+    fs.writeFileSync(path.join(other, 'common.tmh'), 'int bad(\r\n{\r\n');
+    r = await R.compileCheck(entry, inst, {
+      closureFiles: [head, path.join(proj, 'common.tmh'), path.join(other, 'common.tmh')],
+    });
+    if (!r.ok) failures.push(`an outside header must not shadow a project file: ${JSON.stringify(r.problems)}`);
+    else { pass++; console.log("  ok    an outside header never replaces the project's own file"); }
+    clean();
+  }
+}
+
 const install = R.findInstall();
 if (!install) {
   console.log('  TARGET is not installed here - skipping (not a failure).');

@@ -235,6 +235,23 @@ function commonAncestor(dirs: string[]): string | null {
  * the user's home: mirroring from there yields absurd staged paths, and on Windows a
  * deep enough one stops working entirely.
  */
+/**
+ * Where a source file lands inside the stage, or null if it cannot be staged.
+ *
+ * A file outside the mirrored tree is placed beside the entry script, so an include
+ * written as a bare filename still resolves - but never on top of a name already
+ * staged. An unrelated header that happens to share a name with one of the project's
+ * own would otherwise replace it, and the compiler then reports errors against a file
+ * that is perfectly correct on disk.
+ */
+function stagedRelPath(src: string, stageRoot: string, projectDir: string, taken: Set<string>): string | null {
+  const rel = path.relative(stageRoot, src);
+  if (!rel.startsWith('..')) return rel;
+  const beside = path.join(path.relative(stageRoot, projectDir), path.basename(src));
+  if (beside.startsWith('..')) return null;
+  return taken.has(beside.toLowerCase()) ? null : beside;
+}
+
 export function stageRootFor(projectDir: string, closureFiles: string[], install: TargetInstall | null): string {
   const outside = closureFiles.filter((f) => !isInstalledHeader(f, install)).map((f) => path.dirname(f));
   const ancestor = commonAncestor([projectDir, ...outside]);
@@ -373,15 +390,13 @@ export async function compileCheck(
     const sources = new Set<string>(listScriptFiles(projectDir).map((r) => path.join(projectDir, r)));
     for (const f of opts.closureFiles ?? []) if (safeIsFile(f)) sources.add(f);
 
+    // Insertion order matters: the project's own files are in the set first, so they
+    // claim their names before anything reached from outside the tree.
+    const taken = new Set<string>();
     for (const src of sources) {
-      let rel = path.relative(stageRoot, src);
-      if (rel.startsWith('..')) {
-        // Outside the mirrored tree. Dropping it guaranteed a "File not found" the real
-        // compiler does not give; placing it beside the entry at least resolves the
-        // includes written as a bare filename.
-        rel = path.join(path.relative(stageRoot, projectDir), path.basename(src));
-        if (rel.startsWith('..')) continue;
-      }
+      const rel = stagedRelPath(src, stageRoot, projectDir, taken);
+      if (rel === null) continue;
+      taken.add(rel.toLowerCase());
       const bytes = fs.readFileSync(src);
       const bom = bomKind(bytes);
       if (bom) bomFiles.push({ file: src, kind: bom });
@@ -854,9 +869,11 @@ export async function stageProjectForRun(
 
     const sources = new Set<string>(listScriptFiles(projectDir).map((r) => path.join(projectDir, r)));
     for (const f of opts.closureFiles ?? []) if (safeIsFile(f)) sources.add(f);
+    const taken = new Set<string>();
     for (const src of sources) {
-      const rel = path.relative(stageRoot, src);
-      if (rel.startsWith('..')) continue;
+      const rel = stagedRelPath(src, stageRoot, projectDir, taken);
+      if (rel === null) continue;
+      taken.add(rel.toLowerCase());
       const dst = path.join(dir, rel);
       fs.mkdirSync(path.dirname(dst), { recursive: true });
       copyFileBytes(src, dst);
