@@ -138,8 +138,10 @@ expectClean('unary minus and not',   'int f() { int i; int j; i = -j; i = !j; }'
 expectClean('quoted include',        'include "target.tmh"\nint f() { return 0; }');
 
 // -- the DirectX button ceiling, where the sources disagree ---------------------
-expect('DX40 above the ceiling',  'int f() { MapKey(&Joystick, TG1, DX40); }', 'directx-button-ceiling');
-expect('DX128 above the ceiling', 'int f() { MapKey(&Joystick, TG1, DX128); }', 'directx-button-ceiling');
+expect('DX40 needs the newer data format', 'int f() { MapKey(&Joystick, TG1, DX40); }', 'directx-button-ceiling');
+expect('DX120 is the last real button',     'int f() { MapKey(&Joystick, TG1, DX120); }', 'directx-button-ceiling');
+expect('DX121 has no button behind it',     'int f() { MapKey(&Joystick, TG1, DX121); }', 'directx-button-ceiling');
+expect('DX128 has no button behind it',     'int f() { MapKey(&Joystick, TG1, DX128); }', 'directx-button-ceiling');
 expectClean('DX32 is at the limit', 'int f() { MapKey(&Joystick, TG1, DX32); }');
 expectClean('DX11 well under',      'int f() { MapKey(&Joystick, TG1, DX11); }');
 

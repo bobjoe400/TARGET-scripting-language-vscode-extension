@@ -224,24 +224,31 @@ export function computeDiagnostics(
   }
 
   /**
-   * Notes DX buttons above 32.
+   * Two separate facts about DX button numbers, from two different sources.
    *
-   * The ceiling is not TARGET's and not fixed: DirectInput defines two joystick data
-   * formats, and the GAME chooses which one it asks for.
+   * 1. What TARGET declares. Measured by running a script that creates only a virtual
+   *    joystick and reading the resulting device's HID capabilities live
+   *    (HidP_GetCaps / HidP_GetButtonCaps on HID\THRUSTMASTERGAMEDEVICE):
    *
-   *   c_dfDIJoystick  -> DIJOYSTATE   { ... BYTE rgbButtons[32];  }
-   *   c_dfDIJoystick2 -> DIJOYSTATE2  { ... BYTE rgbButtons[128]; }
+   *      usagePage=0x01 usage=0x04 (Joystick)   inputReport=33 bytes
+   *      button caps: page=0x09 usage 1..120    value caps: 9
    *
-   * So a button above DX32 reaches a game reading DIJOYSTATE2 and is invisible to one
-   * reading DIJOYSTATE. That is why the figures in circulation disagree: Thrustmaster's
-   * 2011 manual quotes 32, defines.tmh names DX1..DX128, and Elite Dangerous reads 32.
+   *    120 buttons, and the report length corroborates it: 1 report id + 15 bytes of
+   *    button bits (120) + 8 axes at 16 bits + 1 byte of hat = 33. The 9 value caps
+   *    are those 8 axes plus the hat, matching the eight DX_*_AXIS constants exactly.
    *
-   * Both formats carry exactly eight axes - lX, lY, lZ, lRx, lRy, lRz and rglSlider[2] -
-   * which is precisely the eight DX_*_AXIS constants defines.tmh declares, so the axis
-   * half of the limit needs no check: a ninth cannot be named.
+   *    defines.tmh nevertheless names DX1..DX128, so DX121..DX128 are names with no
+   *    button behind them. Those can never work, whatever the game.
    *
-   * A button past the game's limit is never reported rather than rejected, so this is a
-   * hint: it cannot be known from the script alone whether it is a problem.
+   * 2. What a game reads. DirectInput defines two joystick data formats and the game
+   *    chooses: c_dfDIJoystick gives DIJOYSTATE with BYTE rgbButtons[32];
+   *    c_dfDIJoystick2 gives DIJOYSTATE2 with BYTE rgbButtons[128]. So a button above
+   *    32 reaches a game reading the second and is invisible to one reading the first.
+   *    Elite Dangerous reads 32.
+   *
+   * Hence a warning above 120, where nothing exists to send, and a hint between 33 and
+   * 120, where it depends on the game. Neither is ever an error: exceeding either limit
+   * is silent, never a failure the script can see.
    */
   function checkDirectXButtonCeiling(): void {
     const reported = new Set<string>();
@@ -252,10 +259,22 @@ export function computeDiagnostics(
       const n = parseInt(m[1], 10);
       if (n <= 32 || reported.has(t.value)) continue;
       reported.add(t.value);
+
+      if (n > 120) {
+        add(
+          t.start,
+          t.end,
+          `${t.value} has no button behind it. TARGET's virtual controller declares 120 buttons (HID usage 1..120), so although defines.tmh names DX1..DX128, anything above DX120 is never sent to any game.`,
+          'warning',
+          'directx-button-ceiling'
+        );
+        continue;
+      }
+
       add(
         t.start,
         t.end,
-        `${t.value} is above DX32. Whether it reaches the game depends on the DirectInput data format that game requests: DIJOYSTATE (c_dfDIJoystick) carries 32 buttons, DIJOYSTATE2 (c_dfDIJoystick2) carries 128. A button past the game's limit is silently never reported - Elite Dangerous reads 32. Keyboard combinations are the usual way around it.`,
+        `${t.value} is above DX32. TARGET's virtual controller does declare it - it offers 120 buttons - but whether the game reads it depends on the DirectInput data format that game requests: DIJOYSTATE (c_dfDIJoystick) carries 32 buttons, DIJOYSTATE2 (c_dfDIJoystick2) carries 128. Elite Dangerous reads 32. A button past the game's limit is silently never reported.`,
         'info',
         'directx-button-ceiling'
       );

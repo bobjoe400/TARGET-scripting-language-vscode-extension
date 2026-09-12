@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.6.0
+
+- The DX button limits are now measured rather than quoted. A script creating only a
+  virtual joystick was run and the resulting device's HID capabilities read live:
+  TARGET's virtual controller declares **120 buttons** (`usage 1..120`), a 33-byte
+  input report, and 9 value caps - 8 axes plus a hat, matching the eight `DX_*_AXIS`
+  constants exactly.
+- `DX121`-`DX128` are therefore names with no button behind them, and are now a
+  warning: `defines.tmh` declares them but nothing is ever sent.
+- `DX33`-`DX120` remain a hint: the button exists, but whether a game reads it depends
+  on the DirectInput data format it requests (32 or 128).
+- The community figure of 56 is contradicted by the measurement and by the absence of
+  any 56-button descriptor in the installation.
+
 ## 0.5.2
 
 - The DX button hint now explains the real reason the ceiling is disputed instead of
