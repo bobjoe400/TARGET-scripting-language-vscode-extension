@@ -21,7 +21,6 @@ import {
   describeParam,
   describeDevice,
   describeFunction,
-  Device,
   devices,
   devicesByAlias,
   functions,
@@ -34,6 +33,7 @@ import {
   takesDeviceFirst,
   usbKeyName,
   VARIADIC,
+  devicesForHandle,
 } from './builtins';
 
 export const TARGET_SELECTOR: vscode.DocumentSelector = { language: 'target' };
@@ -64,17 +64,6 @@ function describeDecl(
   return parts.join('\n');
 }
 
-/** Every device a `&handle` argument could refer to. */
-function devicesForHandle(handle: string, bindings: Map<string, Set<string>>): Device[] {
-  const direct = devicesByAlias.get(handle);
-  if (direct) return [direct];
-  const out: Device[] = [];
-  for (const b of bindings.get(handle) ?? []) {
-    const d = devicesByAlias.get(b);
-    if (d) out.push(d);
-  }
-  return out;
-}
 
 // =============================================================== completion
 /**

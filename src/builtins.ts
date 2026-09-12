@@ -345,6 +345,49 @@ export function argumentDomain(fnName: string, index: number): ArgDomain {
  */
 const DEVICE_PARAM_NAMES = new Set(['dev', 'o', 'a', 'id']);
 
+/**
+ * Every device a `&handle` argument could refer to: the handle itself when it names a
+ * device, otherwise whatever the script bound it to.
+ *
+ * Two rules that both callers need, and which used to exist in only one of the two
+ * copies of this:
+ *
+ * - A handle may be written as `usb:VID_044F&PID_0402` rather than as an alias, and
+ *   that still names a specific device.
+ * - If ANY binding cannot be resolved the answer is nothing at all, not the subset that
+ *   could be. A handle bound to both a known stick and a generic `joy0` may be either,
+ *   so narrowing to the known one offers a control list missing everything valid on the
+ *   other. An empty answer is what both callers want here - diagnostics skip the check,
+ *   completion stops narrowing and offers the full list.
+ *
+ * A device describing no controls resolves to nothing for the same reason: it cannot
+ * narrow anything, and pretending otherwise would offer an empty list.
+ */
+export function deviceByHandleName(name: string): Device | undefined {
+  const direct = devicesByAlias.get(name);
+  const dev =
+    direct ??
+    (name.startsWith('usb:')
+      ? devices.find((d) => d.usb.toLowerCase() === name.slice(4).toLowerCase())
+      : undefined);
+  if (!dev) return undefined;
+  return dev.buttons.length === 0 && dev.axes.length === 0 ? undefined : dev;
+}
+
+export function devicesForHandle(handle: string, bindings?: Map<string, Set<string>>): Device[] {
+  const direct = deviceByHandleName(handle);
+  if (direct) return [direct];
+  const bound = bindings?.get(handle);
+  if (!bound) return [];
+  const out: Device[] = [];
+  for (const b of bound) {
+    const d = deviceByHandleName(b);
+    if (!d) return [];
+    out.push(d);
+  }
+  return out;
+}
+
 export function takesDeviceFirst(fnName: string): boolean {
   const f = functionsByName.get(fnName);
   return !!f && f.params[0]?.type === 'alias' && DEVICE_PARAM_NAMES.has(f.params[0].name);

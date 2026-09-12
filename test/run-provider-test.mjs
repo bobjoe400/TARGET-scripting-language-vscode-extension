@@ -774,6 +774,28 @@ for (const [label, src, needle] of [
     void edButtons;
   }
 
+  // --- one answer to "which device is this handle" --------------------------
+  // Diagnostics and completion each had their own copy, and the completion one was the
+  // weaker half: no usb: handles, and it narrowed on whatever it COULD resolve.
+  {
+    const { devicesForHandle, devicesByAlias } = require(path.join(repoRoot, 'out/builtins.js'));
+    const joy = devicesByAlias.get('Joystick');
+
+    // A handle written as usb:VID_..&PID_.. still names a device.
+    if (devicesForHandle('usb:' + joy.usb).map((d) => d.alias).join() === 'Joystick') {
+      pass++; console.log('  ok    a usb: handle resolves to its device');
+    } else failures.push('usb handle');
+
+    // Bound to one known device and one generic handle, the answer is nothing - not the
+    // half that resolved. Narrowing there offered a control list missing everything
+    // valid on the other device.
+    const partial = new Map([['H', new Set(['Joystick', 'joy0'])]]);
+    const both = new Map([['H2', new Set(['Joystick', 'Throttle'])]]);
+    if (devicesForHandle('H', partial).length === 0 && devicesForHandle('H2', both).length === 2) {
+      pass++; console.log('  ok    an unresolvable binding means no answer, not half of one');
+    } else failures.push(`partial handle: ${JSON.stringify(devicesForHandle('H', partial).map((d) => d.alias))}`);
+  }
+
   // --- DCS: filter by DEVICE, report the aircraft ---------------------------
   // DCS has no "active" profile: every module's bindings are live at once and which
   // applies depends on what is being flown. So the aircraft is context to report, and

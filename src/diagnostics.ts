@@ -20,6 +20,8 @@ import {
   own,
   shortKeyName,
   usbKeyName,
+  Device,
+  devicesForHandle,
 } from './builtins';
 
 export const DIAG_SOURCE = 'target';
@@ -58,19 +60,12 @@ interface ResolvedDevice {
   controlsByValue: Map<string, { name: string; value: string }>;
 }
 
-const resolvedCache = new Map<string, ResolvedDevice | null>();
+const resolvedCache = new Map<string, ResolvedDevice>();
 
-function lookupDevice(aliasOrUsb: string): ResolvedDevice | null {
-  if (resolvedCache.has(aliasOrUsb)) return resolvedCache.get(aliasOrUsb)!;
-  let dev = devicesByAlias.get(aliasOrUsb);
-  if (!dev && aliasOrUsb.startsWith('usb:')) {
-    const usb = aliasOrUsb.slice(4).toLowerCase();
-    dev = devices.find((d) => d.usb.toLowerCase() === usb);
-  }
-  if (!dev || (dev.buttons.length === 0 && dev.axes.length === 0)) {
-    resolvedCache.set(aliasOrUsb, null);
-    return null;
-  }
+/** The control tables for a device, built once and kept. */
+function resolved(dev: Device): ResolvedDevice {
+  const hit = resolvedCache.get(dev.alias);
+  if (hit) return hit;
   const controls = [...dev.buttons, ...dev.axes, ...dev.hats];
   const r: ResolvedDevice = {
     alias: dev.alias,
@@ -80,7 +75,7 @@ function lookupDevice(aliasOrUsb: string): ResolvedDevice | null {
   };
   // First name wins, so the device's own primary name is reported rather than a synonym.
   for (const c of controls) if (!r.controlsByValue.has(c.value)) r.controlsByValue.set(c.value, c);
-  resolvedCache.set(aliasOrUsb, r);
+  resolvedCache.set(dev.alias, r);
   return r;
 }
 
@@ -911,22 +906,13 @@ export function computeDiagnostics(
     }
   }
 
-  /** Devices a first-argument handle can refer to: itself, or whatever it is bound to. */
+  /**
+   * Devices a first-argument handle can refer to: itself, or whatever it is bound to.
+   * An empty answer means the handle could not be pinned down, and the checks that use
+   * it stay quiet rather than guess.
+   */
   function resolveDevices(handle: string): ResolvedDevice[] {
-    const direct = lookupDevice(handle);
-    if (direct) return [direct];
-
-    const bound = opts.aliasBindings?.get(handle);
-    if (!bound) return [];
-    const out: ResolvedDevice[] = [];
-    for (const b of bound) {
-      const d = lookupDevice(b);
-      // An unresolvable binding (a generic handle such as joy0) means the handle may
-      // point at hardware not described here, so stay quiet rather than guess.
-      if (!d) return [];
-      out.push(d);
-    }
-    return out;
+    return devicesForHandle(handle, opts.aliasBindings).map(resolved);
   }
 
   /**
