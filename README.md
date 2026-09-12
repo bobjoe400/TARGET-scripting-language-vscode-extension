@@ -30,11 +30,26 @@ MapKeyUMD(&MyJoystick, TS1, ...);
 
 Axis functions (`MapAxis`, `SetSCurve`, …) rank that device's axes first instead.
 
-**Elite Dangerous bindings.** A script sends keystrokes; the game decides what they do,
-and that lives only in the game's `.binds` file. Hover a scancode and the extension says
-both - `USB[0x18]` is "u U", and the game has it on `DeployHardpointToggle`. Drop your
-`.binds` beside the script (or in `BindFiles/`) and it is picked up automatically; set
-`targetScript.bindsFolder` if it lives elsewhere.
+**What the game does with the key.** A script sends keystrokes and virtual buttons; the
+game decides what they mean, and that lives only in the game's own binding files. The
+extension reads them:
+
+| Game | File | Found in |
+| --- | --- | --- |
+| Elite Dangerous | `.binds` | beside the script, `BindFiles/`, or the game's `Bindings` folder |
+| DCS World | `.diff.lua` | `Saved Games/DCS*/Config/Input/<aircraft>/` |
+| Star Citizen | ActionMaps `.xml` | beside the script, or `Mappings/` |
+
+Hover `L_ALT+USB[0x4F]` and it answers for *that chord* - not for the bare key, and not
+for the same key under a different modifier, which belong to other lines of your script.
+Hover `DX25` and it says what the game does with the button, which is what a TARGET
+script is actually for.
+
+It narrows to the preset the game will really load (Elite records it in
+`StartPreset.start`), to the game your script is associated with in the TARGET GUI, and
+for DCS to the device your script creates - reporting which aircraft each binding came
+from, since DCS has every module's bindings live at once. Right-click → **Show Where
+This Key Is Bound** opens a peek with every place it is bound, across all of them.
 
 The lookup is by key rather than by name, because script authors name their defines
 however they like: of the 200 defines in the test corpus only 15 match a game action
@@ -271,7 +286,8 @@ C out of habit tells you immediately rather than at runtime.
 | --- | --- | --- |
 | `targetScript.installPath` | auto-detect | The TARGET `scripts` folder. Used to resolve `include "target.tmh"` and to locate `TARGETGUI.exe` and `Interpreter.exe`. Set this if TARGET is not in the default location. |
 | `targetScript.diagnostics.enable` | `true` | Turn diagnostics off entirely. |
-| `targetScript.bindsFolder` | auto-detect | Folder holding Elite Dangerous `.binds` files. |
+| `targetScript.bindsFolder` | auto-detect | Folder holding game binding files: Elite Dangerous `.binds`, DCS `.diff.lua`, or Star Citizen ActionMaps `.xml`. |
+| `targetScript.diagnostics.unboundKeys` | `false` | Report keys the game's loaded bindings do nothing with. Off by default: the answer depends on which preset is loaded on your machine, so the same project reports differently elsewhere. |
 
 ## Where the data comes from
 

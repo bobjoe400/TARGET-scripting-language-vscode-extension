@@ -1,5 +1,63 @@
 # Changelog
 
+## 1.0.0
+
+First release on the Marketplace. Everything below shipped during development and is
+listed here because the Marketplace shows this file.
+
+### Game bindings, for every game people script for
+
+A TARGET script sends keystrokes and virtual joystick buttons; what they *mean* lives
+in the game's own binding files. The extension reads them and tells you.
+
+- **Three formats**: Elite Dangerous `.binds`, DCS World `.diff.lua`, and Star Citizen
+  ActionMaps `.xml`. Files are identified by their contents, not their extension - Star
+  Citizen exports a plain `.xml` and TrackIR profiles live in the same folders.
+- **Virtual buttons as well as keystrokes.** All three games bind the DX buttons a
+  script creates, and that is the half a script is actually for. Hovering `DX25` says
+  what the game does with it.
+- **The preset the game will really load.** Elite records it in `StartPreset.start`;
+  without that, a hover was a pile of contradictory answers from presets the game is
+  not reading.
+- **The aircraft, for DCS.** DCS has no active profile - every module's bindings are
+  live at once - so the extension filters by *device* and reports which aircraft each
+  binding came from.
+- **The TARGET GUI's own association**, where you have set one, settles which game a
+  script is for so the other games' files are left out.
+- **Show Where This Key Is Bound** (right-click, or the palette) opens a peek with every
+  place that key or button is bound, across every game and preset.
+
+### Diagnostics
+
+- **A name nothing declares**, in a `define` value. `L+CTL+USB[0x1E]` compiles cleanly -
+  TARGET resolves symbols lazily and never checks - so this is the only thing that can
+  catch it. Judged against the whole project, since headers routinely use names their
+  includer defined first.
+- **Keys the game does nothing with**, off by default as `targetScript.diagnostics.unboundKeys`,
+  because the answer depends on which preset is loaded on *your* machine.
+- **Modifiers are part of the question.** `L_ALT+USB[0x4F]` and `USB[0x4F]` send
+  different things, and a binding needing `L_SHIFT` fires for neither. An unrecognised
+  modifier is reported rather than quietly ignored.
+
+### Compiling and running
+
+- **Fixed on Windows.** Staging computed a drive-relative path, so nothing you wrote was
+  staged, a scratch tree accumulated outside the temp directory, and every compile
+  reported a phantom "File not found" on a script that builds. WSL paths hid it.
+- Projects whose headers sit outside the entry script's folder are staged completely,
+  and compiling and running now stage identically.
+- A launch that cannot start is reported instead of announced, and the compile timeout
+  always answers.
+
+### Editing
+
+- **Includes resolve the way `Interpreter.exe` does** - against the entry script's
+  folder, not the including file's. The old rule was wrong in both directions.
+- Unsaved edits anywhere in the project are saved before a compile, not just those
+  beside the entry script.
+- Settings are read per-folder in a multi-root workspace.
+- Works in a virtual workspace for everything that needs no local files.
+
 ## 0.12.0
 
 - **Elite Dangerous bindings.** Hovering a scancode now says what the game does with

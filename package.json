@@ -2,7 +2,7 @@
   "name": "target-script",
   "displayName": "TARGET Script (Thrustmaster)",
   "description": "Language support for the Thrustmaster T.A.R.G.E.T. HOTAS scripting language (.tmc, .tmh, .ttm): syntax highlighting, device-aware completion, hover docs, outline and diagnostics.",
-  "version": "0.21.0",
+  "version": "1.0.0",
   "publisher": "bobjoe400",
   "license": "MIT",
   "engines": {
@@ -21,7 +21,14 @@
     "t16000",
     "joystick",
     "tmc",
-    "tmh"
+    "tmh",
+    "ttm",
+    "elite dangerous",
+    "dcs world",
+    "star citizen",
+    "flight sim",
+    "flight simulator",
+    "hid"
   ],
   "repository": {
     "type": "git",
