@@ -55,7 +55,6 @@ const execBody = [
   { include: '#exec-escape' },
   { include: '#operators' },
   { include: '#function-call' },
-  { include: '#identifiers' },
 ];
 
 const grammar = {
@@ -153,7 +152,6 @@ const grammar = {
         { include: '#constants' },
         { include: '#operators' },
         { include: '#function-call' },
-        { include: '#identifiers' },
       ],
     },
     'exec-nested-string': {
@@ -281,10 +279,7 @@ const grammar = {
       match: '\\b([A-Za-z_]\\w*)\\s*(?=\\()',
       captures: { 1: { name: 'entity.name.function.call.target' } },
     },
-    identifiers: {
-      name: 'variable.other.target',
-      match: '\\b[A-Za-z_]\\w*\\b',
-    },
+
   },
 };
 

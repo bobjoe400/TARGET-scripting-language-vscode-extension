@@ -133,6 +133,21 @@ await check(
   fs.rmSync(f, { force: true });
 }
 
+// TARGET resolves includes from the working directory, subfolders included, so a flat
+// staging copy turned a working project into "File not found".
+{
+  const sub = path.join(tmp, 'sub');
+  fs.mkdirSync(sub, { recursive: true });
+  fs.writeFileSync(path.join(sub, 'helper.tmh'), 'int subHelper(int a) { return a; }\n');
+  const f = path.join(tmp, 'withsub.tmc');
+  fs.writeFileSync(f, 'include "target.tmh"\ninclude "sub/helper.tmh"\nint main() { return subHelper(1); }\n');
+  const r = await R.compileCheck(f, install);
+  if (r.ok) { pass++; console.log('  ok    a project with headers in a subfolder compiles'); }
+  else failures.push(`subfolder include: ${r.problems.map((p) => p.message).join(' | ')}`);
+  fs.rmSync(sub, { recursive: true, force: true });
+  fs.rmSync(f, { force: true });
+}
+
 // The real corpus, if it is on this machine, must still compile.
 const realProject = 'C:\\Thrustmaster\\ED_TargetScript_T16000\\ScriptFiles\\ED_ENHANCED_T16000.tmc';
 const realWsl = '/mnt/c/Thrustmaster/ED_TargetScript_T16000/ScriptFiles/ED_ENHANCED_T16000.tmc';

@@ -151,6 +151,12 @@ expectClean('define shadowing a builtin', 'define SET 1\nint f() { return SET; }
 expectClean('global initialised by call', 'int fnH() { return 1; }\nint g = fnH();\nint f() { return g; }');
 expectClean('call inside a function',     'int f() { MapKey(&Joystick, TG1, DX1); }');
 
+// A call in a variable initialiser is still a call. The declaration parser consumes
+// those tokens, so they were invisible to every check keyed on the call list.
+expect('range check inside an initialiser', 'int q = SetSCurve(&Joystick, JOYX, 0, 0, 0, 999, 0);', 'range');
+expect('arity check inside an initialiser', 'int q = MapKey(&Joystick);', 'arity');
+expectClean('a valid initialiser call',     'int q = SetSCurve(&Joystick, JOYX, 0, 0, 0, 5, 0);');
+
 // -- the DirectX button ceiling, where the sources disagree ---------------------
 expect('DX40 needs the newer data format', 'int f() { MapKey(&Joystick, TG1, DX40); }', 'directx-button-ceiling');
 expect('DX120 is the last real button',     'int f() { MapKey(&Joystick, TG1, DX120); }', 'directx-button-ceiling');

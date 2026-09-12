@@ -18,6 +18,8 @@ import {
   compileCheck,
   detectHost,
   findInstall,
+  isGuiRunning,
+  isInstalledHeader,
   isWindowsLocalPath,
   killImage,
   listTargetProcesses,
@@ -66,6 +68,14 @@ export function activate(context: vscode.ExtensionContext): void {
   // ---- diagnostics ----------------------------------------------------------
   const refresh = (doc: vscode.TextDocument) => {
     if (doc.languageId !== 'target') return;
+    // Never diagnose the headers TARGET ships. The builtin tables were generated from
+    // them, so every declaration in them looks like a redeclaration of a builtin -
+    // over 200 fabricated errors against vendor files that compile perfectly. Go-to
+    // definition on any builtin opens one of these, so this is easy to hit.
+    if (isInstalledHeader(doc.uri.fsPath, findInstall(vscode.workspace.getConfiguration('targetScript').get<string>('installPath')))) {
+      diagnostics.delete(doc.uri);
+      return;
+    }
     if (!vscode.workspace.getConfiguration('targetScript').get<boolean>('diagnostics.enable', true)) {
       diagnostics.delete(doc.uri);
       return;
@@ -112,6 +122,10 @@ export function activate(context: vscode.ExtensionContext): void {
   const refreshSoon = (doc: vscode.TextDocument) => {
     const key = doc.uri.toString();
     cancelRefresh(doc.uri);
+    // A compile result describes the file as it was when it was compiled. Once it is
+    // edited the result is stale, and nothing else ever cleared it - a fixed error
+    // stayed red in Problems until the command was run again.
+    compileDiags.delete(doc.uri);
     debounces.set(
       key,
       setTimeout(() => {
@@ -147,6 +161,7 @@ export function activate(context: vscode.ExtensionContext): void {
       cancelRefresh(doc.uri);
       index.invalidate(doc.uri);
       diagnostics.delete(doc.uri);
+      compileDiags.delete(doc.uri);
     }),
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (!e.affectsConfiguration('targetScript')) return;
@@ -193,8 +208,11 @@ export function activate(context: vscode.ExtensionContext): void {
     runStatus.tooltip = `${scriptName} was launched in TARGET. Click to stop TARGET.`;
     runStatus.show();
     runPoll = setInterval(async () => {
-      const procs = await listTargetProcesses();
-      if (!procs.gui) {
+      // Only the GUI matters here; asking for both images spawned a second
+      // tasklist.exe every three seconds for the whole session, for a value
+      // nothing read.
+      const guiRunning = await isGuiRunning();
+      if (!guiRunning) {
         // TARGET was closed, from its own window or anywhere else.
         clearRunStatus();
         output.appendLine('TARGET is no longer running; cleared the status indicator.');
@@ -391,7 +409,16 @@ export function activate(context: vscode.ExtensionContext): void {
         { location: vscode.ProgressLocation.Window, title: `Compiling ${path.basename(entry)}…` },
         () => compileCheck(entry, install)
       );
-      if (check.problems.length) {
+      if (check.error) {
+        // The check could not be performed at all - no interpreter, or it timed out.
+        // Running regardless takes over the hardware with no pre-flight, so say so.
+        const pick = await vscode.window.showWarningMessage(
+          `Could not check ${path.basename(entry)} before running: ${check.error}`,
+          'Run Anyway',
+          'Cancel'
+        );
+        if (pick !== 'Run Anyway') return;
+      } else if (check.problems.length) {
         const pick = await vscode.window.showErrorMessage(
           `${path.basename(entry)} has ${check.problems.length} compile error(s). Run anyway?`,
           'Run Anyway',

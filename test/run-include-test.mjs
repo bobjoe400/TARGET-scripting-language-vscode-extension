@@ -97,6 +97,28 @@ W('dupsym.tmc', 'include "c1.tmh"\ninclude "c2.tmh"\nint main() { return 0; }\n'
 
 fs.rmSync(tmp, { recursive: true, force: true });
 
+// An include that does not resolve yet must not be remembered as unresolvable. Writing
+// the include and then creating the file is the ordinary order of work.
+{
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'late-'));
+  fs.writeFileSync(path.join(dir, 'a.tmc'), 'include "later.tmh"\nint main() { return 0; }\n');
+  const doc = new FakeDocument(path.join(dir, 'a.tmc'), fs.readFileSync(path.join(dir, 'a.tmc'), 'utf8'));
+  stub.workspace.textDocuments = [doc];
+  const idx = new TargetIndex();
+
+  const before = idx.resolveInclude(path.join(dir, 'a.tmc'), 'later.tmh');
+  fs.writeFileSync(path.join(dir, 'later.tmh'), 'int lateFn() { return 1; }\n');
+  const after = idx.resolveInclude(path.join(dir, 'a.tmc'), 'later.tmh');
+
+  if (before === null && after !== null) {
+    pass++;
+    console.log('  ok    an include resolves once the file appears');
+  } else {
+    failures.push(`late include: before=${before} after=${after}`);
+  }
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
 // The real corpus must stay clean: its headers include nothing, by necessity.
 const entry = path.join(repoRoot, 'test/fixtures/ED_ENHANCED_T16000.tmc');
 {

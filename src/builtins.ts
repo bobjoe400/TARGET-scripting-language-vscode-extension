@@ -151,24 +151,6 @@ export const NOT_IN_TARGET: Record<string, string> = {
  */
 export const FORBIDDEN_IN_EXEC = new Set(['SEQ', 'CHAIN', 'EXEC', 'TEMPO', 'AXIS', 'LIST', 'SetCustomCurve']);
 
-/** Which builtins take a device alias as their first argument. */
-export const DEVICE_FIRST_ARG = new Set(
-  functions.filter((f) => f.params[0]?.type === 'alias' && /^(dev|o|a|h)$/.test(f.params[0].name)).map((f) => f.name)
-);
-
-/** Builtins whose second argument names a button or axis on that device. */
-export const BUTTON_SECOND_ARG = new Set(
-  functions
-    .filter((f) => f.params[0]?.type === 'alias' && /^(btnidx)$/.test(f.params[1]?.name ?? ''))
-    .map((f) => f.name)
-);
-
-export const AXIS_SECOND_ARG = new Set(
-  functions
-    .filter((f) => f.params[0]?.type === 'alias' && f.params[1]?.name === 'x' && /Axis|Curve/.test(f.name))
-    .map((f) => f.name)
-);
-
 /**
  * The set of values an argument can sensibly take.
  *

@@ -69,19 +69,23 @@ export class TargetIndex {
 
   invalidate(uri: vscode.Uri): void {
     this.cache.delete(uri.toString());
-    this.binds = undefined;
     this.generation++;
     this.closureCache.clear();
+    // Binding files are keyed on their own timestamps, so a script save does not
+    // invalidate them; dropping the whole cache on every save made each hover
+    // re-read every .binds file synchronously on the extension host thread.
+    if (/\.binds$/i.test(uri.fsPath)) this.bindsCache.clear();
   }
 
   /** Called when settings change: include resolution depends on them. */
   clearResolutionCache(): void {
     this.resolveCache.clear();
     this.closureCache.clear();
+    this.bindsCache.clear();
     this.generation++;
   }
 
-  private binds: { index: BindsIndex; stamp: string } | undefined;
+  private bindsCache = new Map<string, { index: BindsIndex; stamp: string }>();
 
   /**
    * Elite Dangerous binding files near the script, so the editor can say what the
@@ -127,9 +131,14 @@ export class TargetIndex {
         }
       })
       .join('|');
-    if (this.binds && this.binds.stamp === stamp) return this.binds.index;
+    // Keyed on the file set: two documents in different folders would otherwise
+    // evict each other on every hover.
+    const cacheKey = unique.join('|');
+    const hit = this.bindsCache.get(cacheKey);
+    if (hit && hit.stamp === stamp) return hit.index;
     const index = buildBindsIndex(unique);
-    this.binds = { index, stamp };
+    if (this.bindsCache.size > 8) this.bindsCache.clear();
+    this.bindsCache.set(cacheKey, { index, stamp });
     return index;
   }
 
@@ -163,7 +172,12 @@ export class TargetIndex {
     const cached = this.resolveCache.get(key);
     if (cached !== undefined) return cached;
     const resolved = this.resolveIncludeUncached(fromFile, includePath);
-    this.resolveCache.set(key, resolved);
+    // Only successes are cached. A failure is a file that does not exist *yet* - the
+    // ordinary workflow is to write the include and then create the file - and caching
+    // that would keep the include broken for the session: no go-to-definition, its
+    // symbols never in the table, and closureComplete stuck false, which silently
+    // disables the checks that need a complete symbol table.
+    if (resolved !== null) this.resolveCache.set(key, resolved);
     return resolved;
   }
 
@@ -192,6 +206,10 @@ export class TargetIndex {
     const cachedClosure = this.closureCache.get(cacheKey);
     if (cachedClosure) return cachedClosure;
     const result = this.includeClosureUncached(startFile, startModel, limit);
+    // The generation bumps on every reparse, so entries from older generations are
+    // dead the moment they are replaced. Drop them rather than letting the map grow
+    // one entry per keystroke between saves.
+    if (this.closureCache.size > 32) this.closureCache.clear();
     this.closureCache.set(cacheKey, result);
     return result;
   }

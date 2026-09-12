@@ -103,6 +103,35 @@ export function findInstall(configuredScriptsDir?: string): TargetInstall | null
   return null;
 }
 
+/**
+ * Script files under a directory, relative to it, including subfolders.
+ *
+ * TARGET resolves `include "sub/helper.tmh"` relative to the working directory, which
+ * was confirmed against the real compiler, so a flat copy of the project turns a
+ * working script into "File not found" - an error in the extension, reported as though
+ * it were an error in the user's code.
+ */
+function listScriptFiles(root: string, prefix = '', depth = 0): string[] {
+  if (depth > 6) return [];
+  const out: string[] = [];
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(path.join(root, prefix), { withFileTypes: true });
+  } catch {
+    return out;
+  }
+  for (const e of entries) {
+    const rel = prefix ? path.join(prefix, e.name) : e.name;
+    if (e.isDirectory()) {
+      if (e.name === '.git' || e.name === 'node_modules') continue;
+      out.push(...listScriptFiles(root, rel, depth + 1));
+    } else if (SCRIPT_EXT.test(e.name)) {
+      out.push(rel);
+    }
+  }
+  return out;
+}
+
 const safeIsDir = (p: string) => {
   try {
     return fs.statSync(p).isDirectory();
@@ -118,6 +147,22 @@ const safeIsFile = (p: string) => {
   }
 };
 const firstExisting = (ps: string[]) => ps.find(safeIsFile) ?? null;
+
+/**
+ * True when a path is one of the headers TARGET installs.
+ *
+ * Those files are the source the builtin tables were generated from, so every
+ * declaration in them collides with a builtin by definition. They are vendor files
+ * that compile perfectly, and go-to-definition opens them, so they must never be
+ * diagnosed.
+ */
+export function isInstalledHeader(filePath: string, install: TargetInstall | null): boolean {
+  if (!install) return false;
+  const norm = (p: string) => path.resolve(p).replace(/\\/g, '/').toLowerCase();
+  const dir = norm(install.scripts);
+  const file = norm(filePath);
+  return file.startsWith(dir.endsWith('/') ? dir : dir + '/');
+}
 
 /** A byte-order mark, which the TARGET compiler cannot read. */
 export function bomKind(buf: Buffer): string | null {
@@ -178,25 +223,32 @@ export async function compileCheck(
   try {
     fs.mkdirSync(stage, { recursive: true });
 
-    // The TARGET headers first, so a project file of the same name wins if it exists.
-    for (const h of TARGET_HEADERS) {
-      const src = path.join(install.scripts, h);
-      if (safeIsFile(src)) copyFileBytes(src, path.join(stage, h));
-    }
-
-    /** Staged basename -> original absolute path, for mapping errors back. */
+    /** Staged relative path -> original absolute path, for mapping errors back. */
     const origin = new Map<string, string>();
     /** Files the compiler will choke on before reading a single statement. */
     const bomFiles: { file: string; kind: string }[] = [];
-    for (const entry of fs.readdirSync(projectDir)) {
-      if (!SCRIPT_EXT.test(entry)) continue;
-      const src = path.join(projectDir, entry);
-      if (!safeIsFile(src)) continue;
+
+    // The TARGET headers first, so a project file of the same name wins if it exists.
+    // They get origin entries too: without them an error the compiler reports inside
+    // target.tmh maps to a same-named path in the user's project, which is not there.
+    for (const h of TARGET_HEADERS) {
+      const src = path.join(install.scripts, h);
+      if (safeIsFile(src)) {
+        copyFileBytes(src, path.join(stage, h));
+        origin.set(h.toLowerCase(), src);
+      }
+    }
+
+    for (const rel of listScriptFiles(projectDir)) {
+      const src = path.join(projectDir, rel);
       const bytes = fs.readFileSync(src);
       const bom = bomKind(bytes);
       if (bom) bomFiles.push({ file: src, kind: bom });
-      fs.writeFileSync(path.join(stage, entry), bytes);
-      origin.set(entry.toLowerCase(), src);
+      const dst = path.join(stage, rel);
+      fs.mkdirSync(path.dirname(dst), { recursive: true });
+      fs.writeFileSync(dst, bytes);
+      origin.set(rel.toLowerCase().replace(/\\/g, '/'), src);
+      origin.set(path.basename(rel).toLowerCase(), src);
     }
 
     const main = path.basename(scriptPath);
@@ -252,8 +304,15 @@ export function parseCompileOutput(
 ): CompileProblem[] {
   const problems: CompileProblem[] = [];
   const resolve = (reported: string): string => {
-    const base = path.basename(reported.trim()).toLowerCase();
-    return origin.get(base) ?? path.join(projectDir, path.basename(reported.trim()));
+    const cleaned = reported.trim();
+    // The compiler reports the path it was given, which for a subfolder include is
+    // relative; try that first, then the bare name.
+    const rel = cleaned.replace(/\\/g, '/').replace(/^\.\//, '').toLowerCase();
+    return (
+      origin.get(rel) ??
+      origin.get(path.basename(cleaned).toLowerCase()) ??
+      path.join(projectDir, path.basename(cleaned))
+    );
   };
 
   for (const line of output.split('\n')) {
@@ -401,6 +460,11 @@ const IMAGE_EDITOR = 'TARGETScriptEditor.exe';
 /** Guards against a slow tasklist piling up behind an interval timer. */
 let processListInFlight: Promise<TargetProcesses> | null = null;
 
+/** Whether just TARGETGUI is running. Half the cost of listTargetProcesses. */
+export async function isGuiRunning(): Promise<boolean> {
+  return (await listTargetProcesses()).gui;
+}
+
 export async function listTargetProcesses(): Promise<TargetProcesses> {
   if (processListInFlight) return processListInFlight;
   processListInFlight = listTargetProcessesUncached().finally(() => {
@@ -478,7 +542,13 @@ export async function stageProjectForRun(
   try {
     const projectDir = path.dirname(scriptPath);
     const root = await defaultStagingRoot();
-    const dir = path.join(root, 'target-script-run', path.basename(projectDir) || 'script');
+    // Keyed on the full path, not just the folder name: two profiles in folders both
+    // called "ScriptFiles" would otherwise share a directory, and the unconditional
+    // clear below would wipe one out from under a script TARGET is still reading.
+    let hash = 0;
+    for (let i = 0; i < projectDir.length; i++) hash = (hash * 31 + projectDir.charCodeAt(i)) | 0;
+    const slug = `${path.basename(projectDir) || 'script'}-${(hash >>> 0).toString(36)}`;
+    const dir = path.join(root, 'target-script-run', slug);
 
     fs.rmSync(dir, { recursive: true, force: true });
     fs.mkdirSync(dir, { recursive: true });
@@ -489,10 +559,10 @@ export async function stageProjectForRun(
       const src = path.join(install.scripts, h);
       if (safeIsFile(src)) copyFileBytes(src, path.join(dir, h));
     }
-    for (const entry of fs.readdirSync(projectDir)) {
-      if (!SCRIPT_EXT.test(entry)) continue;
-      const src = path.join(projectDir, entry);
-      if (safeIsFile(src)) copyFileBytes(src, path.join(dir, entry));
+    for (const rel of listScriptFiles(projectDir)) {
+      const dst = path.join(dir, rel);
+      fs.mkdirSync(path.dirname(dst), { recursive: true });
+      copyFileBytes(path.join(projectDir, rel), dst);
     }
 
     return { ok: true, staging: { entry: path.join(dir, path.basename(scriptPath)), dir } };

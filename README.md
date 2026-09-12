@@ -143,7 +143,7 @@ Three commands, from the Command Palette or the editor title bar:
 
 | Command | What it does |
 | --- | --- |
-| **TARGET: Check Script for Compile Errors** (`Ctrl+Shift+B`) | Compiles without running. Errors land in the Problems panel at the right file and line. |
+| **TARGET: Check Script for Compile Errors** | Compiles without running. Errors land in the Problems panel at the right file and line. |
 | **TARGET: Run Script** | Compiles, then launches the script with `TARGETGUI.exe -r`. |
 | **TARGET: Stop Running Script** | Closes TARGET. |
 
@@ -293,7 +293,15 @@ tables cover 171 functions, 851 constants and 38 devices.
 Regenerate them all after a TARGET update:
 
 ```bash
-npm run gen -- --scripts "/path/to/Thrustmaster/TARGET/scripts"
+npm run gen
+```
+
+If TARGET is not in a default location, point the builtin generator at it directly —
+`npm run gen -- …` would append the flag to the last script in the chain, which does not
+read it:
+
+```bash
+node tools/gen-builtins.mjs --scripts "/path/to/Thrustmaster/TARGET/scripts"
 ```
 
 The generator refuses to guess: any section or device alias it cannot place is

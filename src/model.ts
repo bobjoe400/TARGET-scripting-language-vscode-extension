@@ -138,6 +138,75 @@ export function docCommentAbove(lines: string[], lineIndex: number): string {
   return collected.map((l) => l.replace(/\t+/g, ' ')).join('\n');
 }
 
+/**
+ * Builds call nodes from a slice of significant tokens.
+ *
+ * Used both for the body of the file and, afterwards, for variable initialisers,
+ * whose tokens the declaration parser consumes. Without the second pass a call in an
+ * initialiser - `int q = SetSCurve(...);`, `int fp = fopen(...)` - exists for nobody:
+ * no arity or range check, no EXEC body check, and no signature help while typing it.
+ */
+function extractCalls(
+  sig: Token[],
+  from: number,
+  to: number,
+  text: string,
+  roots: CallNode[],
+  all: CallNode[]
+): void {
+  const frames: { call: CallNode | null; argStart: number }[] = [];
+  const stack: CallNode[] = [];
+  for (let i = from; i < to && i < sig.length; i++) {
+    const t = sig[i];
+    if (t.kind !== TokKind.Punct) continue;
+    if (t.value === '(') {
+      const prev = sig[i - 1];
+      let node: CallNode | null = null;
+      if (prev && prev.kind === TokKind.Ident && i - 1 >= from) {
+        node = {
+          name: prev.value,
+          nameStart: prev.start,
+          nameEnd: prev.end,
+          open: t.start,
+          close: -1,
+          args: [],
+          parent: stack.length ? stack[stack.length - 1] : null,
+          children: [],
+        };
+        if (node.parent) node.parent.children.push(node);
+        else roots.push(node);
+        all.push(node);
+        stack.push(node);
+      }
+      frames.push({ call: node, argStart: t.end });
+      continue;
+    }
+    if (t.value === ')') {
+      const frame = frames.pop();
+      if (frame?.call) {
+        const raw = text.slice(frame.argStart, t.start);
+        if (raw.trim() || frame.call.args.length > 0) {
+          frame.call.args.push({ start: frame.argStart, end: t.start, text: raw.trim() });
+        }
+        frame.call.close = t.end;
+        stack.pop();
+      }
+      continue;
+    }
+    if (t.value === ',') {
+      const frame = frames[frames.length - 1];
+      if (frame?.call) {
+        frame.call.args.push({
+          start: frame.argStart,
+          end: t.start,
+          text: text.slice(frame.argStart, t.start).trim(),
+        });
+        frame.argStart = t.end;
+      }
+    }
+  }
+}
+
 export function buildModel(text: string): DocModel {
   const tokens = lex(text);
   const sig = tokens.filter((t) => t.kind !== TokKind.Comment);
@@ -149,6 +218,8 @@ export function buildModel(text: string): DocModel {
 
   const frames: Frame[] = [];
   const callStack: CallNode[] = [];
+  /** Token ranges of variable initialisers, scanned for calls after the main loop. */
+  const initialiserRanges: [number, number][] = [];
   let braceDepth = 0;
 
   // Built once: computing a line number per declaration by scanning from the start
@@ -286,10 +357,15 @@ export function buildModel(text: string): DocModel {
     }
 
     if (TYPE_KEYWORDS.has(t.value)) {
-      i = parseDeclaration(text, sig, i, braceDepth, decls, docAbove);
+      i = parseDeclaration(text, sig, i, braceDepth, decls, docAbove, initialiserRanges);
       continue;
     }
   }
+
+  // Initialisers are consumed by the declaration parser, so their calls are picked up
+  // here rather than being invisible to every feature keyed on allCalls.
+  for (const [from, to] of initialiserRanges) extractCalls(sig, from, to, text, calls, allCalls);
+  allCalls.sort((a, b) => a.nameStart - b.nameStart);
 
   return { text, tokens, calls, allCalls, decls, includes };
 }
@@ -313,7 +389,8 @@ function parseDeclaration(
   start: number,
   braceDepth: number,
   out: Decl[],
-  docAbove: (offset: number) => string
+  docAbove: (offset: number) => string,
+  initialiserRanges?: [number, number][]
 ): number {
   const typeTok = sig[start];
   const type = typeTok.value;
@@ -433,6 +510,7 @@ function parseDeclaration(
         else if ((s.value === ';' || s.value === ',') && d <= 0) break;
       }
       value = stripComment(text.slice(next.start, sig[j]?.start ?? next.start)).trim().replace(/^=\s*/, '');
+      initialiserRanges?.push([i + 1, j]);
     }
 
     const isArray = next?.kind === TokKind.Punct && next.value === '[';
