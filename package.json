@@ -2,7 +2,7 @@
   "name": "target-script",
   "displayName": "TARGET Script (Thrustmaster)",
   "description": "Language support for the Thrustmaster T.A.R.G.E.T. HOTAS scripting language (.tmc, .tmh, .ttm): syntax highlighting, device-aware completion, hover docs, outline and diagnostics.",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "publisher": "bobjoe400",
   "license": "MIT",
   "engines": {
@@ -134,9 +134,9 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "vscode:prepublish": "npm run compile",
-    "gen": "node tools/gen-builtins.mjs && node tools/gen-grammar.mjs",
+    "gen": "node tools/gen-builtins.mjs && node tools/gen-grammar.mjs && node tools/gen-device-labels.mjs",
     "test:grammar": "node test/run-grammar-test.mjs",
-    "test": "npm run compile && node test/run-grammar-test.mjs && node test/run-diagnostics-test.mjs && node test/run-provider-test.mjs && node test/run-command-test.mjs && node test/run-runner-test.mjs",
+    "test": "npm run compile && node test/run-grammar-test.mjs && node test/run-diagnostics-test.mjs && node test/run-provider-test.mjs && node test/run-include-test.mjs && node test/run-command-test.mjs && node test/run-runner-test.mjs",
     "package": "npx --yes @vscode/vsce@2 package --no-dependencies"
   },
   "devDependencies": {

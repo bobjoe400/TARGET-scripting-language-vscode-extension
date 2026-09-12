@@ -277,6 +277,10 @@ export function buildModel(text: string): DocModel {
           detail: rawValue,
           global: true,
         });
+        // Skip the value. Without this, `define X (1+2)` leaves `X (` for the main
+        // loop, which reads it as a call to X - and X is a real builtin, so it would
+        // draw a spurious arity error.
+        while (i + 1 < sig.length && sig[i + 1].start < stop) i++;
       }
       continue;
     }

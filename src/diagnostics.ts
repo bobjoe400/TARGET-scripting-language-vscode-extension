@@ -4,6 +4,7 @@
 // expression in target.tmh, or a restriction the manual states outright. Rules that
 // would need guesswork are left out rather than shipped with false positives.
 
+import * as path from 'path';
 import { DocModel, CallNode } from './model';
 import { TokKind, lex } from './lexer';
 import {
@@ -174,6 +175,14 @@ export interface DiagnosticOptions {
    * skipped rather than reporting names that are declared in a file we cannot see.
    */
   closureComplete?: boolean;
+  /**
+   * Problems found in the include graph, which needs file access and so is computed
+   * by the caller. Each is anchored on the matching `include` statement when one is
+   * present in this document.
+   */
+  includeProblems?: { includePath: string | null; message: string; code: string; severity: Severity }[];
+  /** Names declared in more than one file of the include graph. */
+  duplicateSymbols?: Map<string, string[]>;
 }
 
 export function computeDiagnostics(
@@ -197,6 +206,7 @@ export function computeDiagnostics(
   // ---- operators and directives TARGET's parser rejects ---------------------
   checkRejectedSyntax();
   checkDirectXButtonCeiling();
+  checkRejectedDeclarations();
 
   // ---- include "target.tmh" must come first ---------------------------------
   if (fileName.toLowerCase().endsWith('.tmc')) {
@@ -214,6 +224,34 @@ export function computeDiagnostics(
     }
   }
 
+  // ---- the include graph -----------------------------------------------------
+  for (const p of opts.includeProblems ?? []) {
+    const anchor = p.includePath
+      ? model.includes.find((i) => i.path.toLowerCase() === p.includePath!.toLowerCase())
+      : undefined;
+    add(anchor?.start ?? 0, anchor?.end ?? 0, p.message, p.severity, p.code);
+  }
+
+  // A name declared in two files of the graph is compiled twice. Anchored on the
+  // declaration in this document, which is the one the user can act on.
+  if (opts.duplicateSymbols?.size) {
+    const here = path.basename(fileName);
+    for (const d of model.decls) {
+      if (!d.global) continue;
+      const others = opts.duplicateSymbols.get(d.name);
+      if (!others) continue;
+      const elsewhere = others.filter((f) => f.toLowerCase() !== here.toLowerCase());
+      if (elsewhere.length === 0) continue;
+      add(
+        d.start,
+        d.end,
+        `${d.name} is also declared in ${elsewhere.join(', ')}. TARGET compiles every included file once and rejects a second declaration with "Name already defined: ${d.name}".`,
+        'error',
+        'duplicate-symbol'
+      );
+    }
+  }
+
   // ---- structure a runnable script must have --------------------------------
   // None of this is enforced by the TARGET compiler, which only reports syntax
   // errors. A script missing main() compiles and then does nothing at all.
@@ -221,6 +259,108 @@ export function computeDiagnostics(
 
   for (const call of model.allCalls) {
     checkCall(call);
+  }
+
+  /**
+   * Declaration-level constructs the TARGET parser rejects, each confirmed by
+   * compiling it. None is reported before build time, and a C or C++ habit produces
+   * every one of them.
+   */
+  function checkRejectedDeclarations(): void {
+    const sig = model.tokens.filter((t) => t.kind !== TokKind.Comment);
+
+    for (let i = 0; i < sig.length; i++) {
+      const t = sig[i];
+      if (t.kind !== TokKind.Ident) continue;
+
+      // define NAME(a,b) - TARGET has object-like macros only. `define X (1+2)` is
+      // fine, so the two are told apart by whether the parenthesis touches the name.
+      if (t.value === 'define') {
+        const name = sig[i + 1];
+        const paren = sig[i + 2];
+        if (
+          name?.kind === TokKind.Ident &&
+          paren?.kind === TokKind.Punct &&
+          paren.value === '(' &&
+          name.end === paren.start
+        ) {
+          add(
+            t.start,
+            paren.end,
+            `TARGET has no function-like macros: \`define ${name.value}(...)\` is rejected by the compiler. Use a function instead. A space, as in \`define ${name.value} (1+2)\`, is an ordinary parenthesised value and is fine.`,
+            'error',
+            'not-in-target'
+          );
+        }
+        continue;
+      }
+
+      // `return;` - TARGET requires a value.
+      if (t.value === 'return') {
+        const next = sig[i + 1];
+        if (next?.kind === TokKind.Punct && next.value === ';') {
+          add(
+            t.start,
+            next.end,
+            'TARGET requires a value: `return;` is a syntax error. Write `return 0;`.',
+            'error',
+            'not-in-target'
+          );
+        }
+      }
+    }
+
+    // A name the runtime already owns cannot be *declared* again.
+    //
+    // `define` is exempt: it is a text substitution in its own namespace and may
+    // legally shadow a builtin. The test corpus relies on this - it carries
+    // `define SET 1` while target.tmh declares `int SET(int i)`, and compiles.
+    for (const d of model.decls) {
+      if (!d.global || d.kind === 'define') continue;
+      const kind = functionsByName.has(d.name)
+        ? 'a builtin function'
+        : devicesByAlias.has(d.name)
+          ? 'a device alias'
+          : constantsByName.has(d.name)
+            ? 'a builtin constant'
+            : null;
+      if (!kind) continue;
+      add(
+        d.start,
+        d.end,
+        `${d.name} is already ${kind} declared by target.tmh. The compiler rejects this with "Name already defined: ${d.name}".`,
+        'error',
+        'redefines-builtin'
+      );
+    }
+
+    // An executable statement at file scope. Declarations are fine; a bare call is
+    // not, and the compiler reports only "Type required".
+    const fnRanges = model.decls
+      .filter((d) => d.kind === 'function')
+      .map((d) => [d.fullStart, d.fullEnd] as const);
+    const insideFunction = (o: number) => fnRanges.some(([a, b]) => o >= a && o <= b);
+    const posOf = new Map(sig.map((t, i) => [t.start, i]));
+    for (const call of model.allCalls) {
+      if (insideFunction(call.nameStart)) continue;
+      // Only a call that *starts* a statement: `int g = fn();` is a declaration.
+      const idx = posOf.get(call.nameStart);
+      const prev = idx !== undefined && idx > 0 ? sig[idx - 1] : null;
+      // A new line also starts a statement: `include "x.tmh"` has no semicolon, so the
+      // token before a following call is the include's string literal.
+      const startsStatement =
+        !prev ||
+        (prev.kind === TokKind.Punct && [';', '}', '{'].includes(prev.value)) ||
+        model.text.slice(prev.end, call.nameStart).includes('\n');
+      if (!startsStatement) continue;
+      add(
+        call.nameStart,
+        call.close === -1 ? call.nameEnd : call.close,
+        'Statements must live inside a function. At file scope the compiler expects a declaration and reports only "Type required". Move this call into main() or another function.',
+        'error',
+        'statement-at-file-scope'
+      );
+    }
   }
 
   /**

@@ -7,9 +7,11 @@ import { TargetIndex } from './index';
 import { callContextAt, collectAliasBindings, Decl, DocModel } from './model';
 import { TokKind } from './lexer';
 import {
+  anyControlLabel,
   BuiltinFunction,
   constants,
   constantsByName,
+  controlLabel,
   describeConstant,
   describeDevice,
   describeFunction,
@@ -139,8 +141,20 @@ export class TargetCompletionProvider implements vscode.CompletionItemProvider {
                   c.name,
                   g.kind === 'button' ? vscode.CompletionItemKind.EnumMember : vscode.CompletionItemKind.Property
                 );
-                it.detail = `${d.label} ${g.kind} · ${c.value}`;
-                if (c.doc) it.documentation = new vscode.MarkdownString(c.doc);
+                // The physical control's name reads far better than its index:
+                // EFLNORM means nothing, "Engine Fuel Flow Left" means everything.
+                const described = controlLabel(d.alias, c.name);
+                it.detail = described
+                  ? `${described} · ${d.label} ${g.kind}`
+                  : `${d.label} ${g.kind} · ${c.value}`;
+                const docText = [
+                  described ? `**${described}**` : '',
+                  c.doc,
+                  `*${d.label} ${g.kind} · index ${c.value}*`,
+                ]
+                  .filter(Boolean)
+                  .join('\n\n');
+                it.documentation = new vscode.MarkdownString(docText);
                 // Pad the index so numeric order reads naturally in the list.
                 const n = parseInt(c.value, 10);
                 const key = Number.isFinite(n) ? String(n).padStart(4, '0') : c.value;
@@ -236,7 +250,12 @@ export class TargetHoverProvider implements vscode.HoverProvider {
     if (dev) return md(describeDevice(dev));
 
     const konst = constantsByName.get(word);
-    if (konst) return md(describeConstant(konst));
+    if (konst) {
+      // A control constant is far more useful described than numbered.
+      const described = anyControlLabel(word);
+      const base = describeConstant(konst);
+      return md(described ? `**${described.label}**\n\n${base}` : base);
+    }
 
     if (NOT_IN_TARGET[word]) return md(`**Not part of TARGET.** ${NOT_IN_TARGET[word]}`);
 

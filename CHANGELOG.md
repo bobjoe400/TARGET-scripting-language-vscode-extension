@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.7.0
+
+Findings from the official manual, the per-device PDFs and further compiler probing.
+
+**Include rules** - TARGET has no include guards, and none of this is reported before
+build time:
+- `duplicate-include` - a header reached twice, directly or through a diamond
+  (main -> A, main -> B, B -> A), is compiled twice and fails with "Name already
+  defined".
+- `include-too-deep` - nesting deeper than 8 fails with "Too many include files
+  (max = 8)". Measured: a 9-deep chain fails, 40 flat includes are fine.
+- `duplicate-symbol` - a name declared in two files of the graph. A `define` may
+  legally shadow a declaration, so only define-against-define and
+  declaration-against-declaration count.
+
+**Declaration rules**, each confirmed by compiling it:
+- function-like macros (`define ADD(a,b)`) are rejected; `define X (1+2)` is fine.
+- `return;` without a value is a syntax error.
+- `redefines-builtin` - redeclaring a builtin, device alias or constant.
+- `statement-at-file-scope` - a bare call outside any function.
+
+**Physical control descriptions.** Completion and hover now describe controls in plain
+English, extracted from the per-device PDFs TARGET installs: `EFLNORM` shows as
+"Engine Fuel Flow Left", `APALT` as "Autopilot Select Switch", `CHF` as "China Hat".
+58 controls across the Warthog and Cougar devices. The T.16000M and MFD diagrams carry
+only group headings, so those devices are deliberately left undescribed rather than
+filled with noise.
+
+**Corrections:**
+- `REXEC` removed from the forbidden-in-EXEC set. The manual enumerates exactly
+  "SEQ, CHAIN, EXEC, TEMPO, AXIS, LIST" and shows `EXEC("StopAutoRepeat(4);")` as
+  supported, so flagging REXEC asserted a restriction nothing supports.
+- `define X (1+2)` was parsed as a call to `X` - and `X` is a real builtin - which drew
+  a spurious arity error. The define's value is now skipped properly.
+
 ## 0.6.0
 
 - The DX button limits are now measured rather than quoted. A script creating only a

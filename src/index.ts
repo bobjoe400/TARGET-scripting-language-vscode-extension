@@ -132,6 +132,109 @@ export class TargetIndex {
     return { symbols, complete };
   }
 
+  /**
+   * Problems with a document's include graph.
+   *
+   * TARGET has no include guards. A file reached twice - directly, or through two
+   * different headers - is compiled twice, and the second copy fails with
+   * "Name already defined". Nesting deeper than eight fails outright with
+   * "Too many include files (max = 8)". Neither is reported until build time, and
+   * both are easy to create in a multi-file script.
+   */
+  analyzeIncludes(doc: vscode.TextDocument): IncludeAnalysis {
+    const rootFile = doc.uri.fsPath;
+    const rootModel = this.getModel(doc);
+    const problems: IncludeProblem[] = [];
+
+    /** resolved file -> the include chains that reach it, each named by basename. */
+    const reachedBy = new Map<string, string[][]>();
+    /** resolved file -> the include path written in the ROOT document that leads there. */
+    const rootHop = new Map<string, string>();
+
+    const walk = (
+      file: string,
+      model: DocModel,
+      chain: string[],
+      depth: number,
+      firstHop: string | null
+    ): void => {
+      if (depth > MAX_INCLUDE_DEPTH + 2) return; // stop runaway recursion
+      for (const inc of model.includes) {
+        const resolved = this.resolveInclude(file, inc.path);
+        if (!resolved) continue;
+        const hop = firstHop ?? inc.path;
+        const nextChain = [...chain, path.basename(resolved)];
+
+        if (!reachedBy.has(resolved)) reachedBy.set(resolved, []);
+        reachedBy.get(resolved)!.push(nextChain);
+        if (!rootHop.has(resolved)) rootHop.set(resolved, hop);
+
+        if (depth + 1 > MAX_INCLUDE_DEPTH) {
+          problems.push({
+            includePath: hop,
+            code: 'include-too-deep',
+            severity: 'error',
+            message: `Include nesting is ${depth + 1} deep (${[path.basename(file), ...nextChain].join(' \u2192 ')}). TARGET allows ${MAX_INCLUDE_DEPTH} and fails with "Too many include files (max = ${MAX_INCLUDE_DEPTH})".`,
+          });
+          continue;
+        }
+
+        // Only descend the first time a file is seen, or a cycle would never end.
+        if (reachedBy.get(resolved)!.length > 1) continue;
+        const m = this.getModelForPath(resolved);
+        if (m) walk(resolved, m, nextChain, depth + 1, hop);
+      }
+    };
+
+    walk(rootFile, rootModel, [], 0, null);
+
+    for (const [file, chains] of reachedBy) {
+      if (chains.length < 2) continue;
+      const base = path.basename(file);
+      const how = chains.map((c) => [path.basename(rootFile), ...c].join(' \u2192 ')).slice(0, 3);
+      problems.push({
+        includePath: rootHop.get(file) ?? null,
+        code: 'duplicate-include',
+        severity: 'error',
+        message: `${base} is included ${chains.length} times: ${how.join('  and  ')}. TARGET has no include guards, so the second copy fails to compile with "Name already defined". Include it once, from the .tmc only.`,
+      });
+    }
+
+    // Names declared in more than one file in the graph.
+    //
+    // Two subtleties, both learned from real code that compiles:
+    //
+    //  - A `define` is a text substitution in its own namespace, so it may shadow a
+    //    declaration without conflict. The corpus carries `define SET 1` while
+    //    target.tmh declares `int SET(int i)`, and `define KBLayout ...` against
+    //    `int KBLayout[]`. Only define-against-define, or declaration-against-
+    //    declaration, actually collides.
+    //  - The TARGET-supplied headers are excluded: a user declaration clashing with
+    //    one of those is reported against the builtin tables instead, with a better
+    //    message, and reporting both would say the same thing twice.
+    const TARGET_HEADERS = new Set(['target.tmh', 'defines.tmh', 'hid.tmh', 'sys.tmh']);
+    const owners = new Map<string, { file: string; isDefine: boolean }[]>();
+    for (const { file, model } of this.includeClosure(rootFile, rootModel)) {
+      if (TARGET_HEADERS.has(path.basename(file).toLowerCase())) continue;
+      for (const d of model.decls) {
+        if (!d.global) continue;
+        if (!owners.has(d.name)) owners.set(d.name, []);
+        owners.get(d.name)!.push({ file, isDefine: d.kind === 'define' });
+      }
+    }
+    const duplicateSymbols = new Map<string, string[]>();
+    for (const [name, list] of owners) {
+      const defines = list.filter((e) => e.isDefine);
+      const decls = list.filter((e) => !e.isDefine);
+      const clashing = defines.length > 1 ? defines : decls.length > 1 ? decls : [];
+      const files = new Set(clashing.map((e) => e.file));
+      if (files.size < 2) continue;
+      duplicateSymbols.set(name, [...files].map((f) => path.basename(f)));
+    }
+
+    return { problems, duplicateSymbols };
+  }
+
   /** Global declarations visible from a document, across its include graph. */
   visibleDecls(doc: vscode.TextDocument): { decl: Decl; file: string }[] {
     const model = this.getModel(doc);
@@ -141,4 +244,21 @@ export class TargetIndex {
     }
     return out;
   }
+}
+
+/** Maximum `include` nesting TARGET allows; a 9-deep chain fails to compile. */
+export const MAX_INCLUDE_DEPTH = 8;
+
+export interface IncludeProblem {
+  /** The include path in the analysed document to anchor on, when one applies. */
+  includePath: string | null;
+  message: string;
+  code: string;
+  severity: 'error' | 'warning' | 'info';
+}
+
+export interface IncludeAnalysis {
+  problems: IncludeProblem[];
+  /** Declared name -> other files in the graph that also declare it. */
+  duplicateSymbols: Map<string, string[]>;
 }

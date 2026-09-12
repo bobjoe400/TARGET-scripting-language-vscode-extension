@@ -266,6 +266,33 @@ for (const [label, src, needle] of [
   } else fail('banner as doc', `got ${JSON.stringify((h3 || '').slice(0, 100))}`);
 }
 
+// ---- physical control descriptions -----------------------------------------
+// Taken from the per-device PDFs TARGET installs. EFLNORM means nothing on its own.
+{
+  const items = complete('int f() { MapKey(&Throttle, |); }');
+  const efl = items.find((i) => i.label === 'EFLNORM');
+  const chf = items.find((i) => i.label === 'CHF');
+  if (/Engine Fuel Flow Left/.test(efl?.detail ?? '') && /China Hat/.test(chf?.detail ?? '')) {
+    pass++;
+    console.log(`  ok    completion describes physical controls ("${efl.detail}")`);
+  } else {
+    failures.push(`control labels: EFLNORM detail=${JSON.stringify(efl?.detail)} CHF=${JSON.stringify(chf?.detail)}`);
+  }
+
+  const h = hoverAt('int f() { MapKey(&Throttle, APA|LT, 0); }');
+  if (h && /Autopilot Select Switch/.test(h)) {
+    pass++;
+    console.log('  ok    hover describes a physical control');
+  } else failures.push(`hover control label: ${JSON.stringify((h || '').slice(0, 120))}`);
+
+  // A device whose PDF has no per-control prose must simply fall back, not invent.
+  const t16 = complete('int f() { MapKey(&T16000, |); }').find((i) => i.label === 'TS1');
+  if (t16 && /T\.16000M/.test(t16.detail ?? '')) {
+    pass++;
+    console.log('  ok    undescribed devices fall back to the device and index');
+  } else failures.push(`T16000 fallback: ${JSON.stringify(t16?.detail)}`);
+}
+
 // TARGET defines no documentation format: the compiler ignores comments and ships no
 // doc tooling. So whatever comment style a script uses must work, and no particular
 // convention may be privileged - the block above a declaration is shown verbatim.

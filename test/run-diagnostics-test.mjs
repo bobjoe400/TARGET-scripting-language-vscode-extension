@@ -137,6 +137,20 @@ expectClean('&& address-of-address', 'int f() { int tmp; ASMAlloc(1, &&tmp, &tmp
 expectClean('unary minus and not',   'int f() { int i; int j; i = -j; i = !j; }');
 expectClean('quoted include',        'include "target.tmh"\nint f() { return 0; }');
 
+// -- declaration forms the TARGET parser rejects --------------------------------
+expect('function-like define', 'define ADD(a,b) a+b\nint f() { return ADD(1,2); }', 'not-in-target');
+expect('return with no value',  'int f() { return; }', 'not-in-target');
+expect('redeclaring a builtin', 'int MapKey(int a) { return a; }', 'redefines-builtin');
+expect('redeclaring a device',  'int Joystick;', 'redefines-builtin');
+expect('statement at file scope', 'include "target.tmh"\nMapKey(&Joystick, TG1, DX1);\nint main() { return 0; }', 'statement-at-file-scope', 'm.tmc');
+// ...and the legal forms next to them must stay silent.
+expectClean('parenthesised define value', 'define MYVAL (1+2)\nint f() { return MYVAL; }');
+expectClean('return with a value',        'int f() { return 0; }');
+// A define may shadow a builtin: separate namespace, and the corpus depends on it.
+expectClean('define shadowing a builtin', 'define SET 1\nint f() { return SET; }');
+expectClean('global initialised by call', 'int fnH() { return 1; }\nint g = fnH();\nint f() { return g; }');
+expectClean('call inside a function',     'int f() { MapKey(&Joystick, TG1, DX1); }');
+
 // -- the DirectX button ceiling, where the sources disagree ---------------------
 expect('DX40 needs the newer data format', 'int f() { MapKey(&Joystick, TG1, DX40); }', 'directx-button-ceiling');
 expect('DX120 is the last real button',     'int f() { MapKey(&Joystick, TG1, DX120); }', 'directx-button-ceiling');

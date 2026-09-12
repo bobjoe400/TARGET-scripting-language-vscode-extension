@@ -83,10 +83,16 @@ export function activate(context: vscode.ExtensionContext): void {
     }
 
     const { symbols, complete } = index.symbolTable(doc);
+    // The include graph is only meaningful from an entry script: a header analysed on
+    // its own is not what the compiler ever sees.
+    const isEntry = doc.fileName.toLowerCase().endsWith('.tmc');
+    const graph = isEntry ? index.analyzeIncludes(doc) : null;
     const raw = computeDiagnostics(model, path.basename(doc.fileName), {
       aliasBindings: bindings,
       knownSymbols: symbols,
       closureComplete: complete,
+      includeProblems: graph?.problems,
+      duplicateSymbols: graph?.duplicateSymbols,
     });
     diagnostics.set(doc.uri, raw.map((d) => toVsDiagnostic(doc, d)));
   };

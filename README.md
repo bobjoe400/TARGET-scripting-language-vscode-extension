@@ -30,6 +30,10 @@ MapKeyUMD(&MyJoystick, TS1, ...);
 
 Axis functions (`MapAxis`, `SetSCurve`, …) rank that device's axes first instead.
 
+**Plain-English control names.** `EFLNORM` is meaningless; "Engine Fuel Flow Left" is
+not. Completion and hover describe physical controls using the per-device diagrams
+TARGET installs - `APALT` is the Autopilot Select Switch, `CHF` is China Hat forward.
+
 **Hover and signature help** for all 171 builtins, with the real parameter lists and
 default values - and for your own functions too, including the comment block above
 them, looked up across the include graph so a call site shows what a function in
@@ -63,6 +67,13 @@ split over a dozen headers and Thrustmaster's editor has no navigation at all.
 | Handler that never calls `DefaultMapping()` | mappings and shift layers never take effect |
 | Call to a function defined nowhere | a typo that TARGET only discovers mid-flight |
 | DX buttons above `DX32` | a hint: whether it arrives depends on the game's DirectInput data format |
+| A header included twice, or via a diamond | TARGET has no include guards: "Name already defined" |
+| `include` nesting deeper than 8 | "Too many include files (max = 8)" |
+| A name declared in two files of the graph | compiled twice, second one fails |
+| `define ADD(a,b)` | no function-like macros |
+| `return;` with no value | a syntax error in TARGET |
+| Redeclaring a builtin, device or constant | "Name already defined" |
+| A bare call at file scope | statements must live inside a function |
 | C keywords TARGET lacks | `for`, `switch`, `continue`, `typedef`, `enum`, `const`, … |
 
 Names borrowed from another device that happen to land on the same index (`TG1` and
