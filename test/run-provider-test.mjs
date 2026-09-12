@@ -651,6 +651,10 @@ for (const [label, src, needle] of [
     } else failures.push(`typo chord: ${JSON.stringify(typo)}`);
 
     // CTL and LCTL are both 1224 in defines.tmh: a bare CTL is the LEFT control key.
+    // The padded spelling must resolve too - this was the one normalisation that
+    // skipped the leading-zero strip, so USB[0x0E0] read as an unknown modifier.
+    if (parseChord('USB[0x0E0]+').modifiers.join() !== 'L_CTL') failures.push('padded USB modifier');
+    else { pass++; console.log('  ok    a zero-padded USB modifier still resolves'); }
     if (parseChord('CTL+').modifiers.join() === 'L_CTL' && parseChord('USB[0xE1]+').modifiers.join() === 'L_SHIFT') {
       pass++; console.log('  ok    both spellings of a modifier resolve the same way');
     } else failures.push(`modifier spellings: ${JSON.stringify(parseChord('CTL+'))}`);

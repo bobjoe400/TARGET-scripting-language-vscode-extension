@@ -13,7 +13,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { readTextFile } from './encoding';
-import { own, usbKeyName, usbNamePair } from './builtins';
+import { own, usbKeyName, usbNamePair, normalizeUsbCode } from './builtins';
 
 /** What the script produced: a keystroke, a virtual button, or an axis. */
 export type InputKind = 'key' | 'button' | 'axis';
@@ -475,7 +475,10 @@ export function parseChord(before: string): Chord {
     if (!term) continue;
     const usb = /^USB\s*\[\s*0[xX]([0-9A-Fa-f]+)\s*\]$/.exec(term);
     if (SCRIPT_STATE_FLAGS.has(term)) continue;
-    const name = usb ? own(USB_MODIFIERS, usb[1].toUpperCase().padStart(2, '0')) : own(SCRIPT_MODIFIERS, term);
+    // Through the shared normaliser: this was the one spelling that skipped the
+    // leading-zero strip, so USB[0x0E0] missed the table and the left control key was
+    // reported as "not a modifier this extension knows".
+    const name = usb ? own(USB_MODIFIERS, normalizeUsbCode(usb[1])) : own(SCRIPT_MODIFIERS, term);
     if (name) modifiers.add(name);
     else unknown.push(term);
   }
