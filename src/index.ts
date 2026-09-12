@@ -6,7 +6,16 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { buildModel, DocModel, Decl } from './model';
 import { readTextFile } from './encoding';
-import { buildBindsIndex, BindsIndex, activePresetNames, fileMatchesPreset } from './binds';
+import {
+  buildBindsIndex,
+  BindsIndex,
+  activePresetNames,
+  fileMatchesPreset,
+  bindingFormat,
+  comparablePath,
+  readAssociations,
+  targetSettingsPaths,
+} from './binds';
 import { windowsSystemRoot, resolveEntryScript } from './runner';
 
 /** Default locations of the TARGET install, used when the setting is empty. */
@@ -156,6 +165,7 @@ export class TargetIndex {
   /** Short-lived, so a hover does not re-scan the workspace for .binds files. */
   private bindsScanCache = new Map<string, { at: number; index: BindsIndex }>();
   private entryDirCache = new Map<string, string>();
+  private associationsCache: { at: number; list: ReturnType<typeof readAssociations> } | null = null;
 
   /**
    * Elite Dangerous binding files near the script, so the editor can say what the
@@ -206,6 +216,19 @@ export class TargetIndex {
       }
     }
     let unique = [...new Set(files)].sort();
+
+    // The TARGET GUI records which game each script is associated with. Where that
+    // exists it settles what the extension otherwise guesses at, so the other games'
+    // files can be dropped rather than merged into one contradictory answer.
+    //
+    // Strictly a hint. It lives in the user's own roaming profile, not in the project,
+    // so anyone who clones a script repo has none - and the behaviour without it must be
+    // exactly what it was before. It only ever narrows, and never to nothing.
+    const associated = this.associatedGame(doc);
+    if (associated) {
+      const forGame = unique.filter((f) => bindingFormat(f) === associated);
+      if (forGame.length) unique = forGame;
+    }
 
     // Which preset the game will actually load. A Bindings folder collects every preset
     // the player has ever tried, and the community layouts ship more beside the script;
@@ -259,6 +282,30 @@ export class TargetIndex {
    * The entry script's folder, which is what the compiler resolves includes against.
    * Cached: resolveEntryScript reads directories, and this is asked once per include.
    */
+  /**
+   * The game the TARGET GUI says this script is for, if it says anything.
+   *
+   * Looked up by the entry script, so it answers for a header as well as for the .tmc
+   * the association actually names. Returns null whenever there is no association, no
+   * settings file, or the executable is one we have no parser for.
+   */
+  private associatedGame(doc: vscode.TextDocument): string | null {
+    const { entry, candidates } = resolveEntryScript(doc.uri.fsPath);
+    const mine = new Set((entry ? [entry] : candidates).map(comparablePath));
+    if (!mine.size) return null;
+    const now = Date.now();
+    if (!this.associationsCache || now - this.associationsCache.at > 10_000) {
+      this.associationsCache = {
+        at: now,
+        list: targetSettingsPaths(windowsSystemRoot()).flatMap(readAssociations),
+      };
+    }
+    for (const a of this.associationsCache.list) {
+      if (a.game && mine.has(comparablePath(a.script))) return a.game;
+    }
+    return null;
+  }
+
   private entryDirFor(file: string): string {
     const hit = this.entryDirCache.get(file);
     if (hit !== undefined) return hit;

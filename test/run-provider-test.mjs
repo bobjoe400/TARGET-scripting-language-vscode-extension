@@ -533,7 +533,8 @@ for (const [label, src, needle] of [
 // script authors name their defines however they like - of 200 defines in the corpus
 // only 15 match a game action name.
 {
-  const { usbCodeForEdKey, ED_MODIFIERS, buildBindsIndex, activePresetNames, fileMatchesPreset, bindingFormat, parseChord, chordMatches } =
+  const { usbCodeForEdKey, ED_MODIFIERS, buildBindsIndex, activePresetNames, fileMatchesPreset, bindingFormat, parseChord, chordMatches,
+          readAssociations, gameForExecutable, comparablePath, targetSettingsPaths } =
     require(path.join(repoRoot, 'out/binds.js'));
   const { renderBindings, escapeMarkdown, shortKeyName, code } = require(path.join(repoRoot, 'out/providers.js'));
   const NOCHORD = { modifiers: [], unknown: [] };
@@ -754,6 +755,55 @@ for (const [label, src, needle] of [
       pass++; console.log(`  ok    every format records a line to link to (DCS L${dcsRef.line}, SC L${scRef.line})`);
     } else failures.push(`lines: dcs=${dcsRef.line} sc=${scRef.line}`);
     void edButtons;
+  }
+
+  // --- the association the TARGET GUI records --------------------------------
+  // Its "associations" pane stores which game each .tmc runs with. That settles what
+  // the extension otherwise guesses at - but it lives in the user's roaming profile,
+  // NOT in the project, so anyone who clones a script repo has none and the behaviour
+  // without it has to be exactly what it was before.
+  {
+    const nfs3 = require('node:fs');
+    const d = nfs3.mkdtempSync(path.join(require('node:os').tmpdir(), 'assoc-'));
+    const f = path.join(d, 'TargetSettings.xml');
+    nfs3.writeFileSync(f, `<?xml version="1.0" encoding="utf-8"?>
+<TargetSettings>
+  <GameConfigAssociations>
+    <Game1>
+      <Name>Clicker ED</Name>
+      <Game>D:\\SteamLibrary\\steamapps\\common\\Elite Dangerous\\Products\\elite-dangerous-odyssey-64\\EliteDangerous64.exe</Game>
+      <Configuration>C:\\Scripts\\ED_ENHANCED.tmc</Configuration>
+    </Game1>
+    <Game2>
+      <Name>Unknown thing</Name>
+      <Game>C:\\Games\\SomethingElse.exe</Game>
+      <Configuration>C:\\Scripts\\Other.tmc</Configuration>
+    </Game2>
+  </GameConfigAssociations>
+</TargetSettings>`);
+    const list = readAssociations(f);
+    if (list.length === 2 && list[0].game === 'Elite Dangerous' && list[1].game === null) {
+      pass++; console.log('  ok    associations are read, and an unknown game stays null');
+    } else failures.push(`assoc: ${JSON.stringify(list)}`);
+
+    // A Windows path in the settings and a WSL path in the editor are the same file.
+    if (comparablePath('C:\\Scripts\\ED_ENHANCED.tmc') === comparablePath('/mnt/c/Scripts/ED_ENHANCED.tmc')) {
+      pass++; console.log('  ok    a Windows and a WSL spelling of one script compare equal');
+    } else failures.push('comparablePath');
+
+    // path.basename does not split a Windows path on POSIX, which silently made every
+    // association resolve to no game at all.
+    if (gameForExecutable('D:\\x\\EliteDangerous64.exe') === 'Elite Dangerous' &&
+        gameForExecutable('C:\\DCS World\\bin\\DCS.exe') === 'DCS World' &&
+        gameForExecutable('C:\\Games\\Nothing.exe') === null) {
+      pass++; console.log('  ok    the game is identified from a Windows executable path');
+    } else failures.push(`gameForExecutable: ${gameForExecutable('D:\\x\\EliteDangerous64.exe')}`);
+
+    // No settings file at all is the ordinary case for a cloned repo.
+    if (readAssociations(path.join(d, 'nope.xml')).length === 0 && Array.isArray(targetSettingsPaths(null))) {
+      pass++; console.log('  ok    a missing settings file yields no associations, not an error');
+    } else failures.push('missing settings file');
+    nfs3.rmSync(d, { recursive: true, force: true });
   }
 
   // The preset the game will actually load, taken from the highest-numbered marker.

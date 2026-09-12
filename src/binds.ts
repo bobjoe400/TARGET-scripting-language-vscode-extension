@@ -10,6 +10,7 @@
 // so matching by name would be mostly wrong. Keys are unambiguous.
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { readTextFile } from './encoding';
 import { own, usbKeyName } from './builtins';
@@ -50,6 +51,25 @@ export interface BindsIndex {
   games: string[];
 }
 
+/**
+ * A script-to-game association, as recorded by the TARGET GUI itself.
+ *
+ * TARGET's "associations" pane stores, per entry, the game executable and the .tmc it
+ * should run with. That is the authoritative answer to a question the extension was
+ * otherwise guessing at - which game a script is written for - so the binding files of
+ * every OTHER game can be left out instead of merged into one contradictory list.
+ */
+export interface GameAssociation {
+  /** The name the user gave the association. */
+  name: string;
+  /** Absolute path of the game executable. */
+  gameExe: string;
+  /** Absolute path of the .tmc it runs. */
+  script: string;
+  /** The game this resolves to, or null when it is one we have no parser for. */
+  game: string | null;
+}
+
 export const GAME_ELITE = 'Elite Dangerous';
 export const GAME_DCS = 'DCS World';
 export const GAME_STAR_CITIZEN = 'Star Citizen';
@@ -60,6 +80,82 @@ export const GAME_STAR_CITIZEN = 'Star Citizen';
  * Only .binds is unambiguous. Star Citizen exports a plain .xml, which sits in the same
  * folder as TrackIR profiles and anything else, and DCS writes .diff.lua per aircraft.
  */
+/**
+ * A path reduced to something two spellings of the same file agree on.
+ *
+ * TARGET records `C:\\Thrustmaster\\x\\y.tmc` while the editor under WSL knows the same
+ * file as `/mnt/c/Thrustmaster/x/y.tmc`. Dropping the drive or mount prefix and
+ * lower-casing makes them comparable without asking the OS to translate.
+ */
+export function comparablePath(p: string): string {
+  return p
+    .replace(/\\/g, '/')
+    .replace(/^[A-Za-z]:\//, '')
+    .replace(/^\/mnt\/[a-z]\//i, '')
+    .replace(/^\//, '')
+    .toLowerCase();
+}
+
+/** Basename of a path written with either separator. */
+function anyBasename(p: string): string {
+  const parts = p.replace(/\\/g, '/').split('/');
+  return parts[parts.length - 1] ?? '';
+}
+
+/** Which game an executable belongs to, by its own name then by its install path. */
+export function gameForExecutable(exe: string): string | null {
+  const base = anyBasename(exe).toLowerCase();
+  const full = exe.toLowerCase();
+  if (/^elitedangerous/.test(base)) return GAME_ELITE;
+  if (base === 'dcs.exe' || /\bdcs world\b/.test(full)) return GAME_DCS;
+  if (base === 'starcitizen.exe' || /\bstarcitizen\b/.test(full)) return GAME_STAR_CITIZEN;
+  return null;
+}
+
+/**
+ * Where the TARGET GUI keeps its settings. On Windows this is the running user's
+ * roaming profile; from WSL the profile has to be found on the mounted drive, since
+ * os.homedir() there is the Linux home and tells us nothing about the Windows user.
+ */
+export function targetSettingsPaths(windowsRoot: string | null): string[] {
+  const rel = ['AppData', 'Roaming', 'Thrustmaster', 'TARGET', 'TargetSettings.xml'];
+  if (process.platform === 'win32') return [path.join(os.homedir(), ...rel)];
+  if (!windowsRoot) return [];
+  const users = path.join(windowsRoot, 'Users');
+  try {
+    return fs
+      .readdirSync(users)
+      .map((u) => path.join(users, u, ...rel))
+      .filter((p) => {
+        try {
+          return fs.statSync(p).isFile();
+        } catch {
+          return false;
+        }
+      });
+  } catch {
+    return [];
+  }
+}
+
+/** Reads the script-to-game associations the TARGET GUI has recorded. */
+export function readAssociations(settingsFile: string): GameAssociation[] {
+  const xml = readTextFile(settingsFile);
+  if (xml === null) return [];
+  const out: GameAssociation[] = [];
+  const block = /<GameConfigAssociations>([\s\S]*?)<\/GameConfigAssociations>/.exec(xml);
+  if (!block) return out;
+  const tag = (body: string, name: string): string =>
+    new RegExp(`<${name}>([\\s\\S]*?)</${name}>`).exec(body)?.[1].trim() ?? '';
+  for (const entry of block[1].matchAll(/<Game\d+>([\s\S]*?)<\/Game\d+>/g)) {
+    const gameExe = tag(entry[1], 'Game');
+    const script = tag(entry[1], 'Configuration');
+    if (!script) continue;
+    out.push({ name: tag(entry[1], 'Name'), gameExe, script, game: gameForExecutable(gameExe) });
+  }
+  return out;
+}
+
 export function bindingFormat(file: string): string | null {
   if (/\.binds$/i.test(file)) return GAME_ELITE;
   if (/\.diff\.lua$/i.test(file)) return GAME_DCS;
