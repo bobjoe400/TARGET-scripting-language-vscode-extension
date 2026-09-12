@@ -535,7 +535,7 @@ for (const [label, src, needle] of [
 {
   const { usbCodeForEdKey, ED_MODIFIERS, buildBindsIndex, activePresetNames, fileMatchesPreset, bindingFormat, parseChord, chordMatches,
           readAssociations, gameForExecutable, comparablePath, targetSettingsPaths,
-          dcsProfilesFor, virtualDeviceName, DEFAULT_VIRTUAL_DEVICE } =
+          dcsProfilesFor, virtualDeviceName, DEFAULT_VIRTUAL_DEVICE, parseStarCitizen } =
     require(path.join(repoRoot, 'out/binds.js'));
   const { renderBindings, escapeMarkdown, shortKeyName, code } = require(path.join(repoRoot, 'out/providers.js'));
   const NOCHORD = { modifiers: [], unknown: [] };
@@ -840,6 +840,30 @@ for (const [label, src, needle] of [
       pass++; console.log('  ok    the virtual device name comes from the script, not a guess');
     } else failures.push('virtualDeviceName');
     nfs4.rmSync(root, { recursive: true, force: true });
+  }
+
+  // --- Star Citizen: which stick is js3? -------------------------------------
+  // The LIVE actionmaps.xml records the device per instance; an EXPORTED mapping
+  // carries the same element with no Product, and so does a slot with nothing plugged
+  // into it. So a binding on somebody else's stick is excluded when the file says whose
+  // it is, and kept when it does not - guessing would attribute another player's
+  // hardware to this script.
+  {
+    const live = path.join(FIX, 'BindFiles', 'Sample-live-actionmaps.xml');
+    const all = parseStarCitizen(live);
+    const ours = parseStarCitizen(live, DEFAULT_VIRTUAL_DEVICE);
+    const actions = ours.map((r) => r.action).sort();
+    if (all.length === 3 && ours.length === 2 &&
+        actions.includes('v_eject') && actions.includes('v_unknown_slot') &&
+        !actions.includes('v_someone_elses_stick')) {
+      pass++; console.log('  ok    Star Citizen keeps our stick and the unnamed slot, drops the other');
+    } else failures.push(`sc device: all=${all.length} ours=${JSON.stringify(actions)}`);
+
+    // js2_button30 is button 30 on instance 2 - the instance must not be read as the
+    // button number.
+    const b = all.find((r) => r.key === 'js2_button30');
+    if (b && b.button === 30) { pass++; console.log('  ok    the button number is the button, not the device instance'); }
+    else failures.push(`sc button number: ${JSON.stringify(b)}`);
   }
 
   // --- the association the TARGET GUI records --------------------------------

@@ -610,31 +610,49 @@ export function parseDcsDiff(file: string, module?: string): BindingRef[] {
  * enumeration order and says nothing useful here, so only the button number is kept.
  * An input of a single space is the game's way of writing "unbound".
  */
-export function parseStarCitizen(file: string): BindingRef[] {
+export function parseStarCitizen(file: string, device?: string): BindingRef[] {
   const xml = readTextFile(file);
   if (xml === null) return [];
   const base = path.basename(file);
   const lineAt = lineCounter(xml);
   const out: BindingRef[] = [];
+
+  // Which physical stick each `jsN_` refers to. The LIVE actionmaps.xml records it -
+  //   <options type="joystick" instance="1" Product=" VKBsim Gladiator NXT {GUID}"/>
+  // - while an exported mapping carries the same element with no Product at all, and an
+  // instance the player has nothing plugged into is likewise bare. So this resolves when
+  // it can and stays silent when it cannot, rather than guessing which stick js3 was.
+  const products = new Map<number, string>();
+  for (const m of xml.matchAll(/<options\s+type="joystick"\s+instance="(\d+)"[^>]*\bProduct="([^"]*)"/g)) {
+    products.set(Number(m[1]), m[2].trim());
+  }
+  const wanted = device?.toLowerCase();
   for (const m of xml.matchAll(
     /<action\s+name=['"]([^'"]+)['"]\s*>([\s\S]*?)<\/action>/g
   )) {
     const action = m[1];
     for (const r of m[2].matchAll(/<rebind\s+[^>]*input=['"]([^'"]+)['"]/g)) {
-      const btn = /^(?:js\d+_)?button(\d+)$/i.exec(r[1].trim());
+      const raw = r[1].trim();
+      const btn = /^(?:js(\d+)_)?button(\d+)$/i.exec(raw);
       if (!btn) continue;
-      out.push({ action, slot: '', key: r[1].trim(), modifiers: [], file: base, path: file, line: lineAt(m.index ?? 0), game: GAME_STAR_CITIZEN, kind: 'button', button: Number(btn[1]) });
+      // A binding on somebody else's stick says nothing about what this script does.
+      // Only filtered when the file actually names the device for that instance.
+      if (wanted && btn[1]) {
+        const product = products.get(Number(btn[1]));
+        if (product && !product.toLowerCase().includes(wanted)) continue;
+      }
+      out.push({ action, slot: '', key: raw, modifiers: [], file: base, path: file, line: lineAt(m.index ?? 0), game: GAME_STAR_CITIZEN, kind: 'button', button: Number(btn[2]) });
     }
   }
   return out;
 }
 
 /** Parses any supported binding file, choosing the parser by what the file is. */
-export function parseBindingFile(file: string, module?: string): BindingRef[] {
+export function parseBindingFile(file: string, module?: string, device?: string): BindingRef[] {
   switch (bindingFormat(file)) {
     case GAME_ELITE: return parseBinds(file);
     case GAME_DCS: return parseDcsDiff(file, module);
-    case GAME_STAR_CITIZEN: return parseStarCitizen(file);
+    case GAME_STAR_CITIZEN: return parseStarCitizen(file, device);
     default: return [];
   }
 }
@@ -644,7 +662,9 @@ export function buildBindsIndex(
   files: string[],
   activePreset: string | null = null,
   /** Absolute file path -> the DCS module it was found under. */
-  modules: Map<string, string> = new Map()
+  modules: Map<string, string> = new Map(),
+  /** The virtual device this script creates, used to ignore other people's sticks. */
+  device?: string
 ): BindsIndex {
   const byUsbCode = new Map<string, BindingRef[]>();
   const byButton = new Map<number, BindingRef[]>();
@@ -652,7 +672,7 @@ export function buildBindsIndex(
   const games = new Set<string>();
   const used: string[] = [];
   for (const file of files) {
-    const refs = parseBindingFile(file, modules.get(file));
+    const refs = parseBindingFile(file, modules.get(file), device);
     if (refs.length) used.push(file);
     for (const ref of refs) {
       actions.add(ref.action);

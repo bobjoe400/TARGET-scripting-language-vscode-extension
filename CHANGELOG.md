@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.0
+
+- **Star Citizen bindings now resolve which stick is which.** `js3_button30` names a
+  device instance, and the live `actionmaps.xml` records what each instance is:
+  `<options type="joystick" instance="1" Product=" Thrustmaster Combined {GUID}"/>`.
+  Bindings on another player's hardware are no longer attributed to your script. An
+  exported mapping omits that attribute, and so does an empty slot, so those are kept
+  rather than guessed at.
+
 ## 1.0.3
 
 - The Marketplace page now opens with Requirements, a Quick start and Usage, which is

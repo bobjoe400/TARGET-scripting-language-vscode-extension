@@ -1,0 +1,16 @@
+<ActionMaps version="1">
+    <options type="joystick" instance="1" Product=" Thrustmaster Combined  {B10A044F-0000-0000-0000-504944564944}"/>
+    <options type="joystick" instance="2" Product=" VKBsim Gladiator NXT  R  {0200231D-0000-0000-0000-504944564944}"/>
+    <options type="joystick" instance="3"/>
+    <actionmap name="spaceship_general">
+        <action name="v_eject">
+            <rebind device="joystick" input="js1_button30"/>
+        </action>
+        <action name="v_someone_elses_stick">
+            <rebind device="joystick" input="js2_button30"/>
+        </action>
+        <action name="v_unknown_slot">
+            <rebind device="joystick" input="js3_button7"/>
+        </action>
+    </actionmap>
+</ActionMaps>

@@ -277,7 +277,7 @@ export class TargetIndex {
       this.bindsScanCache.set(scanKey, { at: Date.now(), index: hit.index });
       return hit.index;
     }
-    const index = buildBindsIndex(unique, activePreset, dcsModules);
+    const index = buildBindsIndex(unique, activePreset, dcsModules, device);
     if (this.bindsCache.size > 8) this.bindsCache.clear();
     this.bindsCache.set(cacheKey, { index, stamp });
     if (this.bindsScanCache.size > 16) this.bindsScanCache.clear();
