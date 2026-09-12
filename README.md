@@ -167,6 +167,16 @@ Axes are not in doubt: both structures carry exactly eight (`lX`, `lY`, `lZ`, `l
 `lRy`, `lRz`, `rglSlider[2]`), which is exactly the eight `DX_*_AXIS` constants
 `defines.tmh` declares, so a ninth cannot be named.
 
+A figure of 56 buttons circulates in community documentation. Nothing in the TARGET
+installation supports it: every file was scanned for a HID report descriptor declaring
+a button range, and the only ones present are 5 buttons (a mouse) and 30, neither of
+which is the combined virtual controller. The virtual device's descriptor is built at
+runtime - its node, `Thrustmaster Virtual Game Controller (root)`, is a root-enumerated
+device served by `TmHid`, and it caches no capability data while absent. Confirming or
+refuting 56 would mean running TARGET so the device is instantiated and reading its
+capabilities live. Until someone does that, treat 56 as unverified; the DirectInput
+figures above are the ones with a citable source.
+
 ## Is this C?
 
 No. It is a small C-flavoured interpreted language, and the resemblance runs out fast.
