@@ -33,3 +33,16 @@ Set `WIN_USER` if your Windows username differs from the one `%USERNAME%` report
 A version installed from a `.vsix` does not auto-update. VS Code only replaces it when
 the Marketplace has a **higher** version, so a local build that is ahead of the
 published one stays put until the Marketplace catches up.
+
+### Installed twice
+
+VS Code keeps separate extension sets for the local machine and for a WSL remote
+(`~/.vscode-server/extensions`). A copy in each loads *both* when a window is connected
+to WSL, and VS Code merges the results of every provider - so completion lists each
+item twice, and hovers show their content twice.
+
+`code --list-extensions` on Windows does not show the remote set, so the second copy is
+easy to miss. `npm run install:local` now warns when it finds one.
+
+A language extension should live wherever the files do: in the remote when you edit in
+WSL, locally when you edit on a Windows drive. Not both.

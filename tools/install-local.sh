@@ -25,6 +25,19 @@ out=$("$CMD" /c "C:\\Users\\$win_user\\__install_vsix.bat" 2>&1 | tr -d '\r' || 
 rm -f "$bat" "$dest/$name"
 
 echo "$out" | grep -iE 'successfully|error|unable' || { echo "$out" | tail -3; echo "(unrecognised output)"; }
+
+# A copy left in the WSL remote loads alongside the Windows one whenever a window is
+# connected to WSL, and VS Code merges both providers' results - every completion item
+# twice, every hover twice. It is invisible to `code --list-extensions` on Windows,
+# which only lists the local side.
+server=~/.vscode-server/extensions
+if ls -d "$server"/*target-script* >/dev/null 2>&1; then
+  echo
+  echo "WARNING: a copy is also installed in the WSL remote:"
+  ls -d "$server"/*target-script* | sed 's|.*/|    |'
+  echo "  Both load when the window is connected to WSL, and everything appears twice."
+  echo "  Remove it, or install there instead of here - not both."
+fi
 echo
 echo "Installed $name. Reload the VS Code window to pick it up:"
 echo "  Ctrl+Shift+P -> Developer: Reload Window"
