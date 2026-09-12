@@ -363,18 +363,18 @@ export function activate(context: vscode.ExtensionContext): void {
     // state. Save this project's files - the ones that will actually be staged - and
     // nothing else: writing a half-finished experiment in an unrelated folder because
     // the user compiled something else is not ours to do.
-    const projectDir = path.dirname(doc.uri.fsPath);
+    // Resolve the entry script FIRST: it can live a level or more above the document
+    // the command was invoked from, and the save sweep has to be rooted there. Rooting
+    // it at the picked document's folder skipped the .tmc itself and every sibling of
+    // it, which staging then copied in their previous state.
+    const { entry, candidates } = resolveEntryScript(doc.uri.fsPath);
+    const saveRoot = path.dirname(entry ?? doc.uri.fsPath);
     for (const open of vscode.workspace.textDocuments) {
       if (open.languageId !== 'target' || !open.isDirty || open.uri.scheme !== 'file') continue;
-      // Anything under the project root, because staging recurses into subfolders.
-      // Comparing only the immediate directory left dirty headers in sub/ to be
-      // compiled from their stale on-disk copy.
-      const rel = path.relative(projectDir, open.uri.fsPath);
+      const rel = path.relative(saveRoot, open.uri.fsPath);
       if (rel.startsWith('..') || path.isAbsolute(rel)) continue;
       await open.save();
     }
-
-    const { entry, candidates } = resolveEntryScript(doc.uri.fsPath);
     if (entry) return entry;
     if (candidates.length === 0) {
       vscode.window.showErrorMessage(
@@ -430,7 +430,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
       const result = await vscode.window.withProgress(
         { location: vscode.ProgressLocation.Window, title: `Compiling ${path.basename(entry)}…` },
-        () => compileCheck(entry, install)
+        () => compileCheck(entry, install, { closureFiles: closureFilesFor(entry) })
       );
 
       output.appendLine(`\n$ Interpreter.exe ${path.basename(entry)}  (compile check)`);
@@ -525,7 +525,7 @@ export function activate(context: vscode.ExtensionContext): void {
       // compile is worth catching before TARGET is launched.
       const check = await vscode.window.withProgress(
         { location: vscode.ProgressLocation.Window, title: `Compiling ${path.basename(entry)}…` },
-        () => compileCheck(entry, install)
+        () => compileCheck(entry, install, { closureFiles: closureFilesFor(entry) })
       );
       if (check.error) {
         // The check could not be performed at all - no interpreter, or it timed out.
@@ -601,7 +601,7 @@ export function activate(context: vscode.ExtensionContext): void {
           'Cancel'
         );
         if (pick !== 'Copy to Windows and Run') return;
-        const staged = await stageProjectForRun(entry, install);
+        const staged = await stageProjectForRun(entry, install, { closureFiles: closureFilesFor(entry) });
         if (!staged.ok) {
           vscode.window.showErrorMessage(`Could not copy the project to a Windows drive: ${staged.error}`);
           return;

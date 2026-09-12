@@ -94,12 +94,27 @@ export interface TargetInstall {
   interpreter: string | null;
 }
 
-const CANDIDATE_ROOTS = [
-  'C:\\Program Files (x86)\\Thrustmaster\\TARGET',
-  'C:\\Program Files\\Thrustmaster\\TARGET',
-  '/mnt/c/Program Files (x86)/Thrustmaster/TARGET',
-  '/mnt/c/Program Files/Thrustmaster/TARGET',
-];
+/**
+ * Where TARGET is looked for when the setting is empty. The WSL entries are derived
+ * from the drive mount rather than assuming /mnt/c - automount.root is configurable,
+ * and under a non-default one auto-detection found nothing at all, which disables
+ * running, compiling, and every check that needs the vendor headers. /mnt/c stays as a
+ * last resort for the case where the mount cannot be read.
+ */
+function candidateRoots(): string[] {
+  const roots = [
+    'C:\\Program Files (x86)\\Thrustmaster\\TARGET',
+    'C:\\Program Files\\Thrustmaster\\TARGET',
+  ];
+  const sys = windowsSystemRoot();
+  if (sys) {
+    roots.push(path.join(sys, 'Program Files (x86)', 'Thrustmaster', 'TARGET'));
+    roots.push(path.join(sys, 'Program Files', 'Thrustmaster', 'TARGET'));
+  }
+  roots.push('/mnt/c/Program Files (x86)/Thrustmaster/TARGET');
+  roots.push('/mnt/c/Program Files/Thrustmaster/TARGET');
+  return roots;
+}
 
 /**
  * Locates the TARGET install.
@@ -134,7 +149,7 @@ function findInstallUncached(configuredScriptsDir?: string): TargetInstall | nul
     // Tolerate the setting pointing at the root itself.
     roots.push(s);
   }
-  roots.push(...CANDIDATE_ROOTS);
+  roots.push(...candidateRoots());
 
   for (const root of roots) {
     const scripts = path.join(root, 'scripts');
@@ -337,7 +352,7 @@ export async function compileCheck(
       return { ok: false, problems: [], output, error: 'Interpreter.exe did not finish within 60 seconds.' };
     }
 
-    const problems = parseCompileOutput(output, stage, projectDir, origin, scriptPath);
+    const problems = parseCompileOutput(output, projectDir, origin, scriptPath);
     // A byte-order mark makes the compiler fail on line 1 with "Type required", which
     // says nothing about the real cause. Thrustmaster's own editor writes UTF-16, so
     // this is easy to hit and baffling without being told.
@@ -378,7 +393,6 @@ export async function compileCheck(
  */
 export function parseCompileOutput(
   output: string,
-  stageDir: string,
   projectDir: string,
   origin: Map<string, string>,
   /** Where to attach an error the compiler reports without a position. */
@@ -441,24 +455,44 @@ function runTool(
     let stdout = '';
     let stderr = '';
     let timedOut = false;
+    let settled = false;
+    const timers: NodeJS.Timeout[] = [];
+    const done = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      for (const t of timers) clearTimeout(t);
+      fn();
+    };
     child.stdout?.on('data', (d) => (stdout += d.toString()));
     child.stderr?.on('data', (d) => (stderr += d.toString()));
-    const timer = setTimeout(() => {
-      timedOut = true;
-      child.kill();
-    }, timeoutMs);
+    timers.push(
+      setTimeout(() => {
+        timedOut = true;
+        // A polite signal, then a forced one, then give up on the process entirely.
+        // The interpreter runs as a Windows process - under WSL through the interop
+        // layer - and a SIGTERM it declines to act on used to leave this promise
+        // pending forever: the caller's progress notification never closed, and every
+        // later compile queued behind it. Whatever the child does, the caller gets an
+        // answer.
+        child.kill();
+        timers.push(setTimeout(() => child.kill('SIGKILL'), 2_000));
+        timers.push(
+          setTimeout(() => done(() => resolve({ stdout, stderr, timedOut: true })), 5_000)
+        );
+      }, timeoutMs)
+    );
     // Cleared on error as well as close: a spawn failure otherwise left a live handle
     // and a kill() aimed at a process that never started.
-    child.on('error', (e) => {
-      clearTimeout(timer);
-      reject(e);
-    });
-    child.on('close', () => {
-      clearTimeout(timer);
-      resolve({ stdout, stderr, timedOut });
-    });
+    child.on('error', (e) => done(() => reject(e)));
+    child.on('close', () => done(() => resolve({ stdout, stderr, timedOut })));
   });
 }
+
+/**
+ * Exported for the test suite: the timeout path cannot be reached through
+ * compileCheck in less than a minute, and it is the path that used to hang.
+ */
+export const runToolForTests = runTool;
 
 /** Cached: this shells out to cmd.exe and wslpath, and the answer does not change. */
 let stagingRootCache: string | undefined;
@@ -528,6 +562,12 @@ export async function stopScript(): Promise<{ ok: boolean; error?: string }> {
   }
 }
 
+/** Whether `dir` is `other` or an ancestor of it. */
+function containsOrIs(dir: string, other: string): boolean {
+  const rel = path.relative(dir, other);
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
 /**
  * The .tmc a given file belongs to. Compiling a header on its own is meaningless,
  * so an open .tmh resolves to the single .tmc beside it when there is exactly one.
@@ -539,6 +579,11 @@ export function resolveEntryScript(filePath: string): { entry: string | null; ca
   let dir = path.dirname(filePath);
   let candidates: string[] = [];
   for (let up = 0; up < 4 && candidates.length === 0; up++) {
+    // The walk used to be bounded only by a depth of four, which from a header two
+    // folders deep reaches the home directory - and a stray .tmc in there is not the
+    // script an open header belongs to. The directory the header itself sits in is
+    // always scanned; above that, home and anything containing it are off limits.
+    if (up > 0 && containsOrIs(dir, os.homedir())) break;
     try {
       candidates = fs
         .readdirSync(dir)
@@ -547,6 +592,9 @@ export function resolveEntryScript(filePath: string): { entry: string | null; ca
     } catch {
       /* unreadable */
     }
+    // A project root is the top of the search: a header belongs to a script within
+    // its own project, and past that boundary any match is a coincidence.
+    if (safeIsDir(path.join(dir, '.git'))) break;
     const parent = path.dirname(dir);
     if (parent === dir) break;
     dir = parent;
@@ -682,7 +730,8 @@ export interface RunStaging {
  */
 export async function stageProjectForRun(
   scriptPath: string,
-  install: TargetInstall
+  install: TargetInstall,
+  opts: { closureFiles?: string[] } = {}
 ): Promise<{ ok: true; staging: RunStaging } | { ok: false; error: string }> {
   try {
     const projectDir = path.dirname(scriptPath);
@@ -698,19 +747,31 @@ export async function stageProjectForRun(
     fs.rmSync(dir, { recursive: true, force: true });
     fs.mkdirSync(dir, { recursive: true });
 
-    // The TARGET headers first, so the script's includes resolve beside it whatever
-    // search order TARGET uses.
+    // Mirrored from the common ancestor of the whole include graph, exactly as the
+    // compile check does. Copying only the entry's own tree dropped a shared header a
+    // level up, and because TARGET is launched detached the extension reported success
+    // while TARGET failed to load the script in its own window.
+    const stageRoot = commonAncestor([projectDir, ...(opts.closureFiles ?? []).map((f) => path.dirname(f))]);
+    const entryDir = path.join(dir, path.relative(stageRoot, projectDir));
+    fs.mkdirSync(entryDir, { recursive: true });
+
+    // The TARGET headers beside the entry script, where its includes resolve from.
     for (const h of TARGET_HEADERS) {
       const src = path.join(install.scripts, h);
-      if (safeIsFile(src)) copyFileBytes(src, path.join(dir, h));
-    }
-    for (const rel of listScriptFiles(projectDir)) {
-      const dst = path.join(dir, rel);
-      fs.mkdirSync(path.dirname(dst), { recursive: true });
-      copyFileBytes(path.join(projectDir, rel), dst);
+      if (safeIsFile(src)) copyFileBytes(src, path.join(entryDir, h));
     }
 
-    return { ok: true, staging: { entry: path.join(dir, path.basename(scriptPath)), dir } };
+    const sources = new Set<string>(listScriptFiles(projectDir).map((r) => path.join(projectDir, r)));
+    for (const f of opts.closureFiles ?? []) if (safeIsFile(f)) sources.add(f);
+    for (const src of sources) {
+      const rel = path.relative(stageRoot, src);
+      if (rel.startsWith('..')) continue;
+      const dst = path.join(dir, rel);
+      fs.mkdirSync(path.dirname(dst), { recursive: true });
+      copyFileBytes(src, dst);
+    }
+
+    return { ok: true, staging: { entry: path.join(entryDir, path.basename(scriptPath)), dir } };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }

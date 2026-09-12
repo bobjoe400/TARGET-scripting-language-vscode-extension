@@ -7,14 +7,30 @@ import * as vscode from 'vscode';
 import { buildModel, DocModel, Decl } from './model';
 import { readTextFile } from './encoding';
 import { buildBindsIndex, BindsIndex } from './binds';
+import { windowsSystemRoot } from './runner';
 
 /** Default locations of the TARGET install, used when the setting is empty. */
-const DEFAULT_INSTALL_DIRS = [
-  'C:\\Program Files (x86)\\Thrustmaster\\TARGET\\scripts',
-  'C:\\Program Files\\Thrustmaster\\TARGET\\scripts',
-  '/mnt/c/Program Files (x86)/Thrustmaster/TARGET/scripts',
-  '/mnt/c/Program Files/Thrustmaster/TARGET/scripts',
-];
+/**
+ * Where TARGET usually lives. The WSL entries are derived from the real mount rather
+ * than assuming /mnt/c: automount.root is configurable, and hardcoding it made
+ * auto-detection fail completely under `root = /` - no install found, and
+ * `include "target.tmh"` never resolving, which quietly disables the checks gated on
+ * a complete symbol table.
+ */
+function defaultInstallDirs(): string[] {
+  const windows = [
+    'C:\\Program Files (x86)\\Thrustmaster\\TARGET\\scripts',
+    'C:\\Program Files\\Thrustmaster\\TARGET\\scripts',
+  ];
+  const root = windowsSystemRoot();
+  const mounted = root
+    ? [
+        path.join(root, 'Program Files (x86)', 'Thrustmaster', 'TARGET', 'scripts'),
+        path.join(root, 'Program Files', 'Thrustmaster', 'TARGET', 'scripts'),
+      ]
+    : [];
+  return [...windows, ...mounted, '/mnt/c/Program Files (x86)/Thrustmaster/TARGET/scripts'];
+}
 
 interface Entry {
   model: DocModel;
@@ -90,9 +106,21 @@ export class TargetIndex {
     const text = readTextFile(p);
     if (text === null) return null;
     const model = buildModel(text);
+    // Bounded, like every other cache here. Files reached through the include graph -
+    // the vendor headers, every header of every project visited - stayed resident with
+    // their full text and token arrays for the session otherwise.
+    if (this.cache.size > 128) this.pruneDiskEntries();
     this.cache.set(key, { model, version: null, mtimeMs });
     this.generation++;
     return model;
+  }
+
+  /** Drops models parsed from disk, keeping the ones backed by open documents. */
+  private pruneDiskEntries(): void {
+    for (const [key, entry] of this.cache) {
+      if (entry.version === null) this.cache.delete(key);
+    }
+    this.closureCache.clear();
   }
 
   invalidate(uri: vscode.Uri): void {
@@ -102,7 +130,10 @@ export class TargetIndex {
     // Binding files are keyed on their own timestamps, so a script save does not
     // invalidate them; dropping the whole cache on every save made each hover
     // re-read every .binds file synchronously on the extension host thread.
-    if (/\.binds$/i.test(uri.fsPath)) this.bindsCache.clear();
+    if (/\.binds$/i.test(uri.fsPath)) {
+      this.bindsCache.clear();
+      this.bindsScanCache.clear();
+    }
   }
 
   /** Called when settings change: include resolution depends on them. */
@@ -111,10 +142,13 @@ export class TargetIndex {
     this.existsCache.clear();
     this.closureCache.clear();
     this.bindsCache.clear();
+    this.bindsScanCache.clear();
     this.generation++;
   }
 
   private bindsCache = new Map<string, { index: BindsIndex; stamp: string }>();
+  /** Short-lived, so a hover does not re-scan the workspace for .binds files. */
+  private bindsScanCache = new Map<string, { at: number; index: BindsIndex }>();
 
   /**
    * Elite Dangerous binding files near the script, so the editor can say what the
@@ -123,6 +157,13 @@ export class TargetIndex {
    * folder next to ScriptFiles).
    */
   getBindsIndex(doc: vscode.TextDocument): BindsIndex {
+    // The directory scan below is synchronous and runs on the extension host thread,
+    // and a hover should not pay for a readdir of the workspace root. Its result is
+    // held briefly, keyed on where we looked rather than on what we found.
+    const scanKey = `${doc.uri.fsPath}\u0000${vscode.workspace.getConfiguration('targetScript').get<string>('bindsFolder') ?? ''}`;
+    const scanned = this.bindsScanCache.get(scanKey);
+    if (scanned && Date.now() - scanned.at < 5000) return scanned.index;
+
     const configured = vscode.workspace
       .getConfiguration('targetScript')
       .get<string>('bindsFolder')
@@ -164,10 +205,16 @@ export class TargetIndex {
     // evict each other on every hover.
     const cacheKey = unique.join('|');
     const hit = this.bindsCache.get(cacheKey);
-    if (hit && hit.stamp === stamp) return hit.index;
+    if (hit && hit.stamp === stamp) {
+      if (this.bindsScanCache.size > 16) this.bindsScanCache.clear();
+      this.bindsScanCache.set(scanKey, { at: Date.now(), index: hit.index });
+      return hit.index;
+    }
     const index = buildBindsIndex(unique);
     if (this.bindsCache.size > 8) this.bindsCache.clear();
     this.bindsCache.set(cacheKey, { index, stamp });
+    if (this.bindsScanCache.size > 16) this.bindsScanCache.clear();
+    this.bindsScanCache.set(scanKey, { at: Date.now(), index });
     return index;
   }
 
@@ -182,7 +229,7 @@ export class TargetIndex {
       // which quietly disables the checks that need a complete symbol table.
       dirs.push(configured, path.join(configured, 'scripts'));
     }
-    for (const d of DEFAULT_INSTALL_DIRS) if (!dirs.includes(d)) dirs.push(d);
+    for (const d of defaultInstallDirs()) if (!dirs.includes(d)) dirs.push(d);
     const folder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(fromFile));
     if (folder) dirs.push(folder.uri.fsPath);
     return dirs;
@@ -215,7 +262,10 @@ export class TargetIndex {
     // that would keep the include broken for the session: no go-to-definition, its
     // symbols never in the table, and closureComplete stuck false, which silently
     // disables the checks that need a complete symbol table.
-    if (resolved !== null) this.resolveCache.set(key, resolved);
+    if (resolved !== null) {
+      if (this.resolveCache.size > 512) this.resolveCache.clear();
+      this.resolveCache.set(key, resolved);
+    }
     return resolved;
   }
 

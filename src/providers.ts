@@ -12,7 +12,6 @@ import {
   anyDefaultDxButton,
   argumentDomain,
   eventDomainNames,
-  BuiltinFunction,
   constants,
   constantsByName,
   controlLabel,
@@ -95,6 +94,24 @@ interface LazyItem extends vscode.CompletionItem {
 
 export class TargetCompletionProvider implements vscode.CompletionItemProvider {
   constructor(private index: TargetIndex) {}
+
+  /** Adds the script's own `define`s, which belong wherever a constant does. */
+  private addUserDefines(
+    doc: vscode.TextDocument,
+    items: vscode.CompletionItem[],
+    sortPrefix: string
+  ): void {
+    const seen = new Set(items.map((i) => String(i.label)));
+    for (const { decl, file } of this.index.visibleDecls(doc)) {
+      if (decl.kind !== 'define' || seen.has(decl.name)) continue;
+      seen.add(decl.name);
+      const it: LazyItem = new vscode.CompletionItem(decl.name, vscode.CompletionItemKind.Constant);
+      it.detail = decl.detail;
+      it.__doc = { kind: 'decl', name: decl.name, file, detail: decl.detail, doc: decl.doc };
+      it.sortText = `${sortPrefix}${decl.name}`;
+      items.push(it);
+    }
+  }
 
   /** Builds an item's documentation on demand, as VS Code highlights it. */
   resolveCompletionItem(item: vscode.CompletionItem): vscode.CompletionItem {
@@ -204,6 +221,10 @@ export class TargetCompletionProvider implements vscode.CompletionItemProvider {
             it.sortText = `0_${name}`;
             items.push(it);
           }
+          // The script's own defines belong in any constant position: real scripts
+          // write `define HUDMode ...` and then use it as a MapKey argument, and a
+          // narrowed domain that omits them hides the dominant idiom in the language.
+          this.addUserDefines(doc, items, '1_');
           if (items.length) return items;
         }
         if (domain?.kind === 'event') {
@@ -230,7 +251,7 @@ export class TargetCompletionProvider implements vscode.CompletionItemProvider {
           // Events the script declares itself belong here too.
           const seenEv = new Set<string>();
           for (const { decl, file } of this.index.visibleDecls(doc)) {
-            if (decl.kind !== 'variable' && decl.kind !== 'function') continue;
+            if (decl.kind !== 'variable' && decl.kind !== 'function' && decl.kind !== 'define') continue;
             if (seenEv.has(decl.name)) continue;
             seenEv.add(decl.name);
             const it: LazyItem = new vscode.CompletionItem(decl.name, declKindToCompletionKind(decl.kind));
@@ -297,6 +318,8 @@ export class TargetCompletionProvider implements vscode.CompletionItemProvider {
               }
             }
           }
+          // A define standing in for a button index is ordinary in real scripts.
+          this.addUserDefines(doc, items, '3_');
           if (items.length) return items;
         }
       }

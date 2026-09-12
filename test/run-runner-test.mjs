@@ -17,6 +17,44 @@ console.log('Toolchain integration');
 console.log('---------------------');
 console.log(`  host: ${R.detectHost()}`);
 
+// --- the compile timeout must always settle -------------------------------
+// Interpreter.exe is a Windows process; under WSL it reaches us through the interop
+// layer, where a SIGTERM can simply be declined. When that happened the promise never
+// resolved: the progress notification stayed up forever and every later compile queued
+// behind it. These run without TARGET installed, so they are checked before the skip.
+async function timeoutCase(label, argv, maxMs, why) {
+  const t0 = Date.now();
+  const res = await R.runToolForTests(process.execPath, argv, tmpdirForTimeouts, 300);
+  const ms = Date.now() - t0;
+  if (!res.timedOut) return failures.push(`${label}: expected timedOut`);
+  if (ms > maxMs) return failures.push(`${label}: settled after ${ms}ms, over ${maxMs}ms`);
+  pass++;
+  console.log(`  ok    ${label} (${ms}ms, ${why})`);
+}
+
+const tmpdirForTimeouts = fs.mkdtempSync(path.join(os.tmpdir(), 'target-timeout-test-'));
+// Ignores SIGTERM. Only the forced kill ends it.
+await timeoutCase(
+  'a child that ignores SIGTERM is still killed',
+  ['-e', 'process.on("SIGTERM", () => {}); setInterval(() => {}, 1000);'],
+  4000,
+  'forced kill'
+);
+// Ignores SIGTERM and leaves a grandchild holding the output pipe open, so "close"
+// never fires even after the forced kill - the last-resort timer has to answer.
+await timeoutCase(
+  'a child whose output pipe outlives it still answers',
+  [
+    '-e',
+    'const { spawn } = require("child_process");' +
+      'spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], { stdio: ["ignore", 1, 2], detached: true }).unref();' +
+      'process.on("SIGTERM", () => {}); setInterval(() => {}, 1000);',
+  ],
+  8000,
+  'last resort'
+);
+fs.rmSync(tmpdirForTimeouts, { recursive: true, force: true });
+
 const install = R.findInstall();
 if (!install) {
   console.log('  TARGET is not installed here - skipping (not a failure).');
