@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.4.1
+
+- **Every description in a hover now says where it came from.** Most of what the
+  extension shows is generated from files the TARGET installer puts on disk, but a
+  handful of descriptions are not - `printf`'s format specifiers were counted from
+  published scripts, because neither the headers nor the manual document them. Those
+  read like vendor documentation until they were labelled, and a reader deciding
+  whether to trust a claim should be able to see its source.
+
 ## 1.4.0
 
 - **Descriptions from Thrustmaster's own manual**, for twelve builtins - ten of which

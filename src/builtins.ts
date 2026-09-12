@@ -468,7 +468,7 @@ export const VARIADIC = new Set(['SEQ', 'CHAIN', 'AXMAP2', 'LIST', 'printf', 'sp
  * newline is worth stating outright - TARGET scripts write `\x0a`, and `\n` appears in
  * none of them.
  */
-export const VARIADIC_DOCS: Record<string, { args: string; doc: string }> = {
+export const VARIADIC_DOCS: Record<string, { args: string; doc: string; source: string }> = {
   printf: {
     args: 'alias fmt, ...',
     doc:
@@ -476,17 +476,19 @@ export const VARIADIC_DOCS: Record<string, { args: string; doc: string }> = {
       'per specifier: `%d` or `%i` for an int, `%u` unsigned, `%s` for a string, `%f` for ' +
       'a float (`%0.2f` to set the precision).\n\nWrite a newline as `\\x0a` — TARGET ' +
       'scripts use the hex escape, not `\\n`.',
+    source: 'not documented by Thrustmaster; specifiers counted across 236 published scripts',
   },
   sprintf: {
     args: 'alias dst, alias fmt, ...',
     doc:
       'Formats into a string rather than printing it. Same specifiers as `printf`, with ' +
       'the destination first.',
+    source: 'not documented by Thrustmaster; follows printf',
   },
-  SEQ: { args: '...', doc: 'Each press runs the next argument in turn, wrapping at the end.' },
-  CHAIN: { args: '...', doc: 'Runs its arguments one after another on a single press.' },
-  LIST: { args: '...', doc: 'A list of values, used by the axis-mapping functions.' },
-  AXMAP2: { args: '...', doc: 'Zone boundaries followed by the event for each zone.' },
+  SEQ: { args: '...', doc: 'Each press runs the next argument in turn, wrapping at the end.', source: 'argument shape read from target.tmh' },
+  CHAIN: { args: '...', doc: 'Runs its arguments one after another on a single press.', source: 'argument shape read from target.tmh' },
+  LIST: { args: '...', doc: 'A list of values, used by the axis-mapping functions.', source: 'argument shape read from target.tmh' },
+  AXMAP2: { args: '...', doc: 'Zone boundaries followed by the event for each zone.', source: 'argument shape read from target.tmh' },
 };
 
 /**
@@ -518,7 +520,11 @@ export function manualDoc(name: string): string | undefined {
 export function describeFunction(f: BuiltinFunction, withSignature = true): string {
   const extra = own(VARIADIC_DOCS, f.name);
   const parts = withSignature ? ['```c', functionSignature(f), '```'] : [];
-  if (extra) parts.push('', extra.doc);
+  // Attributed, because these sentences are not Thrustmaster's. sys.tmh declares
+  // `int printf(){}` and the manual does not describe it, so the specifiers listed here
+  // were counted from published scripts rather than read anywhere. A reader deciding
+  // whether to trust a claim should be able to see where it came from.
+  if (extra) parts.push('', extra.doc, '', `*\u2014 ${extra.source}*`);
   if (f.doc) parts.push('', f.doc);
   // The manual's own words, attributed. Shown alongside a header comment rather than
   // instead of it: the two answer different questions, and the header's is often a

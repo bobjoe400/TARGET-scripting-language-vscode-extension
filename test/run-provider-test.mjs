@@ -845,6 +845,23 @@ for (const [label, src, needle] of [
     nfs4.rmSync(root, { recursive: true, force: true });
   }
 
+  // --- every claim says where it came from ----------------------------------
+  // The tables are generated from files on disk; a few descriptions are not, and those
+  // are the ones a reader has most reason to want a source for. The manual's sentences
+  // were already attributed; the hand-written ones read like vendor documentation until
+  // they were too.
+  {
+    const { describeFunction: df3, functionsByName: fbn3 } = require(path.join(repoRoot, 'out/builtins.js'));
+    const pf = df3(fbn3.get('printf'));
+    if (/counted across 236 published scripts/.test(pf)) {
+      pass++; console.log('  ok    a hand-written description says it is not Thrustmaster\'s');
+    } else failures.push(`printf attribution: ${JSON.stringify(pf.slice(0, 200))}`);
+    const seq = df3(fbn3.get('SEQ'));
+    if (/read from target\.tmh/.test(seq)) {
+      pass++; console.log('  ok    a shape read from the headers says so');
+    } else failures.push(`SEQ attribution: ${JSON.stringify(seq.slice(0, 160))}`);
+  }
+
   // --- the manual's own descriptions ----------------------------------------
   // Extracting these needed a positional PDF reader: the naive one interleaved the
   // manual's columns and turned "creating" into "cr eating", which is why this was

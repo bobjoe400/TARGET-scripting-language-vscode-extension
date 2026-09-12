@@ -58,3 +58,31 @@ it has run into a code sample, describes a restriction rather than the function,
 commentary on an example. The generator refuses to write at all if its anchor sentences
 do not come out right. A wrong description would be shown as fact, in the editor, beside
 the reader's own code.
+
+## What is generated, and what is not
+
+Generated from files on disk, rebuilt by `npm run gen`, each carrying a `$generated`
+block naming its source, that file's size and the date:
+
+| Table | Source |
+| --- | --- |
+| `builtins.json` | `target.tmh`, `defines.tmh`, `hid.tmh`, `sys.tmh` |
+| `target.tmLanguage.json` | `builtins.json` |
+| `device-labels.json` | the per-device PDFs |
+| `usb-codes.json` | the scripting manual's appendix |
+| `manual-docs.json` | `TARGET_SCRIPT_EDITOR_basics.pdf` |
+
+Written by hand, and labelled as such wherever they appear:
+
+- **`VARIADIC_DOCS`** - what `printf`, `sprintf`, `SEQ`, `CHAIN`, `LIST` and `AXMAP2`
+  take. `sys.tmh` declares `int printf(){}` and the manual never describes it, so the
+  format specifiers were counted across 236 published scripts. The hover says so.
+- **`argumentDomain()`** - which family of constants belongs to which argument. The
+  *values* come from the generated table; the pairing and its short title are curated.
+- **`describeParam()`** - what the `keyIU`/`keyOM` layer parameters mean.
+- **Every diagnostic message**, and the judgement behind the rule it belongs to.
+
+The rule the project holds to is that a claim about the language is established from
+the installed software - the headers, the PDFs, or by compiling a probe - and never
+from memory. Where that was impossible and a claim was made anyway, it says so in the
+hover rather than passing as Thrustmaster's word.
