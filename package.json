@@ -1,6 +1,6 @@
 {
   "name": "target-script",
-  "displayName": "TARGET Script (Thrustmaster)",
+  "displayName": "T.A.R.G.E.T. Script (Thrustmaster)",
   "description": "Language support for the Thrustmaster T.A.R.G.E.T. HOTAS scripting language (.tmc, .tmh, .ttm): syntax highlighting, device-aware completion, hover docs, outline and diagnostics.",
   "version": "1.0.0",
   "publisher": "bobjoe400",
@@ -116,7 +116,7 @@
       {
         "command": "targetScript.peekBindings",
         "title": "Show Where This Key Is Bound",
-        "category": "TARGET Script"
+        "category": "TARGET"
       }
     ],
     "menus": {
