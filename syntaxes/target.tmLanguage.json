@@ -226,7 +226,7 @@
     "strings": {
       "name": "string.quoted.double.target",
       "begin": "\"",
-      "end": "\"",
+      "end": "\"|(?=$)",
       "beginCaptures": {
         "0": {
           "name": "punctuation.definition.string.begin.target"
@@ -294,7 +294,7 @@
     },
     "reserved-not-in-target": {
       "name": "invalid.illegal.keyword-not-in-target.target",
-      "match": "\\b(for|switch|case|continue|typedef|enum|const|static|unsigned|signed|sizeof)\\b(?=\\s*[\\(\\{\\s;])"
+      "match": "\\b(for|switch|case|continue|typedef|enum|const|static|unsigned|signed)\\b(?=\\s*[\\(\\{\\s;])"
     },
     "types": {
       "name": "storage.type.target",

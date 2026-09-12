@@ -182,6 +182,9 @@ expectClean('valid EXEC',          'int f() { MapKey(&Joystick, S1, EXEC("fnFoo(
 expectClean('EXEC nested string',  'int f() { MapKey(&Joystick, S1, EXEC("fnVPOutput(\\"not used\\");")); }');
 expectClean('valid REXEC',         'int f() { REXEC(0, 500, "fnFoo();", RNOSTOP); }');
 expectClean('valid AXMAP2',        'int f() { AXMAP2(2, a, b); }');
+// `define LIST AXMAP2` makes them one function, but LIST is called with curve
+// coordinate pairs, so the zone rule must not apply to it.
+expectClean('LIST curve coordinates', 'int f() { SetCustomCurve(&Joystick, JOYX, LIST(10,0, 50,50, 100,100)); }');
 expectClean('AXMAP1 even+center',  'int f() { AXMAP1(4, u, d, c); }');
 expectClean('AXMAP1 odd no center','int f() { AXMAP1(3, u, d); }');
 expectClean('device correct btn',  'int f() { MapKey(&T16000, TS1, 0); }');

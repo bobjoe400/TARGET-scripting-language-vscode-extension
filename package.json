@@ -126,14 +126,7 @@
           "group": "navigation@2"
         }
       ]
-    },
-    "keybindings": [
-      {
-        "command": "targetScript.compile",
-        "key": "ctrl+shift+b",
-        "when": "editorLangId == target"
-      }
-    ]
+    }
   },
   "scripts": {
     "compile": "tsc -p ./",

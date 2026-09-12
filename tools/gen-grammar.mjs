@@ -171,7 +171,11 @@ const grammar = {
     strings: {
       name: 'string.quoted.double.target',
       begin: '"',
-      end: '"',
+      // End at the closing quote OR at end of line. TARGET has no multi-line string,
+      // and without the newline alternative one stray quote colours every line below
+      // it as string until the next quote appears. The hand-written lexer already
+      // stops at end of line; this keeps the grammar agreeing with it.
+      end: '"|(?=$)',
       beginCaptures: { 0: { name: 'punctuation.definition.string.begin.target' } },
       endCaptures: { 0: { name: 'punctuation.definition.string.end.target' } },
       patterns: [{ name: 'constant.character.escape.target', match: '\\\\(x[0-9A-Fa-f]+|[0-7]{1,3}|.)' }],
@@ -220,7 +224,10 @@ const grammar = {
       // TARGET has no for / switch / continue. Colouring them as ordinary identifiers
       // would hide the mistake; diagnostics explain it.
       name: 'invalid.illegal.keyword-not-in-target.target',
-      match: '\\b(for|switch|case|continue|typedef|enum|const|static|unsigned|signed|sizeof)\\b(?=\\s*[\\(\\{\\s;])',
+      // sizeof is deliberately absent: sys.tmh declares `int sizeof(alias var)`, so it
+      // is a real builtin here, and both NOT_IN_TARGET and the diagnostics treat it as
+      // valid. Listing it made the grammar contradict the extension's own data.
+      match: '\\b(for|switch|case|continue|typedef|enum|const|static|unsigned|signed)\\b(?=\\s*[\\(\\{\\s;])',
     },
     types: {
       name: 'storage.type.target',

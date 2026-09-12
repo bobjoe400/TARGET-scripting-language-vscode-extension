@@ -18,12 +18,18 @@ const DEFAULT_INSTALL_DIRS = [
 
 interface Entry {
   model: DocModel;
-  version: number;
-  mtimeMs: number;
+  /** Document version for an open file, or null when parsed from disk. */
+  version: number | null;
+  /** File timestamp for a file read from disk, or null when parsed from a document. */
+  mtimeMs: number | null;
 }
 
 export class TargetIndex {
   private cache = new Map<string, Entry>();
+  /** Bumped whenever anything cached changes, so derived caches expire together. */
+  private generation = 0;
+  private resolveCache = new Map<string, string | null>();
+  private closureCache = new Map<string, { file: string; model: DocModel }[]>();
 
   /** The model for an open document, reparsed only when its version changes. */
   getModel(doc: vscode.TextDocument): DocModel {
@@ -31,7 +37,8 @@ export class TargetIndex {
     const hit = this.cache.get(key);
     if (hit && hit.version === doc.version) return hit.model;
     const model = buildModel(doc.getText());
-    this.cache.set(key, { model, version: doc.version, mtimeMs: 0 });
+    this.cache.set(key, { model, version: doc.version, mtimeMs: null });
+    this.generation++;
     return model;
   }
 
@@ -44,21 +51,34 @@ export class TargetIndex {
     } catch {
       return null;
     }
+    // An already-open document is the source of truth over what is on disk, and it
+    // owns the cache entry. Writing a disk-shaped entry here would make the two
+    // readers evict each other on every call, reparsing a header on every keystroke.
+    const open = vscode.workspace.textDocuments.find((d) => d.uri.fsPath === p);
+    if (open) return this.getModel(open);
+
     const hit = this.cache.get(key);
     if (hit && hit.mtimeMs === mtimeMs) return hit.model;
-
-    // An already-open document is the source of truth over what is on disk.
-    const open = vscode.workspace.textDocuments.find((d) => d.uri.fsPath === p);
-    const text = open ? open.getText() : readTextFile(p);
+    const text = readTextFile(p);
     if (text === null) return null;
     const model = buildModel(text);
-    this.cache.set(key, { model, version: -1, mtimeMs });
+    this.cache.set(key, { model, version: null, mtimeMs });
+    this.generation++;
     return model;
   }
 
   invalidate(uri: vscode.Uri): void {
     this.cache.delete(uri.toString());
     this.binds = undefined;
+    this.generation++;
+    this.closureCache.clear();
+  }
+
+  /** Called when settings change: include resolution depends on them. */
+  clearResolutionCache(): void {
+    this.resolveCache.clear();
+    this.closureCache.clear();
+    this.generation++;
   }
 
   private binds: { index: BindsIndex; stamp: string } | undefined;
@@ -117,7 +137,13 @@ export class TargetIndex {
   private searchDirs(fromFile: string): string[] {
     const dirs = [path.dirname(fromFile)];
     const configured = vscode.workspace.getConfiguration('targetScript').get<string>('installPath')?.trim();
-    if (configured) dirs.push(configured);
+    if (configured) {
+      // findInstall() tolerates this setting pointing at either the install root or
+      // its scripts folder, so include resolution must too. Otherwise the compile and
+      // run commands work while `include "target.tmh"` silently fails to resolve,
+      // which quietly disables the checks that need a complete symbol table.
+      dirs.push(configured, path.join(configured, 'scripts'));
+    }
     for (const d of DEFAULT_INSTALL_DIRS) if (!dirs.includes(d)) dirs.push(d);
     const folder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(fromFile));
     if (folder) dirs.push(folder.uri.fsPath);
@@ -130,6 +156,18 @@ export class TargetIndex {
    * the TARGET-supplied headers come from the install directory.
    */
   resolveInclude(fromFile: string, includePath: string): string | null {
+    // Memoised: resolution costs two syscalls per candidate directory, and the
+    // default search list includes the TARGET install under /mnt/c, where a single
+    // stat is milliseconds. The graph is walked several times per refresh.
+    const key = `${path.dirname(fromFile)}\u0000${includePath}`;
+    const cached = this.resolveCache.get(key);
+    if (cached !== undefined) return cached;
+    const resolved = this.resolveIncludeUncached(fromFile, includePath);
+    this.resolveCache.set(key, resolved);
+    return resolved;
+  }
+
+  private resolveIncludeUncached(fromFile: string, includePath: string): string | null {
     const normalized = includePath.replace(/\\/g, path.sep).replace(/\//g, path.sep);
     if (path.isAbsolute(normalized) && fs.existsSync(normalized)) return normalized;
     for (const dir of this.searchDirs(fromFile)) {
@@ -148,6 +186,21 @@ export class TargetIndex {
    * Cycles are common (headers including headers) and are handled by the seen set.
    */
   includeClosure(startFile: string, startModel: DocModel, limit = 64): { file: string; model: DocModel }[] {
+    // Memoised per generation: a single diagnostics refresh walks the graph from
+    // several directions, and the walk is the expensive part.
+    const cacheKey = `${startFile}@${this.generation}`;
+    const cachedClosure = this.closureCache.get(cacheKey);
+    if (cachedClosure) return cachedClosure;
+    const result = this.includeClosureUncached(startFile, startModel, limit);
+    this.closureCache.set(cacheKey, result);
+    return result;
+  }
+
+  private includeClosureUncached(
+    startFile: string,
+    startModel: DocModel,
+    limit = 64
+  ): { file: string; model: DocModel }[] {
     const out: { file: string; model: DocModel }[] = [{ file: startFile, model: startModel }];
     const seen = new Set([startFile]);
     const queue: { file: string; model: DocModel }[] = [{ file: startFile, model: startModel }];

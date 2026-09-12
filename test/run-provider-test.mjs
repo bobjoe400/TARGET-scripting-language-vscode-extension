@@ -50,6 +50,16 @@ const scratch = () => path.join(FIX, `scratch${++scratchN}.tmh`);
 function complete(src, file = scratch()) {
   const { doc, pos } = FakeDocument.withCursor(file, src);
   stub.workspace.textDocuments = [doc];
+  const items = completion.provideCompletionItems(doc, pos) ?? [];
+  // Documentation is built lazily, as VS Code does when an item is highlighted.
+  for (const it of items) completion.resolveCompletionItem(it);
+  return items;
+}
+
+/** Items exactly as the provider hands them over, before any resolve. */
+function completeRaw(src, file = scratch()) {
+  const { doc, pos } = FakeDocument.withCursor(file, src);
+  stub.workspace.textDocuments = [doc];
   return completion.provideCompletionItems(doc, pos) ?? [];
 }
 
@@ -264,6 +274,30 @@ for (const [label, src, needle] of [
     ok('banner not treated as doc');
     console.log('  ok    a separator banner is not mistaken for documentation');
   } else fail('banner as doc', `got ${JSON.stringify((h3 || '').slice(0, 100))}`);
+}
+
+// ---- completion payload ----------------------------------------------------
+// The general list is thousands of items. Building every description up front sent
+// hundreds of kilobytes of markdown across the extension host boundary per keystroke,
+// nearly all of it never read; VS Code has resolveCompletionItem for exactly this.
+{
+  const raw = completeRaw('int f() { | }');
+  const eager = raw.filter((i) => i.documentation).length;
+  const chars = raw.reduce((a, i) => a + (i.documentation?.value?.length ?? 0), 0);
+  if (raw.length > 1000 && eager === 0) {
+    pass++;
+    console.log(`  ok    ${raw.length} items carry no eager documentation (${chars} chars)`);
+  } else {
+    failures.push(`eager docs: ${eager}/${raw.length} items carried ${chars} chars up front`);
+  }
+
+  // ...and resolving one fills it in.
+  const mapKey = raw.find((i) => i.label === 'MapKey');
+  completion.resolveCompletionItem(mapKey);
+  if (/int MapKey\(alias dev/.test(mapKey?.documentation?.value ?? '')) {
+    pass++;
+    console.log('  ok    resolveCompletionItem fills in the documentation on demand');
+  } else failures.push(`resolve: ${JSON.stringify(mapKey?.documentation?.value ?? null)}`);
 }
 
 // ---- argument domains ------------------------------------------------------

@@ -119,6 +119,14 @@ const safeIsFile = (p: string) => {
 };
 const firstExisting = (ps: string[]) => ps.find(safeIsFile) ?? null;
 
+/** A byte-order mark, which the TARGET compiler cannot read. */
+export function bomKind(buf: Buffer): string | null {
+  if (buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xfe) return 'UTF-16 LE';
+  if (buf.length >= 2 && buf[0] === 0xfe && buf[1] === 0xff) return 'UTF-16 BE';
+  if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) return 'UTF-8 with BOM';
+  return null;
+}
+
 /**
  * Copies a file by reading and writing it.
  *
@@ -178,11 +186,16 @@ export async function compileCheck(
 
     /** Staged basename -> original absolute path, for mapping errors back. */
     const origin = new Map<string, string>();
+    /** Files the compiler will choke on before reading a single statement. */
+    const bomFiles: { file: string; kind: string }[] = [];
     for (const entry of fs.readdirSync(projectDir)) {
       if (!SCRIPT_EXT.test(entry)) continue;
       const src = path.join(projectDir, entry);
       if (!safeIsFile(src)) continue;
-      copyFileBytes(src, path.join(stage, entry));
+      const bytes = fs.readFileSync(src);
+      const bom = bomKind(bytes);
+      if (bom) bomFiles.push({ file: src, kind: bom });
+      fs.writeFileSync(path.join(stage, entry), bytes);
       origin.set(entry.toLowerCase(), src);
     }
 
@@ -193,7 +206,19 @@ export async function compileCheck(
       return { ok: false, problems: [], output, error: 'Interpreter.exe did not finish within 60 seconds.' };
     }
 
-    const problems = parseCompileOutput(output, stage, projectDir, origin);
+    const problems = parseCompileOutput(output, stage, projectDir, origin, scriptPath);
+    // A byte-order mark makes the compiler fail on line 1 with "Type required", which
+    // says nothing about the real cause. Thrustmaster's own editor writes UTF-16, so
+    // this is easy to hit and baffling without being told.
+    if (problems.some((p) => p.line <= 1)) {
+      for (const b of bomFiles) {
+        problems.unshift({
+          file: b.file,
+          line: 1,
+          message: `${path.basename(b.file)} begins with a ${b.kind} byte-order mark. The TARGET compiler cannot read it and fails on line 1. Save the file as plain ASCII or UTF-8 without a BOM.`,
+        });
+      }
+    }
     // Reaching the sentinel means every file compiled; only the fake entry point was missing.
     const compiled = output.includes(`Symbol not found: ${NO_RUN_SENTINEL}`);
     return { ok: compiled && problems.length === 0, problems, output };
@@ -221,7 +246,9 @@ export function parseCompileOutput(
   output: string,
   stageDir: string,
   projectDir: string,
-  origin: Map<string, string>
+  origin: Map<string, string>,
+  /** Where to attach an error the compiler reports without a position. */
+  fallbackFile?: string
 ): CompileProblem[] {
   const problems: CompileProblem[] = [];
   const resolve = (reported: string): string => {
@@ -246,7 +273,9 @@ export function parseCompileOutput(
     // A compile error without position information still deserves reporting.
     m = /^Compile error: (.+)$/.exec(text);
     if (m && !/at line \d+$/.test(text)) {
-      problems.push({ file: path.join(projectDir, ''), line: 1, message: m[1] });
+      // Attach to the entry script, not the folder: path.join(dir, '') is the
+      // directory itself, which is not a document and cannot be opened.
+      problems.push({ file: fallbackFile ?? path.join(projectDir, 'unknown'), line: 1, message: m[1] });
     }
   }
   return problems;
@@ -369,13 +398,26 @@ export interface TargetProcesses {
 const IMAGE_GUI = 'TARGETGUI.exe';
 const IMAGE_EDITOR = 'TARGETScriptEditor.exe';
 
+/** Guards against a slow tasklist piling up behind an interval timer. */
+let processListInFlight: Promise<TargetProcesses> | null = null;
+
 export async function listTargetProcesses(): Promise<TargetProcesses> {
+  if (processListInFlight) return processListInFlight;
+  processListInFlight = listTargetProcessesUncached().finally(() => {
+    processListInFlight = null;
+  });
+  return processListInFlight;
+}
+
+async function listTargetProcessesUncached(): Promise<TargetProcesses> {
   const running = async (image: string): Promise<boolean> => {
     const host = detectHost();
     const tasklist = host === 'windows' ? 'tasklist' : '/mnt/c/Windows/System32/tasklist.exe';
     try {
       const { stdout } = await execFileAsync(tasklist, ['/FI', `IMAGENAME eq ${image}`], {
         cwd: host === 'windows' ? undefined : '/mnt/c',
+        // Without this a stalled tasklist would hang the poll indefinitely.
+        timeout: 10_000,
       });
       return stdout.toLowerCase().includes(image.toLowerCase());
     } catch {

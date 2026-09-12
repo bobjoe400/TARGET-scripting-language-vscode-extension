@@ -5,7 +5,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { TargetIndex } from './index';
 import { callContextAt, collectAliasBindings, Decl, DocModel } from './model';
-import { TokKind } from './lexer';
+import { TokKind, tokenAt } from './lexer';
 import {
   allUsbCodes,
   anyControlLabel,
@@ -74,8 +74,54 @@ function devicesForHandle(handle: string, bindings: Map<string, Set<string>>): D
 }
 
 // =============================================================== completion
+/**
+ * What an item's documentation should be built from, recorded on the item so the
+ * markdown can be produced only when the user highlights it. Building it up front for
+ * the general list meant ~3,000 items and ~200 KB of markdown crossing the extension
+ * host boundary on every keystroke, nearly all of it never read.
+ */
+type DocSource =
+  | { kind: 'function'; name: string }
+  | { kind: 'constant'; name: string }
+  | { kind: 'device'; alias: string }
+  | { kind: 'decl'; name: string; file: string; detail: string; doc: string };
+
+interface LazyItem extends vscode.CompletionItem {
+  __doc?: DocSource;
+}
+
 export class TargetCompletionProvider implements vscode.CompletionItemProvider {
   constructor(private index: TargetIndex) {}
+
+  /** Builds an item's documentation on demand, as VS Code highlights it. */
+  resolveCompletionItem(item: vscode.CompletionItem): vscode.CompletionItem {
+    const lazy = item as LazyItem;
+    if (item.documentation || !lazy.__doc) return item;
+    const src = lazy.__doc;
+    let md: string | null = null;
+    if (src.kind === 'function') {
+      const f = functionsByName.get(src.name);
+      if (f) md = describeFunction(f);
+    } else if (src.kind === 'constant') {
+      const c = constantsByName.get(src.name);
+      if (c) md = describeConstant(c);
+    } else if (src.kind === 'device') {
+      const d = devicesByAlias.get(src.alias);
+      if (d) md = describeDevice(d);
+    } else {
+      md = [
+        '```c',
+        src.detail,
+        '```',
+        src.doc.trim() ? '\n' + src.doc.split('\n').join('  \n') : '',
+        `\n*declared in \`${path.basename(src.file)}\`*`,
+      ]
+        .filter(Boolean)
+        .join('\n');
+    }
+    if (md) item.documentation = new vscode.MarkdownString(md);
+    return item;
+  }
 
   provideCompletionItems(
     doc: vscode.TextDocument,
@@ -153,18 +199,18 @@ export class TargetCompletionProvider implements vscode.CompletionItemProvider {
           for (const n of evFns) {
             const f = functionsByName.get(n);
             if (!f) continue;
-            const it = new vscode.CompletionItem(n, vscode.CompletionItemKind.Function);
+            const it: LazyItem = new vscode.CompletionItem(n, vscode.CompletionItemKind.Function);
             it.detail = f.signature;
-            it.documentation = new vscode.MarkdownString(describeFunction(f));
+            it.__doc = { kind: 'function', name: n };
             it.sortText = `0_${n}`;
             items.push(it);
           }
           for (const n of evConsts) {
             const c = constantsByName.get(n);
-            const it = new vscode.CompletionItem(n, vscode.CompletionItemKind.Constant);
+            const it: LazyItem = new vscode.CompletionItem(n, vscode.CompletionItemKind.Constant);
             if (c) {
               it.detail = c.value;
-              it.documentation = new vscode.MarkdownString(describeConstant(c));
+              it.__doc = { kind: 'constant', name: n };
             }
             it.sortText = `1_${n}`;
             items.push(it);
@@ -175,9 +221,9 @@ export class TargetCompletionProvider implements vscode.CompletionItemProvider {
             if (decl.kind !== 'variable' && decl.kind !== 'function') continue;
             if (seenEv.has(decl.name)) continue;
             seenEv.add(decl.name);
-            const it = new vscode.CompletionItem(decl.name, declKindToCompletionKind(decl.kind));
+            const it: LazyItem = new vscode.CompletionItem(decl.name, declKindToCompletionKind(decl.kind));
             it.detail = decl.detail;
-            it.documentation = new vscode.MarkdownString(describeDecl(decl, file, doc.uri.fsPath));
+            it.__doc = { kind: 'decl', name: decl.name, file, detail: decl.detail, doc: decl.doc };
             it.sortText = `2_${decl.name}`;
             items.push(it);
           }
@@ -247,23 +293,23 @@ export class TargetCompletionProvider implements vscode.CompletionItemProvider {
     // ---- general completions --------------------------------------------------
     for (const f of functions) {
       if (f.internal) continue;
-      const it = new vscode.CompletionItem(f.name, vscode.CompletionItemKind.Function);
+      const it: LazyItem = new vscode.CompletionItem(f.name, vscode.CompletionItemKind.Function);
       it.detail = f.signature;
-      it.documentation = new vscode.MarkdownString(describeFunction(f));
+      it.__doc = { kind: 'function', name: f.name };
       it.sortText = `2_${f.name}`;
       items.push(it);
     }
     for (const c of constants) {
-      const it = new vscode.CompletionItem(c.name, vscode.CompletionItemKind.Constant);
+      const it: LazyItem = new vscode.CompletionItem(c.name, vscode.CompletionItemKind.Constant);
       it.detail = c.value;
-      it.documentation = new vscode.MarkdownString(describeConstant(c));
+      it.__doc = { kind: 'constant', name: c.name };
       it.sortText = `3_${c.name}`;
       items.push(it);
     }
     for (const d of devices) {
-      const it = new vscode.CompletionItem(d.alias, vscode.CompletionItemKind.Class);
+      const it: LazyItem = new vscode.CompletionItem(d.alias, vscode.CompletionItemKind.Class);
       it.detail = d.label;
-      it.documentation = new vscode.MarkdownString(describeDevice(d));
+      it.__doc = { kind: 'device', alias: d.alias };
       it.sortText = `3a_${d.alias}`;
       items.push(it);
     }
@@ -275,9 +321,9 @@ export class TargetCompletionProvider implements vscode.CompletionItemProvider {
     for (const { decl, file } of this.index.visibleDecls(doc)) {
       if (seenSym.has(decl.name)) continue;
       seenSym.add(decl.name);
-      const it = new vscode.CompletionItem(decl.name, declKindToCompletionKind(decl.kind));
+      const it: LazyItem = new vscode.CompletionItem(decl.name, declKindToCompletionKind(decl.kind));
       it.detail = decl.detail;
-      it.documentation = new vscode.MarkdownString(describeDecl(decl, file, doc.uri.fsPath));
+      it.__doc = { kind: 'decl', name: decl.name, file, detail: decl.detail, doc: decl.doc };
       it.sortText = `1_${decl.name}`;
       items.push(it);
     }
@@ -300,12 +346,9 @@ function declKindToCompletionKind(kind: Decl['kind']): vscode.CompletionItemKind
   }
 }
 
+/** The lexer already provides this as a binary search; a linear scan was wasteful. */
 function tokenContaining(model: DocModel, offset: number) {
-  for (const t of model.tokens) {
-    if (offset >= t.start && offset <= t.end) return t;
-    if (t.start > offset) break;
-  }
-  return null;
+  return tokenAt(model.tokens, offset);
 }
 
 // =============================================================== hover

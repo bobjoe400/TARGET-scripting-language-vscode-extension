@@ -97,11 +97,35 @@ export function activate(context: vscode.ExtensionContext): void {
     diagnostics.set(doc.uri, raw.map((d) => toVsDiagnostic(doc, d)));
   };
 
-  let debounce: NodeJS.Timeout | undefined;
-  const refreshSoon = (doc: vscode.TextDocument) => {
-    if (debounce) clearTimeout(debounce);
-    debounce = setTimeout(() => refresh(doc), 250);
+  // One timer per document. A single shared timer meant editing one file then another
+  // within the debounce window dropped the first file's refresh entirely, leaving its
+  // problems stale until it was touched again.
+  const debounces = new Map<string, NodeJS.Timeout>();
+  const cancelRefresh = (uri: vscode.Uri) => {
+    const key = uri.toString();
+    const t = debounces.get(key);
+    if (t) {
+      clearTimeout(t);
+      debounces.delete(key);
+    }
   };
+  const refreshSoon = (doc: vscode.TextDocument) => {
+    const key = doc.uri.toString();
+    cancelRefresh(doc.uri);
+    debounces.set(
+      key,
+      setTimeout(() => {
+        debounces.delete(key);
+        refresh(doc);
+      }, 250)
+    );
+  };
+  context.subscriptions.push({
+    dispose: () => {
+      for (const t of debounces.values()) clearTimeout(t);
+      debounces.clear();
+    },
+  });
 
   context.subscriptions.push(
     vscode.workspace.onDidOpenTextDocument(refresh),
@@ -109,13 +133,25 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.workspace.onDidSaveTextDocument((doc) => {
       index.invalidate(doc.uri);
       refresh(doc);
+      // A header's contents feed the symbol table of every script that includes it,
+      // so those keep stale unknown-function and duplicate-symbol problems otherwise.
+      for (const other of vscode.workspace.textDocuments) {
+        if (other.uri.toString() === doc.uri.toString()) continue;
+        if (other.languageId !== 'target') continue;
+        refresh(other);
+      }
     }),
     vscode.workspace.onDidCloseTextDocument((doc) => {
+      // Cancel first: a timer armed moments ago would otherwise fire after the delete
+      // and put diagnostics back for a document that is no longer open.
+      cancelRefresh(doc.uri);
       index.invalidate(doc.uri);
       diagnostics.delete(doc.uri);
     }),
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (!e.affectsConfiguration('targetScript')) return;
+      // installPath and bindsFolder both feed include resolution.
+      index.clearResolutionCache();
       for (const doc of vscode.workspace.textDocuments) refresh(doc);
     })
   );
@@ -287,8 +323,22 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
 
-      if (result.problems.length === 0 && result.ok) {
-        vscode.window.showInformationMessage(`${path.basename(entry)} compiles cleanly.`);
+      if (result.problems.length === 0) {
+        if (result.ok) {
+          vscode.window.showInformationMessage(`${path.basename(entry)} compiles cleanly.`);
+          return;
+        }
+        // The compiler said something the parser did not recognise - an unexpected
+        // format, a localised message, or nothing at all. Show what it said rather
+        // than indexing into an empty list, which used to throw and leave the user
+        // with "command failed" and no diagnosis at all.
+        const detail = result.output.trim() || 'the compiler produced no output.';
+        output.appendLine(detail);
+        vscode.window
+          .showErrorMessage(`Could not interpret the compiler's response for ${path.basename(entry)}.`, 'Show Output')
+          .then((pick) => {
+            if (pick) output.show(true);
+          });
         return;
       }
 
@@ -315,11 +365,16 @@ export function activate(context: vscode.ExtensionContext): void {
         )
         .then(async (pick) => {
           if (!pick) return;
-          const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(first.file));
-          const editor = await vscode.window.showTextDocument(doc);
-          const pos = new vscode.Position(Math.max(0, first.line - 1), 0);
-          editor.selection = new vscode.Selection(pos, pos);
-          editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+          try {
+            const errDoc = await vscode.workspace.openTextDocument(vscode.Uri.file(first.file));
+            const editor = await vscode.window.showTextDocument(errDoc);
+            const pos = new vscode.Position(Math.max(0, first.line - 1), 0);
+            editor.selection = new vscode.Selection(pos, pos);
+            editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+          } catch (e) {
+            // The compiler can name something that is not an openable document.
+            vscode.window.showErrorMessage(`Could not open ${first.file}: ${e instanceof Error ? e.message : String(e)}`);
+          }
         });
     }),
 

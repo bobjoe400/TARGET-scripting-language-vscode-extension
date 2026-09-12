@@ -648,7 +648,11 @@ export function computeDiagnostics(
     }
 
     // ---- AXMAP2: one event per zone -----------------------------------------
-    if (call.name === 'AXMAP2' || call.name === 'LIST') {
+    // Only under the name AXMAP2. `define LIST AXMAP2` makes them the same variadic,
+    // but LIST is called with coordinate pairs for SetCustomCurve - position, value,
+    // position, value - where the first argument is an axis position, not a zone
+    // count. Checking LIST reported valid curves as errors.
+    if (call.name === 'AXMAP2') {
       const zones = call.args[0] ? intLiteral(call.args[0].text) : null;
       const events = call.args.length - 1;
       if (zones !== null && zones > 0 && call.close !== -1 && events !== zones) {

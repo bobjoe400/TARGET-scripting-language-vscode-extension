@@ -95,6 +95,44 @@ await check(
   (r) => (r.problems.some((p) => /not found/i.test(p.message)) ? null : `expected a file-not-found problem, got ${JSON.stringify(r.problems)}`)
 );
 
+// A byte-order mark makes the compiler fail on line 1 with "Type required", which
+// says nothing about the cause. Thrustmaster's own editor writes UTF-16, so this is
+// easy to hit.
+{
+  const f = path.join(tmp, 'bom.tmc');
+  fs.writeFileSync(f, '\ufeff' + 'include "target.tmh"\nint main() { return 0; }\n', 'utf8');
+  const r = await R.compileCheck(f, install);
+  if (r.problems.some((p) => /byte-order mark/i.test(p.message))) {
+    pass++;
+    console.log('  ok    a byte-order mark is reported as such, not as "Type required"');
+  } else {
+    failures.push(`bom: ${r.problems.map((p) => p.message).join(' | ') || 'no problems reported'}`);
+  }
+  fs.rmSync(f, { force: true });
+}
+
+// A file with no BOM must not be accused of having one.
+{
+  const f = path.join(tmp, 'nobom.tmc');
+  fs.writeFileSync(f, 'include "target.tmh"\nint main() { MapKey(&Joystick, TG1 DX1); }\n');
+  const r = await R.compileCheck(f, install);
+  if (!r.problems.some((p) => /byte-order mark/i.test(p.message))) {
+    pass++;
+    console.log('  ok    a plain file is not accused of a byte-order mark');
+  } else failures.push('bom false positive on a plain file');
+  fs.rmSync(f, { force: true });
+}
+
+// LIST builds curve coordinates, not AXMAP2 zones, and must compile clean.
+{
+  const f = path.join(tmp, 'curve.tmc');
+  fs.writeFileSync(f, 'include "target.tmh"\nint main() { SetCustomCurve(&Joystick, JOYX, LIST(10,0, 50,50, 100,100)); }\n');
+  const r = await R.compileCheck(f, install);
+  if (r.ok) { pass++; console.log('  ok    a non-origin LIST curve compiles (the real compiler accepts it)'); }
+  else failures.push(`LIST curve: ${r.problems.map((p) => p.message).join(' | ')}`);
+  fs.rmSync(f, { force: true });
+}
+
 // The real corpus, if it is on this machine, must still compile.
 const realProject = 'C:\\Thrustmaster\\ED_TargetScript_T16000\\ScriptFiles\\ED_ENHANCED_T16000.tmc';
 const realWsl = '/mnt/c/Thrustmaster/ED_TargetScript_T16000/ScriptFiles/ED_ENHANCED_T16000.tmc';
