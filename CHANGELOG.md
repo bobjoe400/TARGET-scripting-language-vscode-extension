@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.3
+
+- The Marketplace page is 92 lines instead of 363. Everything that was background
+  rather than "what this does and how to use it" moved to `docs/` - the DX button
+  research, the TARGET-versus-C comparison, where the generated tables come from, the
+  full diagnostics table, and the detail behind the game-binding lookup. Nothing was
+  deleted; the page just stopped opening with all of it.
+
 ## 1.0.2
 
 - Screenshots on the listing. 1.0.1 shipped without them, and a language extension is
