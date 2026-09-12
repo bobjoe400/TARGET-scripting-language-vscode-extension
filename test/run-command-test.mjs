@@ -256,6 +256,30 @@ const noScriptError = () =>
     failures.push('status bar still visible after stop');
   }
 
+  // Stopping the profile from TARGET's own window closes TARGETGUI, so the poll is
+  // what clears the indicator in normal use. That path is load-bearing, so it is
+  // exercised for real rather than assumed.
+  stub.__reset();
+  stub.workspace.textDocuments = [mkDoc(entry)];
+  stub.__setWarningAnswer('Copy to Windows and Run');
+  // TARGETGUI is reported absent throughout: the pre-flight check reads the same
+  // function, so "already running" must stay false or the run is refused as a
+  // conflict. After launching, an absent TARGETGUI is exactly the Stop Profile case.
+  runner.listTargetProcesses = async () => ({ gui: false, editor: false });
+  await commands.get('targetScript.run')();
+  const polled = bar();
+  if (!polled?.visible) {
+    failures.push(`indicator was not shown before the poll test (errors=${JSON.stringify(stub.__recorded.errors)} warnings=${JSON.stringify(stub.__recorded.warnings)} infos=${JSON.stringify(stub.__recorded.infos)})`);
+  } else {
+    await new Promise((r) => setTimeout(r, 3600));
+    if (!polled.visible) {
+      pass++;
+      console.log('  ok    indicator clears itself once TARGET exits (Stop Profile)');
+    } else {
+      failures.push('indicator still visible 3.6s after TARGET exited');
+    }
+  }
+
   runner.listTargetProcesses = realProcs;
   runner.runScript = realRun;
   runner.stopScript = realStop;
