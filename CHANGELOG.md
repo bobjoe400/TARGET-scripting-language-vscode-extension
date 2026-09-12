@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.11.0
+
+- **Default DirectX mappings.** Hover and completion now say which DX button a control
+  sends with no script running - `TS1` sends `DX1`, `MSP` sends `DX26` - taken from the
+  same per-device diagrams as the descriptions. 94 mappings across the Warthog, Cougar
+  and T.16000M. Useful when a script means to preserve a default, or when working out
+  what an existing game binding referred to.
+- The diagrams use three different layouts, so each is handled and every result is
+  checked: a DX number must be 1..128, no control may claim two numbers, and no number
+  may be claimed by two controls. Direction-labelled groups are paired by direction
+  letter rather than by position, which is self-checking - "Up DX 7" must land on a
+  control whose name ends in U. The T.16000M comes out as a complete consecutive run,
+  `TS1`=DX1 through `B16`=DX16, with nothing rejected.
+- Illustrator metadata that rides along inside these PDFs ("t16000top.psd AI10 ArtUID
+  0.000000") is now filtered out of the descriptions; a caption never contains a
+  filename or a decimal.
+
 ## 0.10.0
 
 - **Arguments now offer only what belongs in them.** Previously every position offered

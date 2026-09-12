@@ -34,7 +34,131 @@ const SOURCES = [
   { pdf: 'warthog_joystick.pdf', devices: ['Joystick', 'JoystickF18'] },
   { pdf: 'cougar_joystick.pdf', devices: ['HCougar'] },
   { pdf: 'cougar_throttle.pdf', devices: ['HCougar'] },
+  { pdf: 't16000.pdf', devices: ['T16000', 'T16000L'] },
+  { pdf: 'MFD.pdf', devices: ['LMFD', 'RMFD'] },
 ];
+
+/** Direction words the diagrams use, and the suffix letter a control name uses. */
+const DIRECTION_SUFFIX = { up: 'U', down: 'D', left: 'L', right: 'R', push: 'P' };
+
+/**
+ * The DirectX button a control sends with no script running - the device's
+ * out-of-the-box mapping, which the diagrams print beside each control. Useful when a
+ * script wants to preserve a default, or to understand what a binding used to be.
+ *
+ * Three layouts appear, so all three are handled and each result is checked: a DX
+ * number must be 1..128, no control may claim two numbers, and no number may be
+ * claimed by two controls. Anything failing those is dropped rather than guessed at.
+ */
+function extractDefaults(text, names) {
+  const words = text.split(/\s+/).filter(Boolean);
+  const toks = [];
+  for (let i = 0; i < words.length; i++) {
+    const dx = /^DX(\d*)$/.exec(words[i]);
+    if (dx) {
+      // "DX 1 1" and "DX1 1" both mean DX11, but a diagram's position numbers can
+      // follow a DX number too, so stop after one extra fragment and cap at 128.
+      let digits = dx[1];
+      for (let g = 0; g < 2 && i + 1 < words.length && /^\d{1,2}$/.test(words[i + 1]); g++) {
+        const cand = digits + words[i + 1];
+        if (parseInt(cand, 10) > 128) break;
+        digits = cand;
+        i++;
+        if (digits.length >= 2) break;
+      }
+      if (digits) toks.push({ t: 'dx', n: parseInt(digits, 10) });
+      continue;
+    }
+    let w = words[i];
+    for (let k = 1; k <= 3 && i + k < words.length; k++) {
+      const cand = words.slice(i, i + k + 1).join('');
+      if (names.has(cand)) {
+        w = cand;
+        i += k;
+        break;
+      }
+    }
+    if (names.has(w)) {
+      toks.push({ t: 'ctl', n: w });
+      continue;
+    }
+    const d = DIRECTION_SUFFIX[w.toLowerCase().replace(/[^a-z]/g, '')];
+    toks.push(d ? { t: 'dir', n: d } : { t: 'w', n: w });
+  }
+
+  const map = new Map();
+  const put = (ctl, dx) => {
+    if (dx < 1 || dx > 128) return;
+    if (map.has(ctl) && map.get(ctl) !== dx) {
+      map.set(ctl, -1); // contradictory, mark for removal
+      return;
+    }
+    if (!map.has(ctl)) map.set(ctl, dx);
+  };
+
+  for (let i = 0; i < toks.length; i++) {
+    // (a) inline: "Weapons Release Button S2 DX 2"
+    if (toks[i].t === 'ctl' && toks[i + 1]?.t === 'dx') {
+      put(toks[i].n, toks[i + 1].n);
+      continue;
+    }
+    // (b) direction-labelled: "Up DX 7 Down DX 9 ... H2U H2D ..." - paired by
+    //     direction letter rather than by position, which is self-checking.
+    if (toks[i].t === 'dir' && toks[i + 1]?.t === 'dx') {
+      const pairs = [];
+      let j = i;
+      while (toks[j]?.t === 'dir' && toks[j + 1]?.t === 'dx') {
+        pairs.push([toks[j].n, toks[j + 1].n]);
+        j += 2;
+      }
+      const ctls = [];
+      while (toks[j]?.t === 'ctl') {
+        ctls.push(toks[j].n);
+        j++;
+      }
+      if (ctls.length && ctls.length === pairs.length) {
+        for (const [dir, dx] of pairs) {
+          const hit = ctls.find((c) => c.endsWith(dir));
+          if (hit) put(hit, dx);
+        }
+        i = j - 1;
+        continue;
+      }
+    }
+    // (c) parallel runs: "TS1 TS2 TS3 TS4 DX1 DX2 DX3 DX4"
+    if (toks[i].t === 'ctl' && toks[i + 1]?.t === 'ctl') {
+      const ctls = [];
+      let j = i;
+      while (toks[j]?.t === 'ctl') {
+        ctls.push(toks[j].n);
+        j++;
+      }
+      const dxs = [];
+      let k = j;
+      while (toks[k]?.t === 'dx') {
+        dxs.push(toks[k].n);
+        k++;
+      }
+      if (dxs.length === ctls.length && dxs.length > 1) {
+        ctls.forEach((c, n) => put(c, dxs[n]));
+        i = k - 1;
+      } else {
+        i = j - 1;
+      }
+      continue;
+    }
+  }
+
+  for (const [c, d] of [...map]) if (d === -1) map.delete(c);
+  // One DX number cannot belong to two controls.
+  const byDx = new Map();
+  for (const [c, d] of map) {
+    if (!byDx.has(d)) byDx.set(d, []);
+    byDx.get(d).push(c);
+  }
+  for (const [, cs] of byDx) if (cs.length > 1) cs.forEach((c) => map.delete(c));
+  return map;
+}
 
 /** Inflate a PDF's streams and pull the text-showing operators out. */
 function pdfText(file) {
@@ -80,6 +204,10 @@ function usable(lab) {
   if (!/[a-z]/.test(lab)) return false;
   if (!/^[A-Za-z]/.test(lab)) return false;
   if (/^DX|^LED \d|only$/i.test(lab)) return false;
+  // Illustrator metadata rides along in these PDFs ("t16000top.psd AI10 ArtUID
+  // 0.000000"). A control caption never contains a filename or a decimal.
+  if (/\./.test(lab)) return false;
+  if (/\d{4,}/.test(lab)) return false;
   // A lone capital followed by more capitals is split-word noise, not prose.
   if (/\b[A-Z] [A-Z]{2,}/.test(lab)) return false;
   return true;
@@ -148,6 +276,7 @@ if (!dir) {
 }
 
 const labels = {};
+const defaults = {};
 const coverage = [];
 for (const { pdf, devices } of SOURCES) {
   const file = path.join(dir, pdf);
@@ -164,7 +293,11 @@ for (const { pdf, devices } of SOURCES) {
     }
     const found = extract(text, names);
     labels[alias] = { ...(labels[alias] ?? {}), ...Object.fromEntries(found) };
-    coverage.push(`  ${alias.padEnd(14)} ${String(Object.keys(labels[alias]).length).padStart(3)}/${names.size} controls described   (${pdf})`);
+    const dx = extractDefaults(text, names);
+    defaults[alias] = { ...(defaults[alias] ?? {}), ...Object.fromEntries(dx) };
+    coverage.push(
+      `  ${alias.padEnd(14)} ${String(Object.keys(labels[alias]).length).padStart(3)} described, ${String(Object.keys(defaults[alias]).length).padStart(3)} default DX   (${pdf})`
+    );
   }
 }
 
@@ -176,9 +309,10 @@ const out = {
     note: 'Heuristic extraction from the per-device PDFs. Only devices whose PDF carries per-control prose are covered; the T.16000M and MFD diagrams are group headings and are deliberately absent.',
   },
   labels,
+  defaults,
 };
 const outPath = path.join(repoRoot, 'src/data/device-labels.json');
 fs.writeFileSync(outPath, JSON.stringify(out, null, 1));
 console.log(`Wrote ${path.relative(repoRoot, outPath)}`);
 console.log(coverage.join('\n'));
-console.log(`  total: ${Object.values(labels).reduce((a, o) => a + Object.keys(o).length, 0)} described controls`);
+console.log(`  total: ${Object.values(labels).reduce((a, o) => a + Object.keys(o).length, 0)} described controls, ${Object.values(defaults).reduce((a, o) => a + Object.keys(o).length, 0)} default DX mappings`);

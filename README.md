@@ -30,6 +30,10 @@ MapKeyUMD(&MyJoystick, TS1, ...);
 
 Axis functions (`MapAxis`, `SetSCurve`, …) rank that device's axes first instead.
 
+**Default DirectX mappings.** With no script running, `TS1` sends `DX1` and `MSP` sends
+`DX26`. Hover and completion say so, which matters when a script means to preserve a
+default or you are working out what an existing game binding pointed at.
+
 **Arguments offer only what belongs in them.** `Configure(&T16000, ` offers three
 `MODE_*` values, not 1049 symbols. `MapAxis`'s direction argument offers two. The event
 argument of `MapKey` offers events - composition functions, DX buttons, keys, flags and

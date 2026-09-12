@@ -9,12 +9,14 @@ import { TokKind } from './lexer';
 import {
   allUsbCodes,
   anyControlLabel,
+  anyDefaultDxButton,
   argumentDomain,
   eventDomainNames,
   BuiltinFunction,
   constants,
   constantsByName,
   controlLabel,
+  defaultDxButton,
   describeConstant,
   describeParam,
   describeDevice,
@@ -219,9 +221,11 @@ export class TargetCompletionProvider implements vscode.CompletionItemProvider {
                 it.detail = described
                   ? `${described} · ${d.label} ${g.kind}`
                   : `${d.label} ${g.kind} · ${c.value}`;
+                const dxDefault = defaultDxButton(d.alias, c.name);
                 const docText = [
                   described ? `**${described}**` : '',
                   c.doc,
+                  dxDefault ? `Sends \`DX${dxDefault}\` by default, with no script running.` : '',
                   `*${d.label} ${g.kind} · index ${c.value}*`,
                 ]
                   .filter(Boolean)
@@ -340,8 +344,13 @@ export class TargetHoverProvider implements vscode.HoverProvider {
     if (konst) {
       // A control constant is far more useful described than numbered.
       const described = anyControlLabel(word);
-      const base = describeConstant(konst);
-      return md(described ? `**${described.label}**\n\n${base}` : base);
+      const dxDefault = anyDefaultDxButton(word);
+      const parts = [
+        described ? `**${described.label}**` : '',
+        describeConstant(konst),
+        dxDefault ? `Sends \`DX${dxDefault.dx}\` by default on the ${dxDefault.device}, with no script running.` : '',
+      ].filter(Boolean);
+      return md(parts.join('\n\n'));
     }
 
     if (NOT_IN_TARGET[word]) return md(`**Not part of TARGET.** ${NOT_IN_TARGET[word]}`);

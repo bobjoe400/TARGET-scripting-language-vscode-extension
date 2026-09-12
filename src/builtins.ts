@@ -74,7 +74,27 @@ export const devicesByAlias = new Map(devices.map((d) => [d.alias, d]));
  * TARGET installs. Nobody remembers that EFLNORM is the left engine fuel-flow switch.
  * Only devices whose diagram carries per-control prose are covered.
  */
-const labelData = rawLabels as unknown as { labels: Record<string, Record<string, string>> };
+const labelData = rawLabels as unknown as {
+  labels: Record<string, Record<string, string>>;
+  defaults: Record<string, Record<string, number>>;
+};
+
+/**
+ * The DirectX button a control sends with no script running - the device's
+ * out-of-the-box mapping, printed on the per-device diagrams. Worth knowing when a
+ * script means to preserve a default, or when working out what a game binding used to
+ * refer to.
+ */
+export function defaultDxButton(deviceAlias: string, control: string): number | null {
+  return labelData.defaults?.[deviceAlias]?.[control] ?? null;
+}
+
+export function anyDefaultDxButton(control: string): { dx: number; device: string } | null {
+  for (const [device, map] of Object.entries(labelData.defaults ?? {})) {
+    if (map[control] !== undefined) return { dx: map[control], device };
+  }
+  return null;
+}
 
 export function controlLabel(deviceAlias: string, control: string): string | null {
   return labelData.labels?.[deviceAlias]?.[control] ?? null;

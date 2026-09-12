@@ -361,6 +361,20 @@ for (const [label, src, needle] of [
     console.log('  ok    hover describes a physical control');
   } else failures.push(`hover control label: ${JSON.stringify((h || '').slice(0, 120))}`);
 
+  // The out-of-the-box DirectX mapping, from the same diagrams.
+  const t16Items = complete('int f() { MapKey(&T16000, |); }');
+  const ts1 = t16Items.find((i) => i.label === 'TS1');
+  if (/DX1`? by default/.test(ts1?.documentation?.value ?? '')) {
+    pass++;
+    console.log('  ok    completion shows the default DX button (TS1 sends DX1)');
+  } else failures.push(`default dx: TS1 doc=${JSON.stringify(ts1?.documentation?.value ?? null)}`);
+
+  const hdx = hoverAt('int f() { MapKey(&Throttle, MS|P, 0); }');
+  if (hdx && /DX26/.test(hdx)) {
+    pass++;
+    console.log('  ok    hover shows the default DX button (MSP sends DX26)');
+  } else failures.push(`hover default dx: ${JSON.stringify((hdx || '').slice(0, 160))}`);
+
   // A device whose PDF has no per-control prose must simply fall back, not invent.
   const t16 = complete('int f() { MapKey(&T16000, |); }').find((i) => i.label === 'TS1');
   if (t16 && /T\.16000M/.test(t16.detail ?? '')) {
