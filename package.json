@@ -152,7 +152,8 @@
       "supported": "limited",
       "description": "Compiling and running a script executes the TARGET tools against files in the workspace, so those commands are unavailable in an untrusted workspace. Highlighting, completion, hover and diagnostics work normally.",
       "restrictedConfigurations": [
-        "targetScript.installPath"
+        "targetScript.installPath",
+        "targetScript.bindsFolder"
       ]
     },
     "virtualWorkspaces": {

@@ -41,6 +41,58 @@ function analyze(entryName) {
   return new TargetIndex().analyzeIncludes(doc);
 }
 
+// --- includes resolve the way Interpreter.exe resolves them ----------------
+// The compiler resolves every include against its working directory - the entry
+// script's folder - not against the folder of the file doing the including. Anchoring
+// on the including file was wrong in both directions: a header in a subfolder including
+// its own sibling looked fine here and failed at build time, while a layout that really
+// compiles was judged unresolvable, which silently switches off every check that needs
+// a complete symbol table. Each case below was confirmed against the real compiler.
+{
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'inc-anchor-'));
+  const mk = (rel, body) => {
+    const p = path.join(root, rel);
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, body);
+    return p;
+  };
+  const entry = mk('proj/x.tmc', 'include "target.tmh"\ninclude "sub/a.tmh"\n\nint main()\n{\n}\n');
+  const nested = mk('proj/sub/a.tmh', 'include "b.tmh"\nint a_fn() { return 1; }\n');
+  mk('proj/sub/b.tmh', 'int b_fn() { return 1; }\n');
+
+  const idx = new TargetIndex();
+  stub.workspace.textDocuments = [];
+  const anchorCase = (label, from, inc, expect) => {
+    const got = idx.resolveInclude(from, inc);
+    const ok = expect === null ? got === null : got !== null && path.resolve(got) === path.resolve(expect);
+    if (!ok) failures.push(`${label}: resolved to ${got}, expected ${expect}`);
+    else { pass++; console.log(`  ok    ${label}`); }
+  };
+
+  // (a) the compiler rejects this - a sibling of the including header is NOT on its path
+  anchorCase('a header\'s own sibling does not resolve, as the compiler says', nested, 'b.tmh', null);
+
+  // (b) the compiler accepts this - resolution is anchored at the entry script
+  mk('proj/b.tmh', 'int b_fn() { return 1; }\n');
+  idx.clearResolutionCache();
+  anchorCase('a nested include resolves from the entry folder', nested, 'b.tmh', path.join(root, 'proj/b.tmh'));
+
+  // (d) a path spelled from the entry folder keeps working, from the .tmc itself
+  anchorCase('the entry script resolves a subfolder path', entry, 'sub/a.tmh', nested);
+
+  // A lone header with no .tmc in view falls back to its own folder, which is all that
+  // can be known - and every call site funnels through the same anchor, so hovers and
+  // diagnostics cannot disagree about it.
+  const orphanDir = fs.mkdtempSync(path.join(os.tmpdir(), 'inc-orphan-'));
+  const orphan = path.join(orphanDir, 'lone.tmh');
+  fs.writeFileSync(orphan, 'include "n.tmh"\n');
+  fs.writeFileSync(path.join(orphanDir, 'n.tmh'), 'int n_fn() { return 1; }\n');
+  anchorCase('a header with no entry script falls back to its own folder', orphan, 'n.tmh', path.join(orphanDir, 'n.tmh'));
+
+  fs.rmSync(root, { recursive: true, force: true });
+  fs.rmSync(orphanDir, { recursive: true, force: true });
+}
+
 // Same header listed twice in one file.
 W('h1.tmh', 'int sharedFn(int a) { return a; }\n');
 W('twice.tmc', 'include "h1.tmh"\ninclude "h1.tmh"\nint main() { return 0; }\n');

@@ -26,6 +26,7 @@ import {
   killImage,
   listTargetProcesses,
   resolveEntryScript,
+  stageRootFor,
   runScript,
   stageProjectForRun,
   stopScript,
@@ -77,6 +78,16 @@ export function activate(context: vscode.ExtensionContext): void {
   const lastCompileFiles = new Set<string>();
 
   // ---- diagnostics ----------------------------------------------------------
+  /**
+   * installPath is machine-overridable, so a multi-root workspace can set a different
+   * one per folder. Read without a resource, the window-level value was applied to every
+   * document regardless of which folder it lived in.
+   */
+  const installPathSetting = (resource?: string): string | undefined =>
+    vscode.workspace
+      .getConfiguration('targetScript', resource ? vscode.Uri.file(resource) : undefined)
+      .get<string>('installPath');
+
   const refresh = (doc: vscode.TextDocument) => {
     if (doc.languageId !== 'target') return;
     // Git diffs, timeline entries and other virtual documents have no path on disk;
@@ -87,7 +98,7 @@ export function activate(context: vscode.ExtensionContext): void {
     // them, so every declaration in them looks like a redeclaration of a builtin -
     // over 200 fabricated errors against vendor files that compile perfectly. Go-to
     // definition on any builtin opens one of these, so this is easy to hit.
-    if (isInstalledHeader(doc.uri.fsPath, findInstall(vscode.workspace.getConfiguration('targetScript').get<string>('installPath')))) {
+    if (isInstalledHeader(doc.uri.fsPath, findInstall(installPathSetting(doc.uri.fsPath)))) {
       diagnostics.delete(doc.uri);
       return;
     }
@@ -218,14 +229,28 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (!e.affectsConfiguration('targetScript')) return;
+      // Only the settings that feed include resolution justify dropping those caches.
+      // Toggling diagnostics.enable was throwing away every resolution too.
+      const pathsChanged =
+        e.affectsConfiguration('targetScript.installPath') ||
+        e.affectsConfiguration('targetScript.bindsFolder');
+      if (!pathsChanged) {
+        for (const doc of vscode.workspace.textDocuments) refreshSoon(doc);
+        return;
+      }
       // installPath and bindsFolder both feed include resolution.
       index.clearResolutionCache();
       clearInstallCache();
-      for (const doc of vscode.workspace.textDocuments) refresh(doc);
+      for (const doc of vscode.workspace.textDocuments) refreshSoon(doc);
     })
   );
 
-  for (const doc of vscode.workspace.textDocuments) refresh(doc);
+  // Debounced, like every other refresh path here. Run inline this blocked the
+  // extension host for ~150ms on a restored session with the project's files open,
+  // walking every include graph with synchronous reads - and on a project living on
+  // the Windows drive each of those stats costs hundreds of times what a native one
+  // does.
+  for (const doc of vscode.workspace.textDocuments) refreshSoon(doc);
 
   // ---- compile / run --------------------------------------------------------
   // Remembered so a command still works when the active tab is the extension page,
@@ -301,8 +326,8 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   };
 
-  const requireInstall = (): TargetInstall | null => {
-    const configured = vscode.workspace.getConfiguration('targetScript').get<string>('installPath');
+  const requireInstall = (resource?: string): TargetInstall | null => {
+    const configured = installPathSetting(resource);
     const install = findInstall(configured);
     if (!install) {
       vscode.window
@@ -387,11 +412,20 @@ export function activate(context: vscode.ExtensionContext): void {
     // it at the picked document's folder skipped the .tmc itself and every sibling of
     // it, which staging then copied in their previous state.
     const { entry, candidates } = resolveEntryScript(doc.uri.fsPath);
-    const saveRoot = path.dirname(entry ?? doc.uri.fsPath);
+    // Rooted where staging actually copies from, not at the entry's own folder. Staging
+    // deliberately widens to the common ancestor of the include closure and relocates
+    // even out-of-tree files, so a dirty `../common/lib.tmh` was skipped here and then
+    // copied from disk in its last-saved state - compiling code the user had already
+    // changed, and running the hardware on it.
+    const entryFile = entry ?? doc.uri.fsPath;
+    const closure = closureFilesFor(entryFile);
+    const saveRoot = stageRootFor(path.dirname(entryFile), closure, findInstall(installPathSetting(entryFile)));
+    const staged = new Set(closure.map((f) => f.toLowerCase()));
     for (const open of vscode.workspace.textDocuments) {
       if (open.languageId !== 'target' || !open.isDirty || open.uri.scheme !== 'file') continue;
       const rel = path.relative(saveRoot, open.uri.fsPath);
-      if (rel.startsWith('..') || path.isAbsolute(rel)) continue;
+      const inTree = !rel.startsWith('..') && !path.isAbsolute(rel);
+      if (!inTree && !staged.has(open.uri.fsPath.toLowerCase())) continue;
       await open.save();
     }
     if (entry) return entry;

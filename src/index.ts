@@ -7,7 +7,7 @@ import * as vscode from 'vscode';
 import { buildModel, DocModel, Decl } from './model';
 import { readTextFile } from './encoding';
 import { buildBindsIndex, BindsIndex } from './binds';
-import { windowsSystemRoot } from './runner';
+import { windowsSystemRoot, resolveEntryScript } from './runner';
 
 /** Default locations of the TARGET install, used when the setting is empty. */
 /**
@@ -149,6 +149,7 @@ export class TargetIndex {
   private bindsCache = new Map<string, { index: BindsIndex; stamp: string }>();
   /** Short-lived, so a hover does not re-scan the workspace for .binds files. */
   private bindsScanCache = new Map<string, { at: number; index: BindsIndex }>();
+  private entryDirCache = new Map<string, string>();
 
   /**
    * Elite Dangerous binding files near the script, so the editor can say what the
@@ -160,14 +161,15 @@ export class TargetIndex {
     // The directory scan below is synchronous and runs on the extension host thread,
     // and a hover should not pay for a readdir of the workspace root. Its result is
     // held briefly, keyed on where we looked rather than on what we found.
-    const scanKey = `${doc.uri.fsPath}\u0000${vscode.workspace.getConfiguration('targetScript').get<string>('bindsFolder') ?? ''}`;
+    const settings = vscode.workspace.getConfiguration('targetScript', doc.uri);
+    const scanKey = `${doc.uri.fsPath}\u0000${settings.get<string>('bindsFolder') ?? ''}`;
     const scanned = this.bindsScanCache.get(scanKey);
     if (scanned && Date.now() - scanned.at < 5000) return scanned.index;
 
-    const configured = vscode.workspace
-      .getConfiguration('targetScript')
-      .get<string>('bindsFolder')
-      ?.trim();
+    // Read against this document: bindsFolder is machine-overridable, so a multi-root
+    // workspace can set a different one per folder, and the window-level value was
+    // being applied to every script regardless of which folder it lived in.
+    const configured = settings.get<string>('bindsFolder')?.trim();
 
     const dirs: string[] = [];
     const scriptDir = path.dirname(doc.uri.fsPath);
@@ -218,10 +220,37 @@ export class TargetIndex {
     return index;
   }
 
-  /** Directories searched for `include "..."`, nearest first. */
-  private searchDirs(fromFile: string): string[] {
-    const dirs = [path.dirname(fromFile)];
-    const configured = vscode.workspace.getConfiguration('targetScript').get<string>('installPath')?.trim();
+  /**
+   * The entry script's folder, which is what the compiler resolves includes against.
+   * Cached: resolveEntryScript reads directories, and this is asked once per include.
+   */
+  private entryDirFor(file: string): string {
+    const hit = this.entryDirCache.get(file);
+    if (hit !== undefined) return hit;
+    const { entry } = resolveEntryScript(file);
+    const dir = path.dirname(entry ?? file);
+    if (this.entryDirCache.size > 64) this.entryDirCache.clear();
+    this.entryDirCache.set(file, dir);
+    return dir;
+  }
+
+  /**
+   * Directories searched for `include "..."`, nearest first.
+   *
+   * The first one is the ENTRY script's folder, not the including file's. Interpreter.exe
+   * resolves every include against its working directory, which is where the .tmc sits -
+   * it does not look beside the file doing the including the way a C preprocessor would.
+   * Searching the including file's folder got this wrong in both directions: a header in
+   * a subfolder including its own sibling looked fine here and failed at build time,
+   * while a layout that really compiles was judged unresolvable, which silently switched
+   * off every check needing a complete symbol table.
+   */
+  private searchDirs(fromFile: string, entryDir?: string): string[] {
+    const dirs = [entryDir ?? path.dirname(fromFile)];
+    const configured = vscode.workspace
+      .getConfiguration('targetScript', vscode.Uri.file(fromFile))
+      .get<string>('installPath')
+      ?.trim();
     if (configured) {
       // findInstall() tolerates this setting pointing at either the install root or
       // its scripts folder, so include resolution must too. Otherwise the compile and
@@ -240,11 +269,12 @@ export class TargetIndex {
    * Per the manual, macro and header files live alongside the main script; only
    * the TARGET-supplied headers come from the install directory.
    */
-  resolveInclude(fromFile: string, includePath: string): string | null {
+  resolveInclude(fromFile: string, includePath: string, entryDir?: string): string | null {
+    const from = entryDir ?? this.entryDirFor(fromFile);
     // Memoised: resolution costs two syscalls per candidate directory, and the
     // default search list includes the TARGET install under /mnt/c, where a single
     // stat is milliseconds. The graph is walked several times per refresh.
-    const key = `${path.dirname(fromFile)}\u0000${includePath}`;
+    const key = `${from}\u0000${includePath}`;
     const cached = this.resolveCache.get(key);
     // Confirm the cached path is still there. One stat, against the up-to-twelve the
     // full search costs. Without it, deleting or renaming a header left the stale
@@ -256,7 +286,7 @@ export class TargetIndex {
       this.resolveCache.delete(key);
       this.closureCache.clear();
     }
-    const resolved = this.resolveIncludeUncached(fromFile, includePath);
+    const resolved = this.resolveIncludeUncached(fromFile, includePath, from);
     // Only successes are cached. A failure is a file that does not exist *yet* - the
     // ordinary workflow is to write the include and then create the file - and caching
     // that would keep the include broken for the session: no go-to-definition, its
@@ -269,10 +299,10 @@ export class TargetIndex {
     return resolved;
   }
 
-  private resolveIncludeUncached(fromFile: string, includePath: string): string | null {
+  private resolveIncludeUncached(fromFile: string, includePath: string, entryDir?: string): string | null {
     const normalized = includePath.replace(/\\/g, path.sep).replace(/\//g, path.sep);
     if (path.isAbsolute(normalized) && fs.existsSync(normalized)) return normalized;
-    for (const dir of this.searchDirs(fromFile)) {
+    for (const dir of this.searchDirs(fromFile, entryDir)) {
       const candidate = path.join(dir, normalized);
       try {
         if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) return candidate;
@@ -313,12 +343,13 @@ export class TargetIndex {
   ): { file: string; model: DocModel }[] {
     const out: { file: string; model: DocModel }[] = [{ file: startFile, model: startModel }];
     const seen = new Set([startFile]);
+    const entryDir = this.entryDirFor(startFile);
     const queue: { file: string; model: DocModel }[] = [{ file: startFile, model: startModel }];
 
     while (queue.length && out.length < limit) {
       const cur = queue.shift()!;
       for (const inc of cur.model.includes) {
-        const resolved = this.resolveInclude(cur.file, inc.path);
+        const resolved = this.resolveInclude(cur.file, inc.path, entryDir);
         if (!resolved || seen.has(resolved)) continue;
         seen.add(resolved);
         const m = this.getModelForPath(resolved);
@@ -346,10 +377,11 @@ export class TargetIndex {
     // a large project produced confident "not defined" warnings for symbols that were
     // simply never visited.
     if (closure.length >= CLOSURE_LIMIT) complete = false;
+    const symEntryDir = this.entryDirFor(doc.uri.fsPath);
     for (const { file, model: m } of closure) {
       for (const d of m.decls) symbols.add(d.name);
       for (const inc of m.includes) {
-        const resolved = this.resolveInclude(file, inc.path);
+        const resolved = this.resolveInclude(file, inc.path, symEntryDir);
         if (!resolved) {
           complete = false;
           continue;
@@ -374,6 +406,7 @@ export class TargetIndex {
    */
   analyzeIncludes(doc: vscode.TextDocument): IncludeAnalysis {
     const rootFile = doc.uri.fsPath;
+    const graphEntryDir = this.entryDirFor(rootFile);
     const rootModel = this.getModel(doc);
     const problems: IncludeProblem[] = [];
 
@@ -391,7 +424,7 @@ export class TargetIndex {
     ): void => {
       if (depth > MAX_INCLUDE_DEPTH + 2) return; // stop runaway recursion
       for (const inc of model.includes) {
-        const resolved = this.resolveInclude(file, inc.path);
+        const resolved = this.resolveInclude(file, inc.path, graphEntryDir);
         if (!resolved) continue;
         const hop = firstHop ?? inc.path;
         const nextChain = [...chain, path.basename(resolved)];
