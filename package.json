@@ -2,7 +2,7 @@
   "name": "target-script",
   "displayName": "TARGET Script (Thrustmaster)",
   "description": "Language support for the Thrustmaster T.A.R.G.E.T. HOTAS scripting language (.tmc, .tmh, .ttm): syntax highlighting, device-aware completion, hover docs, outline and diagnostics.",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "publisher": "bobjoe400",
   "license": "MIT",
   "engines": {
@@ -77,7 +77,7 @@
         "targetScript.bindsFolder": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Folder holding Elite Dangerous `.binds` files. Leave empty to look beside the script, one level up, and in the workspace root, including `BindFiles/` and `Bindings/` subfolders. Used to show which game action a key is bound to.",
+          "markdownDescription": "Folder to search for game binding files: Elite Dangerous `.binds`, DCS World `.diff.lua`, or Star Citizen ActionMaps `.xml`. Leave empty to search beside the script, one level up, and in the workspace root.",
           "scope": "machine-overridable"
         }
       }

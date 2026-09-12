@@ -6,7 +6,7 @@ import * as vscode from 'vscode';
 import { TargetIndex } from './index';
 import { callContextAt, collectAliasBindings, Decl, DocModel } from './model';
 import { TokKind, tokenAt } from './lexer';
-import { BindingRef, humanizeAction } from './binds';
+import { BindingRef, humanizeAction, GAME_ELITE } from './binds';
 import {
   allUsbCodes,
   anyControlLabel,
@@ -437,6 +437,19 @@ export class TargetHoverProvider implements vscode.HoverProvider {
         describeConstant(konst),
         dxDefault ? `Sends \`DX${dxDefault.dx}\` by default on the ${dxDefault.device}, with no script running.` : '',
       ].filter(Boolean);
+      // What the games do with this virtual button. A script's whole purpose is to put
+      // a button under a control, and until now the editor could say which button but
+      // never what it does - even though every game's mapping file is sitting right
+      // there beside the script.
+      const dxNumber = /^DX(\d+)$/.exec(word);
+      const forButton = dxNumber
+        ? this.index.getBindsIndex(doc).byButton.get(Number(dxNumber[1]))
+        : dxDefault
+          ? this.index.getBindsIndex(doc).byButton.get(dxDefault.dx)
+          : undefined;
+      if (forButton?.length) {
+        parts.push(...renderBindings(forButton, this.index.getBindsIndex(doc).activePreset));
+      }
       return md(parts.join('\n\n'));
     }
 
@@ -614,52 +627,64 @@ export function escapeMarkdown(text: string): string {
  * CamelCase names written out.
  */
 export function renderBindings(bound: BindingRef[], activePreset: string | null): string[] {
-  const byFile = new Map<string, Map<string, { slots: Set<string>; modifiers: string[] }>>();
+  const LIMIT = 8;
+  const byGame = new Map<string, BindingRef[]>();
   for (const b of bound) {
-    if (!byFile.has(b.file)) byFile.set(b.file, new Map());
-    const actions = byFile.get(b.file)!;
-    const existing = actions.get(b.action);
-    if (existing) {
-      existing.slots.add(b.slot.toLowerCase());
-      if (!existing.modifiers.length) existing.modifiers = b.modifiers;
-    } else {
-      actions.set(b.action, { slots: new Set([b.slot.toLowerCase()]), modifiers: b.modifiers });
-    }
+    if (!byGame.has(b.game)) byGame.set(b.game, []);
+    byGame.get(b.game)!.push(b);
   }
 
-  const LIMIT = 8;
   const line = (action: string, info: { slots: Set<string>; modifiers: string[] }): string => {
     const bits: string[] = [];
     // The modifier is the part that changes what the key does on its own, so it leads.
     if (info.modifiers.length) bits.push(`with ${escapeMarkdown(info.modifiers.join(' + '))}`);
     // "primary" is the default slot, and repeating it down every line was noise. A
     // binding that exists only in the secondary slot is worth saying.
-    if (info.slots.size === 1 && !info.slots.has('primary')) bits.push([...info.slots][0]);
+    if (info.slots.size === 1 && !info.slots.has('primary') && !info.slots.has('')) {
+      bits.push([...info.slots][0]);
+    }
     const suffix = bits.length ? ` \u2014 ${bits.join(', ')}` : '';
     return `- ${escapeMarkdown(humanizeAction(action))}${suffix}`;
   };
 
   const out: string[] = [];
-  if (byFile.size === 1) {
-    const [file, actions] = [...byFile][0];
-    const heading =
-      activePreset !== null
-        ? `In your active Elite Dangerous preset, **${escapeMarkdown(activePreset)}**:`
-        : `In **${escapeMarkdown(file)}**:`;
-    const rows = [...actions].slice(0, LIMIT).map(([a, i]) => line(a, i));
-    if (actions.size > LIMIT) rows.push(`- \u2026and ${actions.size - LIMIT} more`);
-    out.push(heading, rows.join('\n'));
-    return out;
-  }
+  for (const [game, refs] of byGame) {
+    const byFile = new Map<string, Map<string, { slots: Set<string>; modifiers: string[] }>>();
+    for (const b of refs) {
+      if (!byFile.has(b.file)) byFile.set(b.file, new Map());
+      const actions = byFile.get(b.file)!;
+      const existing = actions.get(b.action);
+      if (existing) {
+        existing.slots.add(b.slot.toLowerCase());
+        if (!existing.modifiers.length) existing.modifiers = b.modifiers;
+      } else {
+        actions.set(b.action, { slots: new Set([b.slot.toLowerCase()]), modifiers: b.modifiers });
+      }
+    }
 
-  // No single preset could be identified, so the files genuinely disagree and which one
-  // said what is the whole point. Named rather than merged.
-  out.push(`Bound in ${byFile.size} binding files:`);
-  const perFile = Math.max(2, Math.floor(LIMIT / byFile.size));
-  for (const [file, actions] of byFile) {
-    const rows = [...actions].slice(0, perFile).map(([a, i]) => line(a, i));
-    if (actions.size > perFile) rows.push(`- \u2026and ${actions.size - perFile} more`);
-    out.push(`**${escapeMarkdown(file)}**\n${rows.join('\n')}`);
+    if (byFile.size === 1) {
+      const [file, actions] = [...byFile][0];
+      // A preset is an Elite Dangerous idea; for the others the file itself is the name
+      // worth showing, since it is per-aircraft or per-export.
+      const heading =
+        activePreset !== null && game === GAME_ELITE
+          ? `In your active ${game} preset, **${escapeMarkdown(activePreset)}**:`
+          : `In **${escapeMarkdown(file)}** (${game}):`;
+      const rows = [...actions].slice(0, LIMIT).map(([a, i]) => line(a, i));
+      if (actions.size > LIMIT) rows.push(`- \u2026and ${actions.size - LIMIT} more`);
+      out.push(heading, rows.join('\n'));
+      continue;
+    }
+
+    // Several files of one game disagree - different aircraft in DCS, or no active
+    // preset identified - so which said what is the point. Named, not merged.
+    out.push(`${game} \u2014 bound in ${byFile.size} files:`);
+    const perFile = Math.max(2, Math.floor(LIMIT / byFile.size));
+    for (const [file, actions] of byFile) {
+      const rows = [...actions].slice(0, perFile).map(([a, i]) => line(a, i));
+      if (actions.size > perFile) rows.push(`- \u2026and ${actions.size - perFile} more`);
+      out.push(`**${escapeMarkdown(file)}**\n${rows.join('\n')}`);
+    }
   }
   return out;
 }

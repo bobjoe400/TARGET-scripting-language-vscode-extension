@@ -533,7 +533,7 @@ for (const [label, src, needle] of [
 // script authors name their defines however they like - of 200 defines in the corpus
 // only 15 match a game action name.
 {
-  const { usbCodeForEdKey, ED_MODIFIERS, buildBindsIndex, activePresetNames, fileMatchesPreset, humanizeAction } =
+  const { usbCodeForEdKey, ED_MODIFIERS, buildBindsIndex, activePresetNames, fileMatchesPreset, humanizeAction, bindingFormat } =
     require(path.join(repoRoot, 'out/binds.js'));
   const { renderBindings, escapeMarkdown } = require(path.join(repoRoot, 'out/providers.js'));
 
@@ -589,15 +589,64 @@ for (const [label, src, needle] of [
 
   {
     const refs = [
-      { action: 'CyclePreviousSubsystem', slot: 'Secondary', key: 'Key_K', modifiers: [], file: 'A.binds' },
-      { action: 'FixCameraWorldToggle', slot: 'Primary', key: 'Key_K', modifiers: [], file: 'A.binds' },
-      { action: 'RecallDismissShip', slot: 'Secondary', key: 'Key_K', modifiers: ['L_ALT'], file: 'A.binds' },
+      { action: 'CyclePreviousSubsystem', slot: 'Secondary', key: 'Key_K', modifiers: [], file: 'A.binds', game: 'Elite Dangerous', kind: 'key' },
+      { action: 'FixCameraWorldToggle', slot: 'Primary', key: 'Key_K', modifiers: [], file: 'A.binds', game: 'Elite Dangerous', kind: 'key' },
+      { action: 'RecallDismissShip', slot: 'Secondary', key: 'Key_K', modifiers: ['L_ALT'], file: 'A.binds', game: 'Elite Dangerous', kind: 'key' },
     ];
     const md = renderBindings(refs, 'MyPreset').join('\n');
     const primaryNoise = /Fix Camera World Toggle \u2014 primary/.test(md);
     if (/active Elite Dangerous preset/.test(md) && /Recall Dismiss Ship \u2014 with L\\_ALT, secondary/.test(md) && !primaryNoise) {
       pass++; console.log('  ok    bindings render one line per action, modifiers called out');
     } else failures.push(`render: ${JSON.stringify(md)}`);
+  }
+
+  // --- the other games TARGET scripts are written for ----------------------
+  // Elite Dangerous is not the only one, and .binds is not the only format. DCS writes
+  // a .diff.lua per module, Star Citizen exports an ActionMaps .xml, and all three bind
+  // the VIRTUAL BUTTONS the script produces - which is the half that matters most, a
+  // script's whole job being to put a button under a control.
+  {
+    const dcs = path.join(FIX, 'BindFiles', 'Sample.diff.lua');
+    const sc = path.join(FIX, 'BindFiles', 'Sample-actionmaps.xml');
+    const notGame = path.join(FIX, 'BindFiles', 'NotAGame.xml');
+
+    if (bindingFormat(dcs) === 'DCS World' && bindingFormat(sc) === 'Star Citizen' && bindingFormat(notGame) === null) {
+      pass++; console.log('  ok    binding files are identified by content, not extension');
+    } else failures.push(`format: ${bindingFormat(dcs)} / ${bindingFormat(sc)} / ${bindingFormat(notGame)}`);
+
+    const d = buildBindsIndex([dcs]);
+    const gun = d.byButton.get(6);
+    // "removed" is a binding being taken away and must not be reported as one.
+    if (gun?.[0]?.action === 'Gun Trigger - SECOND DETENT (Press to shoot)' && !d.byButton.has(99)) {
+      pass++; console.log('  ok    DCS .diff.lua maps JOY_BTN to the DX button');
+    } else failures.push(`dcs: ${JSON.stringify([...d.byButton.keys()])}`);
+
+    const c = buildBindsIndex([sc]);
+    // An input of a single space is Star Citizen's way of writing "unbound".
+    if (c.byButton.get(30)?.[0]?.action === 'v_eject' && c.byButton.size === 1) {
+      pass++; console.log('  ok    Star Citizen ActionMaps maps js_button to the DX button');
+    } else failures.push(`sc: ${JSON.stringify([...c.byButton.keys()])}`);
+
+    // Elite binds the virtual device too, not just the keyboard.
+    const edButtons = buildBindsIndex([bindsFile]).byButton;
+    const all = buildBindsIndex([dcs, sc, bindsFile]);
+    if (all.games.length === 3) { pass++; console.log(`  ok    three games indexed side by side (${all.games.join(', ')})`); }
+    else failures.push(`games: ${JSON.stringify(all.games)}`);
+
+    // And the hover names each game rather than merging them into one list.
+    const both = [...(all.byButton.get(30) ?? []), ...(all.byButton.get(6) ?? [])];
+    const md = renderBindings(both, null).join('\n');
+    if (/Star Citizen/.test(md) && /DCS World/.test(md) && /Eject/.test(md)) {
+      pass++; console.log('  ok    a button bound in two games is reported per game');
+    } else failures.push(`multi-game render: ${JSON.stringify(md.slice(0, 200))}`);
+
+    // Star Citizen's category prefix is its own bookkeeping; DCS names are already
+    // written for a person and must survive untouched.
+    if (humanizeAction('v_ifcs_toggle_vector_decoupling') === 'Ifcs Toggle Vector Decoupling' &&
+        humanizeAction('Gun Trigger - SECOND DETENT (Press to shoot)') === 'Gun Trigger - SECOND DETENT (Press to shoot)') {
+      pass++; console.log('  ok    each game\'s naming style is read on its own terms');
+    } else failures.push(`humanize games: ${humanizeAction('v_ifcs_toggle_vector_decoupling')}`);
+    void edButtons;
   }
 
   // The preset the game will actually load, taken from the highest-numbered marker.

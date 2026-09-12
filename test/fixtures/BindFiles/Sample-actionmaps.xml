@@ -1,0 +1,10 @@
+<ActionMaps version="1">
+    <actionmap name="spaceship_general">
+        <action name="v_eject">
+            <rebind device="joystick" input="js3_button30"/>
+        </action>
+        <action name="v_unbound_thing">
+            <rebind device="joystick" input=" "/>
+        </action>
+    </actionmap>
+</ActionMaps>

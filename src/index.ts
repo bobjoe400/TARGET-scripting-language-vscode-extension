@@ -192,7 +192,13 @@ export class TargetIndex {
           if (!fs.statSync(candidate).isDirectory()) continue;
           presetDirs.push(candidate);
           for (const name of fs.readdirSync(candidate)) {
-            if (/\.binds$/i.test(name)) files.push(path.join(candidate, name));
+            // Elite Dangerous writes .binds, DCS a .diff.lua per module and device, and
+            // Star Citizen a plain .xml - which is why the .xml is confirmed by its root
+            // element rather than taken on the extension, TrackIR profiles being the
+            // usual neighbour.
+            if (/\.(binds|xml)$/i.test(name) || /\.diff\.lua$/i.test(name)) {
+              files.push(path.join(candidate, name));
+            }
           }
         } catch {
           /* not a readable directory */
@@ -215,8 +221,11 @@ export class TargetIndex {
       }
     }
     if (activePreset) {
+      // Presets are an Elite Dangerous idea. DCS and Star Citizen have one file per
+      // module or one exported mapping, so they are never filtered by it.
+      const others = unique.filter((f) => !/\.binds$/i.test(f));
       const inPreset = unique.filter((f) => fileMatchesPreset(f, activePreset!));
-      if (inPreset.length) unique = inPreset;
+      if (inPreset.length) unique = [...inPreset, ...others].sort();
     }
 
     // Rebuild only when the set of files or their timestamps change.

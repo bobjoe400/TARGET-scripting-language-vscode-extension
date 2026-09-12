@@ -14,23 +14,55 @@ import * as path from 'path';
 import { readTextFile } from './encoding';
 import { own, usbKeyName } from './builtins';
 
+/** What the script produced: a keystroke, a virtual button, or an axis. */
+export type InputKind = 'key' | 'button' | 'axis';
+
 export interface BindingRef {
   action: string;
-  /** Primary or Secondary, as the game calls its two slots. */
+  /** Primary or Secondary where the game has two slots; empty where it has one. */
   slot: string;
-  /** The game's own key name, e.g. Key_U. */
+  /** The game's own token, e.g. Key_U, Joy_25, JOY_BTN6, js3_button30. */
   key: string;
   modifiers: string[];
   file: string;
+  /** The game this binding belongs to, for the hover to name. */
+  game: string;
+  kind: InputKind;
+  /** Virtual-device button number, when kind is 'button'. DX1 is button 1. */
+  button?: number;
 }
 
 export interface BindsIndex {
   /** USB HID code (uppercase hex, 2 digits) -> the actions bound to that key. */
   byUsbCode: Map<string, BindingRef[]>;
+  /** Virtual-device button number -> the actions bound to it. DX1 is button 1. */
+  byButton: Map<number, BindingRef[]>;
   actions: string[];
   files: string[];
   /** The preset the game will actually load, if it could be determined. */
   activePreset: string | null;
+  /** The games whose binding files were read. */
+  games: string[];
+}
+
+export const GAME_ELITE = 'Elite Dangerous';
+export const GAME_DCS = 'DCS World';
+export const GAME_STAR_CITIZEN = 'Star Citizen';
+
+/**
+ * Which game a binding file belongs to, from its contents rather than its name.
+ *
+ * Only .binds is unambiguous. Star Citizen exports a plain .xml, which sits in the same
+ * folder as TrackIR profiles and anything else, and DCS writes .diff.lua per aircraft.
+ */
+export function bindingFormat(file: string): string | null {
+  if (/\.binds$/i.test(file)) return GAME_ELITE;
+  if (/\.diff\.lua$/i.test(file)) return GAME_DCS;
+  if (/\.xml$/i.test(file)) {
+    const head = readTextFile(file)?.slice(0, 4000) ?? '';
+    return /<ActionMaps\b/i.test(head) ? GAME_STAR_CITIZEN : null;
+  }
+  return null;
 }
 
 /**
@@ -196,6 +228,25 @@ export function parseBinds(file: string): BindingRef[] {
     // Either self-closing, or an element whose body carries the modifier keys. The
     // closing tag must not be optional: with a lazy body and an optional close, the
     // body matches empty and every modifier is lost.
+    // The virtual device TARGET creates. Its name varies with the hardware
+    // (ThrustMasterWarthogCombined, T16000MTHROTTLE, ...), so it is identified by what
+    // it is not: the keyboard, the mouse, and the game's word for "unbound". Joy_25
+    // here is the button DX25 presses - roughly as many bindings as the keyboard ones
+    // in a real profile, and the half a script author most often wants to look up.
+    for (const slot of body.matchAll(
+      /<(Primary|Secondary)\s+(?=[^>]*Device="(?!Keyboard|Mouse|\{NoDevice\})[^"]+")(?=[^>]*Key="Joy_(\d+)")[^>]*?(?:\/>|>([\s\S]*?)<\/\1>)/g
+    )) {
+      out.push({
+        action,
+        slot: slot[1],
+        key: `Joy_${slot[2]}`,
+        modifiers: [],
+        file: base,
+        game: GAME_ELITE,
+        kind: 'button',
+        button: Number(slot[2]),
+      });
+    }
     for (const slot of body.matchAll(
       /<(Primary|Secondary)\s+(?=[^>]*Device="Keyboard")(?=[^>]*Key="(Key_[A-Za-z0-9_]+)")[^>]*?(?:\/>|>([\s\S]*?)<\/\1>)/g
     )) {
@@ -204,22 +255,99 @@ export function parseBinds(file: string): BindingRef[] {
         const flag = own(ED_MODIFIERS, mod[1]);
         if (flag) modifiers.push(flag);
       }
-      out.push({ action, slot: slot[1], key: slot[2], modifiers, file: base });
+      out.push({ action, slot: slot[1], key: slot[2], modifiers, file: base, game: GAME_ELITE, kind: 'key' });
     }
   }
   return out;
 }
 
+/**
+ * A DCS input profile (`<Aircraft>.diff.lua`, one per module and device).
+ *
+ * DCS serialises a Lua table with its keys in alphabetical order, so within one entry
+ * "added" comes before "name" and "removed" after it. That ordering is what lets the
+ * buttons be attributed without a Lua parser: buttons seen since the last name belong
+ * to the name about to appear, and anything under "removed" is a binding being taken
+ * away, not one to report.
+ */
+export function parseDcsDiff(file: string): BindingRef[] {
+  const text = readTextFile(file);
+  if (text === null) return [];
+  const base = path.basename(file);
+  const out: BindingRef[] = [];
+  let section: 'added' | 'removed' | null = null;
+  let pending: { token: string; button: number }[] = [];
+  const token = /\["(added|removed|name)"\]\s*=\s*(?:"((?:[^"\\]|\\.)*)")?|\["key"\]\s*=\s*"(JOY_BTN(\d+))"/g;
+  for (const m of text.matchAll(token)) {
+    if (m[1] === 'added' || m[1] === 'removed') {
+      section = m[1];
+      if (m[1] === 'added') pending = [];
+      continue;
+    }
+    if (m[1] === 'name') {
+      const action = (m[2] ?? '').replace(/\\(.)/g, '$1').trim();
+      if (action) for (const p of pending) out.push({ action, slot: '', key: p.token, modifiers: [], file: base, game: GAME_DCS, kind: 'button', button: p.button });
+      pending = [];
+      continue;
+    }
+    if (m[3] && section === 'added') pending.push({ token: m[3], button: Number(m[4]) });
+  }
+  return out;
+}
+
+/**
+ * A Star Citizen exported control mapping (ActionMaps XML).
+ *
+ * Inputs are written `js<device>_button<n>`; the device index is the game's own
+ * enumeration order and says nothing useful here, so only the button number is kept.
+ * An input of a single space is the game's way of writing "unbound".
+ */
+export function parseStarCitizen(file: string): BindingRef[] {
+  const xml = readTextFile(file);
+  if (xml === null) return [];
+  const base = path.basename(file);
+  const out: BindingRef[] = [];
+  for (const m of xml.matchAll(
+    /<action\s+name=['"]([^'"]+)['"]\s*>([\s\S]*?)<\/action>/g
+  )) {
+    const action = m[1];
+    for (const r of m[2].matchAll(/<rebind\s+[^>]*input=['"]([^'"]+)['"]/g)) {
+      const btn = /^(?:js\d+_)?button(\d+)$/i.exec(r[1].trim());
+      if (!btn) continue;
+      out.push({ action, slot: '', key: r[1].trim(), modifiers: [], file: base, game: GAME_STAR_CITIZEN, kind: 'button', button: Number(btn[1]) });
+    }
+  }
+  return out;
+}
+
+/** Parses any supported binding file, choosing the parser by what the file is. */
+export function parseBindingFile(file: string): BindingRef[] {
+  switch (bindingFormat(file)) {
+    case GAME_ELITE: return parseBinds(file);
+    case GAME_DCS: return parseDcsDiff(file);
+    case GAME_STAR_CITIZEN: return parseStarCitizen(file);
+    default: return [];
+  }
+}
+
 /** Builds a key-indexed view of every binding in the given files. */
 export function buildBindsIndex(files: string[], activePreset: string | null = null): BindsIndex {
   const byUsbCode = new Map<string, BindingRef[]>();
+  const byButton = new Map<number, BindingRef[]>();
   const actions = new Set<string>();
+  const games = new Set<string>();
   const used: string[] = [];
   for (const file of files) {
-    const refs = parseBinds(file);
+    const refs = parseBindingFile(file);
     if (refs.length) used.push(file);
     for (const ref of refs) {
       actions.add(ref.action);
+      games.add(ref.game);
+      if (ref.kind === 'button' && ref.button !== undefined) {
+        if (!byButton.has(ref.button)) byButton.set(ref.button, []);
+        byButton.get(ref.button)!.push(ref);
+        continue;
+      }
       const hex = usbCodeForEdKey(ref.key);
       if (!hex) continue;
       if (!byUsbCode.has(hex)) byUsbCode.set(hex, []);
@@ -229,18 +357,27 @@ export function buildBindsIndex(files: string[], activePreset: string | null = n
   // The same preset is routinely present twice - the copy shipped beside a script and
   // the one installed in the game's folder - and identical entries from two paths are
   // one fact, not two. Dedupe on what the binding actually says.
-  for (const [hex, refs] of byUsbCode) {
+  const dedupe = (refs: BindingRef[]): BindingRef[] => {
     const seen = new Set<string>();
     const unique: BindingRef[] = [];
     for (const r of refs) {
-      const key = `${r.action}\u0000${r.slot}\u0000${r.modifiers.join('+')}`;
+      const key = `${r.game}\u0000${r.action}\u0000${r.slot}\u0000${r.modifiers.join('+')}`;
       if (seen.has(key)) continue;
       seen.add(key);
       unique.push(r);
     }
-    byUsbCode.set(hex, unique);
-  }
-  return { byUsbCode, actions: [...actions].sort(), files: used, activePreset };
+    return unique;
+  };
+  for (const [hex, refs] of byUsbCode) byUsbCode.set(hex, dedupe(refs));
+  for (const [btn, refs] of byButton) byButton.set(btn, dedupe(refs));
+  return {
+    byUsbCode,
+    byButton,
+    actions: [...actions].sort(),
+    files: used,
+    activePreset,
+    games: [...games].sort(),
+  };
 }
 
 /**
@@ -248,6 +385,17 @@ export function buildBindsIndex(files: string[], activePreset: string | null = n
  * "Deploy Hardpoint Toggle". Acronyms and digits are kept together.
  */
 export function humanizeAction(action: string): string {
+  // DCS names its commands in full already - "Gun Trigger - SECOND DETENT (Press to
+  // shoot)" - and any reformatting of those only does damage.
+  if (/\s/.test(action)) return action;
+  // Star Citizen: lowercase words joined by underscores, behind a short category prefix
+  // (v_ for vehicle). The prefix is the game's own bookkeeping and reads as noise.
+  if (/^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$/.test(action)) {
+    const parts = action.split('_');
+    if (parts.length > 1 && parts[0].length <= 2) parts.shift();
+    return parts.map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  }
+  // Elite Dangerous: CamelCase run together.
   return action
     .replace(/_/g, ' ')
     .replace(/([a-z\d])([A-Z])/g, '$1 $2')
