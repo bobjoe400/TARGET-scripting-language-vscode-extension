@@ -12,6 +12,8 @@ Thrustmaster's bundled editor is little more than a text box with a Compile butt
 and nothing else existed for this language — the usual advice was "use C# highlighting,
 it's close enough". This gives it real tooling.
 
+![Syntax highlighting of a TARGET script](https://raw.githubusercontent.com/bobjoe400/TARGET-scripting-language-vscode-extension/main/images/highlighting.png)
+
 ## Features
 
 **Syntax highlighting**, including the hard part: `EXEC()` and `REXEC()` take TARGET
@@ -34,6 +36,8 @@ MapKeyUMD(&MyJoystick, TS1, ...);
 ```
 
 Axis functions (`MapAxis`, `SetSCurve`, …) rank that device's axes first instead.
+
+![Hovering a key shows what the game binds it to](https://raw.githubusercontent.com/bobjoe400/TARGET-scripting-language-vscode-extension/main/images/bindings-hover.png)
 
 **What the game does with the key.** A script sends keystrokes and virtual buttons; the
 game decides what they mean, and that lives only in the game's own binding files. The
