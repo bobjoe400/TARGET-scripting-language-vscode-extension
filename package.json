@@ -168,7 +168,8 @@
     "test": "npm run compile && node test/run-grammar-test.mjs && node test/run-diagnostics-test.mjs && node test/run-provider-test.mjs && node test/run-include-test.mjs && node test/run-command-test.mjs && node test/run-runner-test.mjs",
     "package": "NODE_OPTIONS=\"--require ./tools/node18-file-shim.cjs\" npx --yes @vscode/vsce@2 package --no-dependencies",
     "corpus:fetch": "node tools/fetch-corpus.mjs",
-    "test:corpus": "npm run compile && node test/run-corpus-test.mjs"
+    "test:corpus": "npm run compile && node test/run-corpus-test.mjs",
+    "install:local": "npm run package && bash tools/install-local.sh"
   },
   "devDependencies": {
     "@types/node": "^18.19.0",
