@@ -197,16 +197,52 @@ function listScriptFiles(root: string, prefix = '', depth = 0): string[] {
   return out;
 }
 
-/** Deepest directory containing all the given paths. */
-function commonAncestor(dirs: string[]): string {
-  const parts = dirs.filter(Boolean).map((d) => path.resolve(d).split(path.sep));
-  if (parts.length === 0) return process.cwd();
+/**
+ * Deepest directory containing all the given paths, or null when there is none.
+ *
+ * The root is kept apart from the segments rather than treated as one of them. Joining
+ * the common prefix of `C:\\a` and `C:\\b` produced the string "C:", which is not the
+ * drive root - it is a path relative to the current directory *on* drive C, so every
+ * path.relative() against it was measured from wherever the extension host happened to
+ * be started. Paths on different roots (two drives, or a drive and a UNC share) have no
+ * common ancestor at all, which is now said rather than answered with the current
+ * drive's root.
+ */
+function commonAncestor(dirs: string[]): string | null {
+  const resolved = dirs.filter(Boolean).map((d) => path.resolve(d));
+  if (resolved.length === 0) return null;
+  const root = path.parse(resolved[0]).root;
+  const sameRoot = (p: string) => path.parse(p).root.toLowerCase() === root.toLowerCase();
+  if (!resolved.every(sameRoot)) return null;
+  const parts = resolved.map((p) => p.slice(root.length).split(path.sep).filter(Boolean));
   const first = parts[0];
   let i = 0;
   for (; i < first.length; i++) {
     if (!parts.every((p) => p[i] === first[i])) break;
   }
-  return first.slice(0, i).join(path.sep) || path.sep;
+  return path.join(root, ...first.slice(0, i));
+}
+
+/**
+ * Where to mirror the project from, given the entry's folder and the include closure.
+ *
+ * Installed headers are excluded: they are staged beside the entry script separately,
+ * and letting them vote dragged the ancestor up to the drive root - `C:\\Program Files
+ * (x86)\\...` and a project under the user's profile share nothing else. Since every
+ * script begins with `include "target.tmh"`, that happened on every single compile.
+ *
+ * The answer is also refused if it is a filesystem or drive root, or a directory holding
+ * the user's home: mirroring from there yields absurd staged paths, and on Windows a
+ * deep enough one stops working entirely.
+ */
+export function stageRootFor(projectDir: string, closureFiles: string[], install: TargetInstall | null): string {
+  const outside = closureFiles.filter((f) => !isInstalledHeader(f, install)).map((f) => path.dirname(f));
+  const ancestor = commonAncestor([projectDir, ...outside]);
+  if (!ancestor) return projectDir;
+  if (ancestor === projectDir) return projectDir;
+  if (path.parse(ancestor).root === ancestor) return projectDir;
+  if (containsOrIs(ancestor, os.homedir())) return projectDir;
+  return ancestor;
 }
 
 const safeIsDir = (p: string) => {
@@ -299,8 +335,15 @@ export async function compileCheck(
   // those, reporting "File not found" on a project the real compiler builds. Mirroring
   // from the common ancestor of everything in the include graph preserves the relative
   // paths the includes are written with.
-  const stageRoot = commonAncestor([projectDir, ...(opts.closureFiles ?? []).map((f) => path.dirname(f))]);
-  const stagingRoot = opts.stagingRoot ?? (await defaultStagingRoot());
+  const stageRoot = stageRootFor(projectDir, opts.closureFiles ?? [], install);
+  let stagingRoot: string;
+  try {
+    stagingRoot = opts.stagingRoot ?? (await defaultStagingRoot());
+  } catch (e) {
+    // Reported as a compile result rather than thrown: this runs before the try below,
+    // and an escaping rejection reaches the command handler as a bare "command failed".
+    return { ok: false, problems: [], output: '', error: e instanceof Error ? e.message : String(e) };
+  }
   const stage = path.join(stagingRoot, `target-compile-${process.pid}-${Date.now()}`);
   const entryDirInStage = path.join(stage, path.relative(stageRoot, projectDir));
 
@@ -331,8 +374,14 @@ export async function compileCheck(
     for (const f of opts.closureFiles ?? []) if (safeIsFile(f)) sources.add(f);
 
     for (const src of sources) {
-      const rel = path.relative(stageRoot, src);
-      if (rel.startsWith('..')) continue; // outside the mirrored tree; cannot be staged
+      let rel = path.relative(stageRoot, src);
+      if (rel.startsWith('..')) {
+        // Outside the mirrored tree. Dropping it guaranteed a "File not found" the real
+        // compiler does not give; placing it beside the entry at least resolves the
+        // includes written as a bare filename.
+        rel = path.join(path.relative(stageRoot, projectDir), path.basename(src));
+        if (rel.startsWith('..')) continue;
+      }
       const bytes = fs.readFileSync(src);
       const bom = bomKind(bytes);
       if (bom) bomFiles.push({ file: src, kind: bom });
@@ -519,7 +568,17 @@ async function defaultStagingRootUncached(): Promise<string> {
   } catch {
     /* fall through */
   }
-  return os.tmpdir();
+  // Under WSL there is no usable fallback: Interpreter.exe is a Windows process and
+  // cannot be given a Linux path as its working directory. Returning os.tmpdir() here
+  // produced a "File not found" blamed on the user's script rather than on the staging
+  // that actually failed. /mnt/c is the overwhelmingly common mount, so it is tried -
+  // and if that is not there either, the caller is told what is really wrong.
+  const mounted = path.join(windowsSystemRoot() ?? '/mnt/c', 'Windows', 'Temp');
+  if (safeIsDir(mounted)) return mounted;
+  throw new Error(
+    `Could not find a Windows temp directory to stage the script in (tried %TEMP% via cmd.exe, and ${mounted}). ` +
+      'Check that your Windows drive is mounted in WSL.'
+  );
 }
 
 /** Launches the script through TARGETGUI, which creates the virtual devices. */
@@ -539,6 +598,29 @@ export async function runScript(
       detached: true,
       stdio: 'ignore',
     });
+    // spawn reports a launch failure by emitting 'error' on a later tick, never by
+    // throwing - so the catch below could not see one. Without a listener the event
+    // became an uncaught exception in the extension host, and this returned ok for a
+    // process that never started: "Launched X in TARGET", a stop button, and a running
+    // indicator, all for nothing. The install is located once per session and cached,
+    // so a TARGET update or uninstall mid-session reaches exactly this path.
+    // Kept for the life of the child, not just until the launch is decided: an 'error'
+    // with no listener is rethrown as an uncaught exception, and a detached child can
+    // emit one after it has started.
+    let launchResult: ((err: string | null) => void) | null = null;
+    let launchError: string | null = null;
+    child.on('error', (e) => {
+      launchError = e instanceof Error ? e.message : String(e);
+      launchResult?.(launchError);
+    });
+    // Node emits exactly one of 'spawn' or 'error' for a launch, so this settles
+    // without a timer.
+    const launch = await new Promise<string | null>((resolve) => {
+      if (launchError) return resolve(launchError);
+      launchResult = resolve;
+      child.once('spawn', () => resolve(null));
+    });
+    if (launch) return { ok: false, error: `TARGETGUI.exe could not be started: ${launch}` };
     child.unref();
     return { ok: true, command };
   } catch (e) {
@@ -552,7 +634,13 @@ export async function stopScript(): Promise<{ ok: boolean; error?: string }> {
   const host = detectHost();
   const taskkill = systemTool('taskkill.exe');
   try {
-    await execFileAsync(taskkill, ['/IM', 'TARGETGUI.exe', '/F'], { cwd: host === 'windows' ? undefined : windowsSystemRoot() ?? '/mnt/c' });
+    // Timed, like every other tool call here: a taskkill held up by a modal prompt or
+    // a wedged interop layer otherwise left "Stop Running Script" pending with nothing
+    // to cancel, and the Run flow awaits this one inline.
+    await execFileAsync(taskkill, ['/IM', 'TARGETGUI.exe', '/F'], {
+      cwd: host === 'windows' ? undefined : windowsSystemRoot() ?? '/mnt/c',
+      timeout: 10_000,
+    });
     return { ok: true };
   } catch (e) {
     // taskkill exits non-zero when nothing matched, which is not a failure worth raising.
@@ -677,7 +765,10 @@ export async function killImage(image: string, force = false): Promise<{ ok: boo
   const taskkill = systemTool('taskkill.exe');
   try {
     const args = force ? ['/IM', image, '/F'] : ['/IM', image];
-    await execFileAsync(taskkill, args, { cwd: host === 'windows' ? undefined : windowsSystemRoot() ?? '/mnt/c' });
+    await execFileAsync(taskkill, args, {
+      cwd: host === 'windows' ? undefined : windowsSystemRoot() ?? '/mnt/c',
+      timeout: 10_000,
+    });
     return { ok: true };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -751,7 +842,7 @@ export async function stageProjectForRun(
     // compile check does. Copying only the entry's own tree dropped a shared header a
     // level up, and because TARGET is launched detached the extension reported success
     // while TARGET failed to load the script in its own window.
-    const stageRoot = commonAncestor([projectDir, ...(opts.closureFiles ?? []).map((f) => path.dirname(f))]);
+    const stageRoot = stageRootFor(projectDir, opts.closureFiles ?? [], install);
     const entryDir = path.join(dir, path.relative(stageRoot, projectDir));
     fs.mkdirSync(entryDir, { recursive: true });
 

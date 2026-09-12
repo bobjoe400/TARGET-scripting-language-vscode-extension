@@ -55,6 +55,66 @@ await timeoutCase(
 );
 fs.rmSync(tmpdirForTimeouts, { recursive: true, force: true });
 
+// --- the staging root must stay inside the project ------------------------
+// Every script starts with `include "target.tmh"`, so the installed headers are in
+// every closure. Letting them vote on the common ancestor pulled the staging root up
+// to the drive root, where on Windows it rejoined as the drive-RELATIVE string "C:" -
+// the project was then not staged at all and the compiler reported a phantom
+// "File not found" on a script that builds.
+function stageRootCase(label, projectDir, closure, expected) {
+  const got = R.stageRootFor(projectDir, closure, R.findInstall());
+  if (got !== expected) return failures.push(`${label}: stage root ${got}, expected ${expected}`);
+  pass++;
+  console.log(`  ok    ${label}`);
+}
+
+{
+  const inst = R.findInstall();
+  const header = inst ? path.join(inst.scripts, 'target.tmh') : null;
+  const proj = path.join(path.sep === '\\' ? 'C:\\p' : '/p', 'proj');
+  const sib = path.join(path.dirname(proj), 'common');
+  if (header) {
+    stageRootCase('an installed header does not widen the staging root', proj, [header, path.join(proj, 'x.tmc')], proj);
+    stageRootCase(
+      'a sibling folder in the closure still widens it',
+      proj,
+      [header, path.join(sib, 'lib.tmh')],
+      path.dirname(proj)
+    );
+  }
+  stageRootCase('a root is never the staging root', proj, [path.join(path.parse(proj).root, 'elsewhere', 'a.tmh')], proj);
+  stageRootCase('the home directory is never the staging root', path.join(os.homedir(), 'proj'), [path.join(os.homedir(), 'other', 'a.tmh')], path.join(os.homedir(), 'proj'));
+}
+
+// --- a launch that fails must be reported as one ---------------------------
+// spawn signals a launch failure by emitting 'error' on a later tick, so the try/catch
+// around it never saw one: runScript returned ok for a process that never started, and
+// the unhandled event crashed the extension host. An uncaught exception here fails the
+// test process outright, which is the assertion.
+{
+  const bad = { root: '/nope', scripts: '/nope/scripts', targetGui: '/nonexistent/TARGETGUI.exe', interpreter: null };
+  const r = await R.runScript('/tmp/x.tmc', bad);
+  if (r.ok) failures.push('a missing TARGETGUI.exe: expected ok=false');
+  else if (!/could not be started/i.test(r.error ?? '')) failures.push(`a missing TARGETGUI.exe: unhelpful error ${r.error}`);
+  else {
+    pass++;
+    console.log('  ok    a launch that cannot start is reported, not announced');
+  }
+  // And a launch that does start still returns promptly rather than waiting on a timer.
+  const inst = R.findInstall();
+  if (inst) {
+    const t0 = Date.now();
+    const good = await R.runScript('/tmp/x.tmc', { ...inst, targetGui: process.execPath });
+    const ms = Date.now() - t0;
+    if (!good.ok) failures.push(`a launchable exe: expected ok, got ${good.error}`);
+    else if (ms > 1000) failures.push(`a launchable exe: took ${ms}ms`);
+    else {
+      pass++;
+      console.log(`  ok    a launch that starts returns at once (${ms}ms)`);
+    }
+  }
+}
+
 const install = R.findInstall();
 if (!install) {
   console.log('  TARGET is not installed here - skipping (not a failure).');

@@ -290,10 +290,14 @@ export class TargetIndex {
   includeClosure(startFile: string, startModel: DocModel, limit = CLOSURE_LIMIT): { file: string; model: DocModel }[] {
     // Memoised per generation: a single diagnostics refresh walks the graph from
     // several directions, and the walk is the expensive part.
-    const cacheKey = `${startFile}@${this.generation}`;
-    const cachedClosure = this.closureCache.get(cacheKey);
+    const cachedClosure = this.closureCache.get(`${startFile}@${this.generation}`);
     if (cachedClosure) return cachedClosure;
     const result = this.includeClosureUncached(startFile, startModel, limit);
+    // Keyed on the generation the walk ENDED at, not the one it started from. The walk
+    // parses files off disk, and each parse bumps the generation - so an entry stored
+    // under the starting value was already unreachable when it was written, and the
+    // first walk after any reparse was always repeated.
+    const cacheKey = `${startFile}@${this.generation}`;
     // The generation bumps on every reparse, so entries from older generations are
     // dead the moment they are replaced. Drop them rather than letting the map grow
     // one entry per keystroke between saves.

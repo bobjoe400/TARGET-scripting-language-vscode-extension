@@ -174,6 +174,25 @@ const entry = path.join(repoRoot, 'test/fixtures/ED_ENHANCED_T16000.tmc');
     .filter((f) => /\.(tmc|tmh|ttm)$/i.test(f) && f !== 'DEMO.tmc')
     .map((f) => path.join(fixtures, f));
 
+  // The closure cache used to key entries on the generation the walk STARTED at, while
+  // the walk itself bumps that generation for every file it parses off disk - so the
+  // entry was unreachable the moment it was written and the walk after any reparse was
+  // always repeated. A hit returns the very same array.
+  {
+    const entry = files.find((f) => f.toLowerCase().endsWith('.tmc'));
+    if (entry) {
+      const fresh = new TargetIndex();
+      const doc = new FakeDocument(entry, decode(fs.readFileSync(entry)));
+      stub.workspace.textDocuments = [doc];
+      const model = fresh.getModel(doc);
+      const first = fresh.includeClosure(entry, model);
+      const second = fresh.includeClosure(entry, model);
+      const label = 'the include closure is cached where it can be found again';
+      if (first !== second) failures.push(label);
+      else { pass++; console.log(`  ok    ${label}`); }
+    }
+  }
+
   let noisy = 0;
   const idx = new TargetIndex();
   for (const file of files) {

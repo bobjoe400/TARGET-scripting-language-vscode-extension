@@ -150,11 +150,14 @@
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": "limited",
-      "description": "Compiling and running a script executes the TARGET tools against files in the workspace, so those commands are unavailable in an untrusted workspace. Highlighting, completion, hover and diagnostics work normally."
+      "description": "Compiling and running a script executes the TARGET tools against files in the workspace, so those commands are unavailable in an untrusted workspace. Highlighting, completion, hover and diagnostics work normally.",
+      "restrictedConfigurations": [
+        "targetScript.installPath"
+      ]
     },
     "virtualWorkspaces": {
-      "supported": false,
-      "description": "Scripts are read from disk and compiled by a local TARGET installation, so a virtual workspace cannot be used."
+      "supported": "limited",
+      "description": "Highlighting, snippets and the editor configuration work in a virtual workspace. Diagnostics, include resolution, compiling and running need the files on a local disk and are unavailable."
     }
   }
 }

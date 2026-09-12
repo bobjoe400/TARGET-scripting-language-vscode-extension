@@ -183,6 +183,16 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.workspace.onDidOpenTextDocument(refresh),
     vscode.workspace.onDidChangeTextDocument((e) => refreshSoon(e.document)),
     vscode.workspace.onDidSaveTextDocument((doc) => {
+      // Only a TARGET file can change a TARGET symbol table. Without this, saving a
+      // README invalidated the index and rescheduled a full include-graph walk for
+      // every open script - synchronous reads across the install directory, on the
+      // extension host's only thread, for a save that could not have affected anything.
+      if (doc.languageId !== 'target' || doc.uri.scheme !== 'file') {
+        // A .binds file is not a script, but it does feed the USB-code hovers, so its
+        // save still has to drop the cached index.
+        if (/\.binds$/i.test(doc.uri.fsPath)) index.invalidate(doc.uri);
+        return;
+      }
       index.invalidate(doc.uri);
       refresh(doc);
       // A header's contents feed the symbol table of every script that includes it,
@@ -359,6 +369,15 @@ export function activate(context: vscode.ExtensionContext): void {
   const activeEntryScript = async (resource?: vscode.Uri): Promise<string | null> => {
     const doc = await pickTargetDocument(resource);
     if (!doc) return null;
+    // A virtual workspace - github.dev, a remote repository - has no file on disk for
+    // the TARGET tools to read. The declarative half of the extension works fine there,
+    // so the extension stays enabled; only this refuses.
+    if (doc.uri.scheme !== 'file') {
+      vscode.window.showErrorMessage(
+        `Compiling and running need the script on a local disk. ${path.basename(doc.fileName)} is opened from ${doc.uri.scheme}:, which the TARGET tools cannot read.`
+      );
+      return null;
+    }
     // Staging copies from disk, so an unsaved header would be compiled in its previous
     // state. Save this project's files - the ones that will actually be staged - and
     // nothing else: writing a half-finished experiment in an unrelated folder because
