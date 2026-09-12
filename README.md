@@ -76,6 +76,20 @@ script takes about 200 ms.
 as the community `.cmd` launchers do. It compiles first and asks before launching if
 there are errors.
 
+### There is no headless run
+
+Only TARGET's own GUI hosts can run a script. The runtime methods a script depends on —
+the virtual devices, the event pump, even `printf` — are not in the interpreter: as
+`hid.tmh` puts it, they are *"interpreter mapped methods (available from TmService)"*,
+declared with empty bodies and bound by the host application at load time.
+`Interpreter.exe` links neither `TmHidControl.dll` nor `TmCommon.dll`, and a script run
+through it executes its logic but produces no output and drives no hardware. That is
+precisely why it makes a good compile checker and cannot be a runner.
+
+TARGETGUI and TARGET Script Editor are also mutually exclusive — TARGET enforces this
+itself. `Run` checks for the conflict first and offers to close the other application,
+rather than letting the launch fail silently in a window you may not be looking at.
+
 Works on Windows, and from WSL (the Windows tools are invoked through interop).
 
 ### Why compiling needs a staging directory

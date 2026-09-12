@@ -99,6 +99,54 @@ const noScriptError = () =>
   }
 }
 
+// ---- TARGET's host applications are mutually exclusive ----------------------
+// TARGETGUI refuses to start while TARGET Script Editor is open and says so in its
+// own modal. Because the GUI is launched detached, that refusal is invisible here, so
+// the conflict must be caught before launching rather than reported as success.
+{
+  const runner = require(path.join(repoRoot, 'out/runner.js'));
+  const realList = runner.listTargetProcesses;
+  const realKill = runner.killImage;
+
+  const withFakeProcs = async (procs, answer) => {
+    stub.__reset();
+    stub.workspace.textDocuments = [mkDoc(entry)];
+    stub.__setWarningAnswer(answer);
+    runner.listTargetProcesses = async () => procs;
+    let killed = null;
+    runner.killImage = async (img) => { killed = img; return { ok: true }; };
+    await commands.get('targetScript.run')();
+    return { killed, warnings: stub.__recorded.warnings, infos: stub.__recorded.infos };
+  };
+
+  let r = await withFakeProcs({ gui: false, editor: true }, 'Cancel');
+  if (r.warnings.some((w) => /Script Editor is open/i.test(w)) && r.killed === null && r.infos.length === 0) {
+    pass++;
+    console.log('  ok    run warns about the Script Editor and cancels cleanly');
+  } else {
+    failures.push(`editor-conflict cancel: warnings=${JSON.stringify(r.warnings)} killed=${r.killed}`);
+  }
+
+  r = await withFakeProcs({ gui: false, editor: true }, 'Close Editor and Run');
+  if (r.killed === runner.TARGET_IMAGES.editor) {
+    pass++;
+    console.log('  ok    run closes the Script Editor when told to');
+  } else {
+    failures.push(`editor-conflict accept: expected to close ${runner.TARGET_IMAGES.editor}, killed=${r.killed}`);
+  }
+
+  r = await withFakeProcs({ gui: true, editor: false }, 'Cancel');
+  if (r.warnings.some((w) => /already running/i.test(w)) && r.infos.length === 0) {
+    pass++;
+    console.log('  ok    run offers to restart when TARGET is already running');
+  } else {
+    failures.push(`gui-already-running: warnings=${JSON.stringify(r.warnings)}`);
+  }
+
+  runner.listTargetProcesses = realList;
+  runner.killImage = realKill;
+}
+
 for (const f of failures) console.log(`  FAIL  ${f}`);
 console.log(`\n  ${pass}/${pass + failures.length} command assertions passed`);
 if (failures.length) process.exit(1);

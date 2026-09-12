@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.2
+
+- Run now detects TARGET's mutually exclusive host applications before launching.
+  TARGETGUI refuses to start while TARGET Script Editor is open and reports it in a
+  modal of its own; because the GUI is launched detached, that refusal was invisible
+  and the extension claimed success anyway. It now offers to close the Script Editor,
+  or to restart TARGET if a script is already running.
+- The success notification says "Launched", not "Running": TARGET is started
+  detached, so anything it objects to appears in its own window.
+
 ## 0.2.1
 
 - Fixed: the compile and run commands reported "Open a TARGET script first" when the

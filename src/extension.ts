@@ -18,9 +18,12 @@ import {
   compileCheck,
   detectHost,
   findInstall,
+  killImage,
+  listTargetProcesses,
   resolveEntryScript,
   runScript,
   stopScript,
+  TARGET_IMAGES,
   TargetInstall,
 } from './runner';
 
@@ -299,15 +302,46 @@ export function activate(context: vscode.ExtensionContext): void {
         if (pick !== 'Run Anyway') return;
       }
 
+      // TARGET refuses to start its GUI while the Script Editor is open, and says so
+      // in a modal of its own. The GUI is launched detached, so that refusal cannot be
+      // seen from here - hence checking first rather than reporting a false success.
+      const procs = await listTargetProcesses();
+      if (procs.editor) {
+        const pick = await vscode.window.showWarningMessage(
+          'TARGET Script Editor is open, and TARGET will not run a script while it is. Close it and run?',
+          { modal: false },
+          'Close Editor and Run',
+          'Cancel'
+        );
+        if (pick !== 'Close Editor and Run') return;
+        const killed = await killImage(TARGET_IMAGES.editor);
+        if (!killed.ok) {
+          vscode.window.showErrorMessage(`Could not close TARGET Script Editor: ${killed.error}`);
+          return;
+        }
+      } else if (procs.gui) {
+        const pick = await vscode.window.showWarningMessage(
+          'TARGET is already running a script. Restart it with this one?',
+          'Restart',
+          'Cancel'
+        );
+        if (pick !== 'Restart') return;
+        await stopScript();
+      }
+
       const res = await runScript(entry, install);
       output.appendLine(`\n$ ${res.command ?? ''}`);
       if (!res.ok) {
         vscode.window.showErrorMessage(`Could not start TARGET: ${res.error}`);
         return;
       }
-      vscode.window.showInformationMessage(`Running ${path.basename(entry)} in TARGET.`, 'Stop').then((pick) => {
-        if (pick === 'Stop') vscode.commands.executeCommand('targetScript.stop');
-      });
+      // TARGET is launched detached, so this reports the launch, not a confirmed run:
+      // anything TARGET itself objects to appears in its own window.
+      vscode.window
+        .showInformationMessage(`Launched ${path.basename(entry)} in TARGET.`, 'Stop')
+        .then((pick) => {
+          if (pick === 'Stop') vscode.commands.executeCommand('targetScript.stop');
+        });
     }),
 
     vscode.commands.registerCommand('targetScript.stop', async () => {

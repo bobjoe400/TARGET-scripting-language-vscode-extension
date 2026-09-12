@@ -41,8 +41,9 @@ const enumOf = (names) => Object.fromEntries(names.map((n, i) => [n, i]));
 const config = new Map();
 
 // Recorded interactions, so a test can assert what the extension told the user.
-const recorded = { errors: [], infos: [], commands: new Map(), quickPicks: [] };
+const recorded = { errors: [], infos: [], warnings: [], commands: new Map(), quickPicks: [] };
 let quickPickAnswer = undefined;
+let warningAnswer = undefined;
 const noop = () => ({ dispose() {} });
 
 module.exports = {
@@ -92,6 +93,13 @@ module.exports = {
     createOutputChannel: () => ({ appendLine() {}, show() {}, dispose() {} }),
     onDidChangeActiveTextEditor: noop,
     showErrorMessage: (msg) => { recorded.errors.push(msg); return Promise.resolve(undefined); },
+    showWarningMessage: (msg, ...rest) => {
+      recorded.warnings.push(msg);
+      // Options object, when present, comes before the button labels.
+      const buttons = rest.filter((r) => typeof r === 'string');
+      const answer = warningAnswer === undefined ? undefined : warningAnswer;
+      return Promise.resolve(buttons.includes(answer) ? answer : undefined);
+    },
     showInformationMessage: (msg) => { recorded.infos.push(msg); return Promise.resolve(undefined); },
     showQuickPick: (items) => { recorded.quickPicks.push(items); return Promise.resolve(quickPickAnswer); },
     showTextDocument: async () => ({ selection: null, revealRange() {} }),
@@ -102,11 +110,14 @@ module.exports = {
   __reset: () => {
     recorded.errors.length = 0;
     recorded.infos.length = 0;
+    recorded.warnings.length = 0;
     recorded.quickPicks.length = 0;
     quickPickAnswer = undefined;
+    warningAnswer = undefined;
     module.exports.window.activeTextEditor = undefined;
     module.exports.window.visibleTextEditors = [];
     module.exports.workspace.textDocuments = [];
   },
   __setQuickPickAnswer: (a) => { quickPickAnswer = a; },
+  __setWarningAnswer: (a) => { warningAnswer = a; },
 };

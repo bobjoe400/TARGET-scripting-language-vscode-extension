@@ -354,3 +354,51 @@ export function resolveEntryScript(filePath: string): { entry: string | null; ca
   }
   return { entry: candidates.length === 1 ? candidates[0] : null, candidates };
 }
+
+/**
+ * TARGET's own hosts are mutually exclusive: TARGETGUI refuses to start while
+ * TARGET Script Editor is open, and reports it in a modal of its own. Since the GUI
+ * is launched detached, that refusal is invisible from here, so the conflict is
+ * detected before launching rather than after.
+ */
+export interface TargetProcesses {
+  gui: boolean;
+  editor: boolean;
+}
+
+const IMAGE_GUI = 'TARGETGUI.exe';
+const IMAGE_EDITOR = 'TARGETScriptEditor.exe';
+
+export async function listTargetProcesses(): Promise<TargetProcesses> {
+  const running = async (image: string): Promise<boolean> => {
+    const host = detectHost();
+    const tasklist = host === 'windows' ? 'tasklist' : '/mnt/c/Windows/System32/tasklist.exe';
+    try {
+      const { stdout } = await execFileAsync(tasklist, ['/FI', `IMAGENAME eq ${image}`], {
+        cwd: host === 'windows' ? undefined : '/mnt/c',
+      });
+      return stdout.toLowerCase().includes(image.toLowerCase());
+    } catch {
+      // Unable to ask: assume nothing is running rather than block the user.
+      return false;
+    }
+  };
+  const [gui, editor] = await Promise.all([running(IMAGE_GUI), running(IMAGE_EDITOR)]);
+  return { gui, editor };
+}
+
+/** Closes one of TARGET's host applications by image name. */
+export async function killImage(image: string): Promise<{ ok: boolean; error?: string }> {
+  const host = detectHost();
+  const taskkill = host === 'windows' ? 'taskkill' : '/mnt/c/Windows/System32/taskkill.exe';
+  try {
+    await execFileAsync(taskkill, ['/IM', image, '/F'], { cwd: host === 'windows' ? undefined : '/mnt/c' });
+    return { ok: true };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/not found|not running/i.test(msg)) return { ok: true };
+    return { ok: false, error: msg };
+  }
+}
+
+export const TARGET_IMAGES = { gui: IMAGE_GUI, editor: IMAGE_EDITOR };
