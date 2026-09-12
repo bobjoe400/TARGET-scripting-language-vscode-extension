@@ -48,11 +48,37 @@ split over a dozen headers and Thrustmaster's editor has no navigation at all.
 | Numeric ranges | `SetSCurve` curve is −32..32; `LEDV` value is 0–7 |
 | Control named for the wrong device | `MapKey(&T16000, APALT, …)` — `APALT` is a Warthog Throttle control |
 | `include "target.tmh"` ordering | must come first |
+| Missing `main()` | TARGET runs `main()`; without it the script does nothing |
+| `main()` that never calls `Init()` | no virtual devices are ever created |
+| Event handler passed to `Init()` does not exist | fails at runtime with `Symbol not found` |
+| Handler that never calls `DefaultMapping()` | mappings and shift layers never take effect |
+| Call to a function defined nowhere | a typo that TARGET only discovers mid-flight |
 | C keywords TARGET lacks | `for`, `switch`, `continue`, `typedef`, `enum`, `const`, … |
 
 Names borrowed from another device that happen to land on the same index (`TG1` and
 `TS1` are both 0) are reported as a naming hint rather than an error, because that code
 does work and real scripts rely on it.
+
+### Why the structural checks matter
+
+TARGET's compiler reports **only syntax errors**, and resolves every symbol lazily. All
+of the following compile perfectly cleanly, verified against the real `Interpreter.exe`:
+
+- a script with no `main()` at all
+- `Init(&EventHandle)` where `EventHandle` is defined nowhere
+- a call to a function that does not exist
+- a script that never includes `target.tmh` while using builtins
+
+Each one fails at runtime instead - which for a HOTAS script means discovering it after
+the mapping silently does nothing, mid-flight. These checks exist because the
+compiler's silence is not a guarantee.
+
+The required skeleton is the one TARGET's own `CodeStart.template` generates: an
+`include "target.tmh"` first, a `main()` that calls `Init(&EventHandle)`, and an
+`EventHandle` that calls `DefaultMapping(&o, x)`. The `tmcmain` snippet writes it out.
+
+The rules that need to know every declared name are skipped when an `include` cannot be
+resolved, rather than reporting names that live in a file the extension could not read.
 
 ## Compiling and running
 

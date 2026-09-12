@@ -80,7 +80,12 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     }
 
-    const raw = computeDiagnostics(model, path.basename(doc.fileName), { aliasBindings: bindings });
+    const { symbols, complete } = index.symbolTable(doc);
+    const raw = computeDiagnostics(model, path.basename(doc.fileName), {
+      aliasBindings: bindings,
+      knownSymbols: symbols,
+      closureComplete: complete,
+    });
     diagnostics.set(doc.uri, raw.map((d) => toVsDiagnostic(doc, d)));
   };
 

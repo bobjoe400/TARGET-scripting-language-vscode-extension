@@ -115,6 +115,9 @@ const RANGE_RULES: Record<string, RangeRule[]> = {
   ],
 };
 
+/** Keywords that parse as a call because they are followed by a parenthesis. */
+const CONTROL_WORDS = new Set(['if', 'while', 'do', 'else', 'return', 'switch', 'for', 'goto', 'break', 'sizeof']);
+
 const intLiteral = (s: string): number | null => {
   const t = s.trim();
   if (/^-?\d+$/.test(t)) return parseInt(t, 10);
@@ -128,6 +131,21 @@ export interface DiagnosticOptions {
    * Without this, a script that maps through its own alias cannot be checked at all.
    */
   aliasBindings?: Map<string, Set<string>>;
+  /**
+   * Every name declared anywhere in the include graph.
+   *
+   * The TARGET compiler resolves symbols lazily: a call to a function that does not
+   * exist compiles perfectly and fails only when that line is reached at runtime. So
+   * knowing what is declared is the only way to catch a typo before the hardware is
+   * live.
+   */
+  knownSymbols?: Set<string>;
+  /**
+   * True only when every `include` in the graph was resolved. When a file could not
+   * be found, the symbol table is incomplete and the checks that rely on it are
+   * skipped rather than reporting names that are declared in a file we cannot see.
+   */
+  closureComplete?: boolean;
 }
 
 export function computeDiagnostics(
@@ -164,8 +182,113 @@ export function computeDiagnostics(
     }
   }
 
+  // ---- structure a runnable script must have --------------------------------
+  // None of this is enforced by the TARGET compiler, which only reports syntax
+  // errors. A script missing main() compiles and then does nothing at all.
+  if (fileName.toLowerCase().endsWith('.tmc')) checkEntryScriptStructure();
+
   for (const call of model.allCalls) {
     checkCall(call);
+  }
+
+  /**
+   * Calls made between two offsets, i.e. within one function body.
+   * A function declaration, not a const arrow: it is used by the structural checks
+   * that run above this point.
+   */
+  function callsWithin(start: number, end: number, name: string): CallNode[] {
+    return model.allCalls.filter((c) => c.name === name && c.nameStart >= start && c.nameStart <= end);
+  }
+
+  function checkEntryScriptStructure(): void {
+    const known = opts.knownSymbols;
+    const localFn = (n: string) => model.decls.find((d) => d.kind === 'function' && d.name === n);
+    const declaredAnywhere = (n: string) => (known ? known.has(n) : !!localFn(n));
+
+    const main = localFn('main');
+    if (!main) {
+      // main() could legitimately live in an included header, so only speak up when
+      // the symbol table says it exists nowhere.
+      if (!declaredAnywhere('main')) {
+        add(
+          0,
+          0,
+          'This script has no main(). TARGET runs main() when the script starts, so without it nothing happens. The TARGET compiler does not report this.',
+          'error',
+          'missing-main'
+        );
+      }
+      return;
+    }
+
+    const initCalls = callsWithin(main.fullStart, main.fullEnd, 'Init');
+    if (initCalls.length === 0) {
+      add(
+        main.start,
+        main.end,
+        'main() never calls Init(). Init() selects the physical devices and creates the virtual ones; without it no mapping takes effect.',
+        'warning',
+        'missing-init'
+      );
+      return;
+    }
+
+    const handlerArg = initCalls[0].args[0]?.text ?? '';
+    const m = handlerArg.match(/^&\s*([A-Za-z_]\w*)$/);
+    if (!m) return;
+    const handlerName = m[1];
+
+    if (!declaredAnywhere(handlerName)) {
+      // Only trustworthy once every include resolved, or the handler is simply in a
+      // file this could not read.
+      if (opts.closureComplete !== false) {
+        add(
+          initCalls[0].args[0].start,
+          initCalls[0].args[0].end,
+          `Init() is given the event handler ${handlerName}, which is not defined anywhere. The compiler accepts this and the script fails at runtime with "Symbol not found: ${handlerName}".`,
+          'error',
+          'undefined-event-handler'
+        );
+      }
+      return;
+    }
+
+    // The handler must pass events on, or layers, shift states and axis handling
+    // silently stop working. Only checkable when the handler is in this file.
+    const handler = localFn(handlerName);
+    if (handler && callsWithin(handler.fullStart, handler.fullEnd, 'DefaultMapping').length === 0) {
+      add(
+        handler.start,
+        handler.end,
+        `${handlerName}() does not call DefaultMapping(&o, x). Without it TARGET never applies your mappings, and shift layers stop working.`,
+        'warning',
+        'handler-missing-defaultmapping'
+      );
+    }
+  }
+
+  // ---- calls to functions that do not exist ---------------------------------
+  // Worth checking precisely because the compiler will not: the failure surfaces at
+  // runtime, mid-flight, as a cryptic "Symbol not found".
+  if (opts.knownSymbols && opts.closureComplete) {
+    const known = opts.knownSymbols;
+    const reported = new Set<string>();
+    for (const call of model.allCalls) {
+      const n = call.name;
+      if (reported.has(n)) continue;
+      if (functionsByName.has(n) || constantsByName.has(n) || devicesByAlias.has(n)) continue;
+      if (known.has(n)) continue;
+      // Control-flow keywords parse as calls: `if(x)`, `while(x)`.
+      if (CONTROL_WORDS.has(n)) continue;
+      reported.add(n);
+      add(
+        call.nameStart,
+        call.nameEnd,
+        `${n}() is not defined in this script or any file it includes. The TARGET compiler does not check this; it fails at runtime with "Symbol not found: ${n}".`,
+        'warning',
+        'unknown-function'
+      );
+    }
   }
 
   function checkCall(call: CallNode): void {

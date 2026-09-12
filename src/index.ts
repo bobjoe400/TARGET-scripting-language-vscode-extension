@@ -114,6 +114,24 @@ export class TargetIndex {
     return out;
   }
 
+  /**
+   * Names declared anywhere in a document's include graph, plus whether the graph
+   * was fully resolved. An unresolved include means the table is incomplete, and
+   * callers must not treat a missing name as proof it does not exist.
+   */
+  symbolTable(doc: vscode.TextDocument): { symbols: Set<string>; complete: boolean } {
+    const model = this.getModel(doc);
+    const symbols = new Set<string>();
+    let complete = true;
+    for (const { file, model: m } of this.includeClosure(doc.uri.fsPath, model)) {
+      for (const d of m.decls) symbols.add(d.name);
+      for (const inc of m.includes) {
+        if (!this.resolveInclude(file, inc.path)) complete = false;
+      }
+    }
+    return { symbols, complete };
+  }
+
   /** Global declarations visible from a document, across its include graph. */
   visibleDecls(doc: vscode.TextDocument): { decl: Decl; file: string }[] {
     const model = this.getModel(doc);

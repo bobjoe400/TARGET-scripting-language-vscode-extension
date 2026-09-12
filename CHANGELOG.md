@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.0
+
+- Checks the structure a runnable script must have. The TARGET compiler reports only
+  syntax errors and resolves every symbol lazily, so all of this compiles cleanly
+  today and fails at runtime, or silently does nothing:
+  - `missing-main` - no `main()`. TARGET runs `main()`; without it nothing happens.
+  - `missing-init` - `main()` never calls `Init()`, so no devices are created.
+  - `undefined-event-handler` - the handler passed to `Init()` does not exist.
+  - `handler-missing-defaultmapping` - the handler never calls `DefaultMapping()`,
+    so mappings and shift layers never take effect.
+  - `unknown-function` - a call to a function defined nowhere in the include graph.
+- The last two rules need a complete symbol table, so they are skipped when an
+  `include` could not be resolved rather than guessing about files that were not read.
+- Structural rules apply only to `.tmc` entry scripts, never to headers.
+
 ## 0.2.2
 
 - Run now detects TARGET's mutually exclusive host applications before launching.

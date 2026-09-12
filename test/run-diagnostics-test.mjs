@@ -19,6 +19,49 @@ const run = (src, name = 'test.tmh', bindings) => {
   return computeDiagnostics(model, name, { aliasBindings: bindings ?? collectAliasBindings(model) });
 };
 
+/**
+ * Runs with a symbol table built from the snippet itself, which is what enables the
+ * checks that depend on knowing every declared name.
+ */
+const runFull = (src, name = 'test.tmc', extraSymbols = []) => {
+  const model = buildModel(src);
+  const symbols = new Set(model.decls.map((d) => d.name));
+  for (const e of extraSymbols) symbols.add(e);
+  return computeDiagnostics(model, name, {
+    aliasBindings: collectAliasBindings(model),
+    knownSymbols: symbols,
+    closureComplete: true,
+  });
+};
+
+function expectFull(label, src, code, name = 'test.tmc', extraSymbols = []) {
+  const ds = runFull(src, name, extraSymbols);
+  if (ds.some((d) => d.code === code)) { pass++; return; }
+  failures.push(`${label}: expected code "${code}", got [${ds.map((d) => d.code).join(', ') || 'none'}]`);
+}
+
+function expectFullClean(label, src, name = 'test.tmc', extraSymbols = []) {
+  const ds = runFull(src, name, extraSymbols);
+  if (ds.length === 0) { pass++; return; }
+  failures.push(`${label}: expected no diagnostics, got ${ds.map((d) => `${d.code}: ${d.message.split('\n')[0]}`).join(' | ')}`);
+}
+
+/** The skeleton TARGET's own CodeStart.template produces. */
+const SKELETON = [
+  'include "target.tmh"',
+  '',
+  'int main()',
+  '{',
+  '\tif(Init(&EventHandle)) return 1;',
+  '}',
+  '',
+  'int EventHandle(int type, alias o, int x)',
+  '{',
+  '\tDefaultMapping(&o, x);',
+  '}',
+  '',
+].join('\n');
+
 let pass = 0;
 const failures = [];
 
@@ -70,6 +113,21 @@ expect('tmc missing include', 'int main() { }', 'missing-target-include', 'main.
 expect('tmc wrong first inc', 'include "other.tmh"\nint main() { }', 'target-include-order', 'main.tmc');
 expect('CHAIN no delay',      'int f() { MapKey(&Joystick, S1, CHAIN(a,b,c,d,e,f,g)); }', 'chain-no-delay');
 
+// -- structure a runnable script needs, none of which TARGET's compiler checks --
+expectFull('no main()',            'include "target.tmh"\n\nint helper(int a) { return a; }\n', 'missing-main');
+expectFull('main without Init()',  'include "target.tmh"\n\nint main()\n{\n\tMapKey(&Joystick, TG1, DX1);\n}\n', 'missing-init');
+expectFull('undefined handler',    'include "target.tmh"\n\nint main()\n{\n\tif(Init(&NoSuchHandler)) return 1;\n}\n', 'undefined-event-handler');
+expectFull('handler without DefaultMapping',
+  'include "target.tmh"\n\nint main()\n{\n\tif(Init(&EventHandle)) return 1;\n}\n\nint EventHandle(int type, alias o, int x)\n{\n}\n',
+  'handler-missing-defaultmapping');
+expectFull('call to an undefined function',
+  SKELETON + '\nint other()\n{\n\tfnNeverDefined(1);\n}\n', 'unknown-function');
+// A header is not an entry point, so the structural rules must not apply to it.
+expectFullClean('header needs no main', 'int helperFn(int a)\n{\n\treturn a * 2;\n}\n', 'helpers.tmh');
+// A name declared in an included file is not unknown.
+expectFullClean('function from an include is known',
+  SKELETON + '\nint other()\n{\n\tfnFromHeader(1);\n}\n', 'test.tmc', ['fnFromHeader']);
+
 // -- things that must NOT be flagged ------------------------------------------
 expectClean('valid MapKey',        'int f() { MapKey(&Joystick, TG1, 0); }');
 expectClean('valid full MapKey',   'int f() { MapKeyIOUMD(&Joystick, TG1, 0,0,0,0,0,0); }');
@@ -89,7 +147,7 @@ expectClean('unbound alias quiet',  'alias MyJoy;\nint f() { MapKey(&MyJoy, APAL
 expectClean('multi-bound alias ok', 'alias MyJoy;\nint f() { &MyJoy = &T16000; &MyJoy = &T16000L; MapKey(&MyJoy, TS1, 0); }');
 expectClean('user define as btn',  'int f() { MapKey(&T16000, MY_OWN_BUTTON, 0); }');
 expectClean('CHAIN with delays',   'int f() { MapKey(&Joystick, S1, CHAIN(a,D(),b,D(),c,D(),d,D(),e,D(),f,D(),g)); }');
-expectClean('valid tmc',           'include "target.tmh"\nint main() { }', 'main.tmc');
+expectFullClean('complete skeleton', SKELETON);
 expectClean('SetSCurve valid',     'int f() { SetSCurve(&Joystick, JOYX, 0, 0, 0, 5, 0); }');
 expectClean('negative curve ok',   'int f() { SetSCurve(&Joystick, JOYX, 0, 0, 0, -20, 0); }');
 expectClean('TrimDXAxis w/ CURRENT','int f() { TrimDXAxis(DX_X_AXIS, CURRENT); }');
@@ -113,6 +171,21 @@ if (fs.existsSync(corpusDir)) {
   // bindings are merged across the whole set the way the include closure does.
   const corpusBindings = new Map();
   const models = new Map();
+  // The corpus includes target.tmh, so the TARGET headers are part of its symbol
+  // table too; without them every builtin-adjacent name would look undefined.
+  const corpusSymbols = new Set();
+  const headerDir = '/mnt/c/Program Files (x86)/Thrustmaster/TARGET/scripts';
+  const extraFiles = [];
+  if (fs.existsSync(headerDir)) {
+    for (const h of ['target.tmh', 'defines.tmh', 'hid.tmh', 'sys.tmh']) {
+      const p2 = path.join(headerDir, h);
+      if (fs.existsSync(p2)) extraFiles.push(p2);
+    }
+  }
+  for (const f of [...files.map((f) => path.join(corpusDir, f)), ...extraFiles]) {
+    const model = buildModel(decode(fs.readFileSync(f)));
+    for (const d of model.decls) corpusSymbols.add(d.name);
+  }
   for (const f of files) {
     const text = decode(fs.readFileSync(path.join(corpusDir, f)));
     const model = buildModel(text);
@@ -126,7 +199,11 @@ if (fs.existsSync(corpusDir)) {
 
   for (const f of files) {
     const { text, model } = models.get(f);
-    const ds = computeDiagnostics(model, f, { aliasBindings: corpusBindings });
+    const ds = computeDiagnostics(model, f, {
+      aliasBindings: corpusBindings,
+      knownSymbols: corpusSymbols,
+      closureComplete: true,
+    });
     const errs = ds.filter((d) => d.severity === 'error');
     errors += errs.length;
     for (const d of ds) byCode.set(d.code, (byCode.get(d.code) ?? 0) + 1);
