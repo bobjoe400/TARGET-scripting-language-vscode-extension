@@ -1,0 +1,88 @@
+{
+  "_comment": [
+    "Maps section headings in defines.tmh to the device aliases declared in target.tmh.",
+    "The generator warns about any section or device alias not covered here, so that a",
+    "TARGET update that adds hardware is surfaced rather than silently dropped.",
+    "'inherits' pulls in another section's names for devices that share a control block."
+  ],
+  "globalSections": [
+    "Virtual keyboard interface",
+    "virtual joystick interface",
+    "virtual mouse interface",
+    "Other constants"
+  ],
+  "sections": {
+    "Warthog Joystick interface": {
+      "label": "Warthog Joystick",
+      "devices": ["Joystick", "JoystickF18"]
+    },
+    "Warthog Throttle interface": {
+      "label": "Warthog Throttle",
+      "devices": ["Throttle"]
+    },
+    "Hotas Cougar interface": {
+      "label": "HOTAS Cougar",
+      "devices": ["HCougar"]
+    },
+    "T16000 interface": {
+      "label": "T.16000M Joystick",
+      "devices": ["T16000", "T16000L"]
+    },
+    "MFD interface": {
+      "label": "Cougar MFD",
+      "devices": ["LMFD", "RMFD"]
+    },
+    "TWCSThrottle interface": {
+      "label": "TWCS Throttle",
+      "devices": ["TWCSThrottle"]
+    },
+    "TFRP Rudder interface": {
+      "label": "TFRP Rudder Pedals",
+      "devices": ["TFRPRudder"]
+    },
+    "TFRPHA Rudder Pendular interface": {
+      "label": "TFRP HA Pendular Rudder",
+      "devices": ["TFRPHARudder"]
+    },
+    "TCA Quadrant interface": {
+      "label": "TCA Quadrant Airbus",
+      "devices": ["TCAQuadrant12", "TCAQuadrant34"]
+    },
+    "TCA Q Boeing interface": {
+      "label": "TCA Quadrant Boeing",
+      "devices": ["TCAQBoeing12", "TCAQBoeing34"]
+    },
+    "TCA Yoke Boeing interface": {
+      "label": "TCA Yoke Boeing",
+      "devices": ["TCAYokeBoeing"]
+    },
+    "Viper TQS interface": {
+      "label": "Viper TQS Throttle",
+      "devices": ["ViperTQS"],
+      "inherits": ["TCA Q Boeing interface"]
+    },
+    "Viper BBox interface": {
+      "label": "Viper Button Box",
+      "devices": ["ViperBBox"]
+    },
+    "Simtask Farmstick interface": {
+      "label": "Simtask Farmstick",
+      "devices": ["FarmStickRight", "FarmStickLeft", "FarmStickXboxRight", "FarmStickXboxLeft"]
+    },
+    "AVA Base": {
+      "label": "AVA Base",
+      "devices": ["AVA_F16", "AVA_F18", "AVA_SolR", "AVA_F16L", "AVA_F18L", "AVA_SolRL"],
+      "inherits": ["Warthog Joystick interface"]
+    },
+    "Sol-R Base": {
+      "label": "Sol-R Base",
+      "devices": ["Sol_F16", "Sol_F18", "Sol_SolR", "Sol_F16L", "Sol_F18L", "Sol_SolRL"]
+    }
+  },
+  "unmappedDeviceNote": {
+    "A320Pilot": "No button-name section in defines.tmh",
+    "A320Copilot": "No button-name section in defines.tmh",
+    "TCASidestickXPilot": "No button-name section in defines.tmh",
+    "TCASidestickXCopilot": "No button-name section in defines.tmh"
+  }
+}

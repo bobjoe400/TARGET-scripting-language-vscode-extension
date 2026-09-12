@@ -1,0 +1,689 @@
+
+	//--------------------------------------------------------------------------------------//
+	//		  CMDR Clicker's Elite Dangerous Enhanced Thrustmaster TARGET Script			//
+	//--------------------------------------------------------------------------------------//
+
+	//							T16000 + TWCS THROTTLE REQUIRED								//
+
+	//							 This file: ED_Initialise.tmh								//
+
+/*
+	Index:				FUNCTION
+	Line    50: 		int CheckControllers() {
+	Line   151: 		int initJoystickAxis() {
+	Line   179: 		int initThrottleAxis() {
+	Line   200: 		int initRudderAxis() {	
+	Line   221: 		int initSliderAxis() {
+	Line   237: 		int initSlewAxis() {
+	Line   263: 		int initCurves(int profile, int print=NO, int announce=YES, int SaveCurveInfo=TRUE) {
+	Line   356: 		int initSliderCurve(int x) {
+	Line   387: 		int initTextToSpeech() {
+	Line   399: 		int initSoundFX() {
+	Line   458: 		int initUserSettings(int dummy = 0) {
+	Line   512: 		int fnResetUserSettings(int dummy = 0) {
+	Line   557: 		int fnEncodeUserSettings(int dummy = 0) {
+	Line   593: 		int fnDecodeUserSettings(int DecodeSettings) {
+	Line   625: 		int fnUserSettingsDelta(int dummy = 0)	{
+	Line   672: 		int fnCompareIntSettings(int dummy = 0) {
+*/
+
+	// START
+
+	//----------------------------------------------------------------------//
+	// SCRIPT VERSION VARIABLES                                             //		MOVED FROM ED_ScriptDefines.ttm
+	//----------------------------------------------------------------------//
+
+	define VMajor		 						1						// Script Version Major Value			ie. 2xx
+	define VMinor		 						1						// Script Version Minor Value			ie. x3x
+	define VPoint								0						// Script Version Point Update			ie. xx4
+	define VBranch								"dev"					// Script Version Branch				ie. xxx.01
+
+	//--------------------------//
+	// INITIALISATION FUNCTIONS //
+	//--------------------------//
+
+	// Check what controllers we have connected
+	// Define All Axis Curves/Trim/Deadzones for Included Devices
+
+	//   !!!   THE SCRIPT WILL ABORT IF NO COMPATIBLE JOYSTICK OR THROTTLE IS FOUND   !!!
+
+	int CheckControllers() {
+	
+		// Aliases MyJoystick, MyThrottle and MyRudder declared in ED_GlobalVars.tmh
+		// The following method eliminates user having to set compatible connected hardware manually
+		// Alternate method would be to get user to declare which alias to use depending on what hardware they own
+				
+		// There are 2 Joysticks compatible with this script...
+
+		printf("\x0a++	Start Hardware Check\x0a");
+
+		&MyJoystick = &joy0;													// set to equivalent of 'nul' by default
+		
+		if (&T16000 != &joy0) {
+			&MyJoystick = &T16000;
+			if (YAWDeviceOverride == DISABLED) {
+				YAWDevice = "JSTwist";
+			}
+			printf("\x0a\++	Connected joystick	is T16000M TCS\x0a");
+		}
+		else if (&T16000L != &joy0) {
+			&MyJoystick = &T16000L;
+			if (YAWDeviceOverride == DISABLED) {
+				YAWDevice = "JSTwist";
+			}
+			printf("++	Connected joystick	is T16000L\x0a");
+		}
+		else {
+			printf("\x0a\	//////////////////////////////////////////////////////////////////////////////////\x0a");
+			printf("	!!! WARNING:	This script will not run without a compatible Joystick connected !!!\x0a");
+			printf("	//////////////////////////////////////////////////////////////////////////////////\x0a\x0a");
+			printf("	Please connect one of the following compatible JOYSTICKS:-\x0a");
+			printf("	1) T16000M TCS\x0a");
+			printf("	2) T16000L\x0a");
+
+			if (ControllerCheck) {												// if DISABLED allows script to run without connected controllers. 
+				Abort();
+			}
+		}
+
+	//===================================================================================================
+
+		// There is only one Throttle compatible with this script...
+		
+		&MyThrottle = &joy0;													// set to equivalent of 'nul' by default
+		
+		if (&TWCSThrottle == &joy0) {
+			printf("\x0a\	/////////////////////////////////////////////////////////////////////////////////\x0a");
+			printf("	!!! WARNING:	This script will not run without the TWCS Throttle connected    !!!\x0a");
+			printf("	/////////////////////////////////////////////////////////////////////////////////\x0a\x0a");
+			
+			if (ControllerCheck) {												// if DISABLED allows script to run without connected controllers.
+				Abort();
+			}
+		}
+		else {
+			&MyThrottle = &TWCSThrottle;
+			if (YAWDeviceOverride == DISABLED) {
+				YAWDevice = "THRPaddles";
+			}
+			printf("++	Connected throttle	is TWCS Throttle\x0a");
+		}
+
+	//===================================================================================================
+
+		// If no rudder is found the script will not abort.
+		// There are two Rudders compatible with this script...
+		
+		&MyRudder = &joy0;														// set to equivalent of 'nul' by default
+		
+		if (&TFRPRudder != &joy0) {
+			&MyRudder = &TFRPRudder;
+			if (YAWDeviceOverride == DISABLED) {
+				YAWDevice = "RudderPedals";
+			}
+			printf("++	Connected rudder	is TFRPRudder\x0a");
+		}
+		else if (&TFRPHARudder != &joy0) {
+			&MyRudder = &TFRPHARudder;
+			if (YAWDeviceOverride == DISABLED) {
+				YAWDevice = "RudderPedals";
+			}
+			printf("++	Connected rudder	is TFRPHARudder\x0a");
+		}
+		else {
+			printf("++	No compatible rudder connected. Use alt YAW control.\x0a");
+			printf("	NOTE: set YAWDevice define at top of script to JSTwist or THRPaddles\x0a");
+		}
+
+		printf("\x0a++	Hardware checks		- COMPLETE\x0a");
+	
+	}
+
+	//----------------------//
+	// End CheckControllers //
+	//----------------------//
+
+	// ------------------- //
+	// INITIALISE all AXES //
+	// ------------------- //
+
+	// FUNCTION: Initialise Joystick Axes 
+	int initJoystickAxis() { 																	// Set Default Joystick Axis
+		if (StartupLock) {
+			printf("\x0a\Initialising: v%d.%d.%d.%s\x0a", VMajor, VMinor, VPoint, VBranch);
+			printf("-----------------------------------------------------------------------------------------------------------------------------------------------\x0a");
+		}	
+
+		MapAxis(&MyJoystick, JOYX, DX_X_AXIS, AXIS_NORMAL, MAP_ABSOLUTE);
+		MapAxis(&MyJoystick, JOYY, DX_Y_AXIS, AXIS_NORMAL, MAP_ABSOLUTE);
+
+		if (strcmp(YAWDevice, "JSTwist") == 0) {
+			MapAxis(&MyJoystick, RUDDER, DX_Z_AXIS, AXIS_REVERSED, MAP_ABSOLUTE);	// Set YAWDevice define to JSTwist above		
+		}
+		else {
+			MapAxis(&MyJoystick, RUDDER, 0);										// Otherwise, not used
+		}
+		
+		MapAxis(&MyJoystick, THR, 0);												// Slider = not used
+
+		if (StartupLock) {
+			printf("Joystick Axes	... done		");
+		}
+		else {
+			printf("Joystick Axes	... re set\x0a");
+		}
+	}
+
+
+	//FUNCTION: Initialise Throttle Axes
+	int initThrottleAxis() {														// Set Default Throttle Axis
+		
+		// Throttle mapping...
+		MapAxis(&MyThrottle, TTHR, DX_THROTTLE_AXIS, AXIS_NORMAL, MAP_ABSOLUTE);	// Set Left Throttle. 
+
+		if (strcmp(YAWDevice, "THRPaddles") == 0) {
+			MapAxis(&MyThrottle, TRDR, DX_Z_AXIS, AXIS_REVERSED, MAP_ABSOLUTE);		// Set YAWDevice define to THRPaddles above			
+		}
+		else {
+			MapAxis(&MyThrottle, TRDR, 0);											// Otherwise = not used
+		}
+		
+		if (StartupLock) {
+			printf("Throttle Axes	... done");
+		}
+		else {
+			printf("Throttle Axes	... re set\x0a");
+		}
+	}
+
+	// FUNCTION: Initialise Rudder Axis 
+	int initRudderAxis() {															// Initialise Thrustmaster TFRP or TFRPHA Rudder
+		
+		if (strcmp(YAWDevice, "RudderPedals") == 0) {
+			MapAxis(&MyRudder, TRUDDER, DX_Z_AXIS, AXIS_NORMAL, MAP_ABSOLUTE);		// Set YAWDevice define to RudderPedals above			
+		}
+		else {
+			MapAxis(&MyRudder, TRUDDER, 0);											// Otherwise = not used
+		}
+		
+		MapAxis(&MyRudder, TRPRIGHT, 0);											// Right foot pedal - not used
+		MapAxis(&MyRudder, TRPLEFT, 0);												// Left foot pedal  - not used
+	
+		if (EnableMyRudder) {
+			if (StartupLock) printf("Rudder Axis	... done\x0a");
+		}
+		else {
+			if (StartupLock) printf("Rudder Axis	... disabled\x0a");		
+		}
+	}
+
+	// FUNCTION: Initialise Slider Axis 
+	int initSliderAxis() {
+	
+		// Slider Mapping...
+		
+		MapAxis(&MyThrottle, TANT, DX_SLIDER_AXIS, AXIS_REVERSED);					// Pinky wheel
+		
+		initSliderCurve(1);
+		if (StartupLock) {
+			printf("Slider Axis	... done		");
+		}
+		else {
+			printf("Slider Axis	... re set\x0aa");
+		}
+	}
+
+	// FUNCTION: Initialise Slew Axis 
+	int initSlewAxis() {
+	
+		// Slew Control Mapping...
+		MapAxis(&MyThrottle, TMSTX, DX_XROT_AXIS, AXIS_NORMAL, MAP_ABSOLUTE);						// Set Slew Control X Axis (Left/Right)	
+		MapAxis(&MyThrottle, TMSTY, DX_YROT_AXIS, AXIS_NORMAL, MAP_ABSOLUTE);						// Set Slew Control Y Axis (Up/Down)
+
+		if (StartupLock) {
+			printf("Slew Axis	... done		");
+		}
+		else {
+			printf("Slew Axis	... re set\x0a");
+		}
+		
+		if (StartupLock) printf("YAW set to	... %s\x0a", YAWDevice);								// This is here for formatting reasons
+
+		if (StartupLock) printf("-----------------------------------------------------------------------------------------------------------------------------------------------\x0a");
+	}	
+
+
+	// FUNCTION:	Set Joystick and rudder curves 
+	// Parameters:	profile			=	0 - 5 (see JSProfile in EDGlobalVars)
+	// 				print			=	NO (default) to supress console print of Curve settings, YES to print
+	//				announce		=	NO to supress voice announcement at game start/restart, else YES (default) to announce
+	//				SaveCurveInfo	=	TRUE (default) when called by B14 button, FALSE when called via tgEnhancedFAOff()
+	//									...this saves last manually selected state for FA-ON
+	
+	int initCurves(int profile, int print=NO, int announce=YES, int SaveCurveInfo=TRUE) {
+
+		int VoiceTxt;
+
+		JSProfile = profile;
+		if (SaveCurveInfo == TRUE) {
+			OldCurves = profile;
+		}
+
+		if (profile == NONE) {
+			JSCurveSetting = "NONE";
+			VoiceTxt = "Curves None";
+		}
+		if (profile == MILD) {
+			JSCurveSetting = "MILD";
+			VoiceTxt = "Curves mild";
+		}
+		if (profile == MEDIUM) {
+			JSCurveSetting = "MEDIUM";
+			VoiceTxt = "Curves medium";			
+		}
+		if (profile == SLOW) {
+			JSCurveSetting = "SLOW";
+			VoiceTxt = "Curves slow";					
+		}
+		if (profile == SLOWEST) {
+			JSCurveSetting = "SLOWEST";
+			VoiceTxt = "Curves slowest";					
+		}
+		
+		// SetSCurve() Syntax:
+		// SetSCurve(&Device, axis name, left_deadzone%, center_deadzone%, right_deadzone%, curve, scale);
+		//		curve = -20 to +20. Negative values more sensitive around center, positive values better control in the center
+		//		scale = -20 to +20. Negative value limits travel on axis. Positive will reach minimum and maximum values quicker
+		// Refer: Values options set in ED_UserSettings.tmh
+		// SetCustomCurve() Syntax:
+		// SetCustomCurve(&device, axis name, LIST(Axis physical position 1, Axis output value 1, Axis physical position 2, Axis output value 2, …);
+		// values are %  
+
+		// Set Joystick curves and force re-read of axes
+				
+		SetSCurve(&MyJoystick, JOYX,		Joystick_L_DZ,	Joystick_C_DZ,	Joystick_R_DZ,	Joystick_Curve[profile],	Joystick_Zoom);
+		SetSCurve(&MyJoystick, JOYY,		Joystick_L_DZ,	Joystick_C_DZ,	Joystick_R_DZ,	Joystick_Curve[profile],	Joystick_Zoom);		
+		DefEventHandler(EV_HID_INPUT_DATA, &MyJoystick, JOYX);
+		DefEventHandler(EV_HID_INPUT_DATA, &MyJoystick, JOYY);
+		
+		if (strcmp(YAWDevice, "JSTwist") == 0) {
+			SetSCurve(&Myjoystick,	RUDDER, Rudder_L_DZ,	Rudder_C_DZ,	Rudder_R_DZ,	Rudder_Curve[profile],	Rudder_Zoom);	// Set mild curve for YAW 
+			DefEventHandler(EV_HID_INPUT_DATA, &MyJoystick, RUDDER);
+		}
+
+		SetSCurve(&MyThrottle,	TTHR,		0, 0, 0, 0,	0);					// No curve for Throttle
+
+		// Set Slew Control curves and force re-read of axes 
+		SetSCurve(&MyThrottle, SCX, 		Slew_L_DZ,		Slew_C_DZ,		Slew_R_DZ,		Slew_Curve[profile],		Slew_Zoom);
+		SetSCurve(&MyThrottle, SCY, 		Slew_L_DZ,		Slew_C_DZ,		Slew_R_DZ,		Slew_Curve[profile],		Slew_Zoom);
+		DefEventHandler(EV_HID_INPUT_DATA, &MyThrottle, SCX);
+		DefEventHandler(EV_HID_INPUT_DATA, &MyThrottle, SCY);
+
+		if (strcmp(YAWDevice, "THRPaddles") == 0) {
+			SetSCurve(&MyThrottle,	TRDR,	0, 1, 0, 3, 0);					// Set mild curve for YAW 
+			DefEventHandler(EV_HID_INPUT_DATA, &MyThrottle, TRDR);			
+		}
+
+		// Set Rudder curve and force re-read of axis
+
+		if (strcmp(YAWDevice, "RudderPedals") == 0) {
+			SetSCurve(&MyRudder, TRUDDER, Rudder_L_DZ,	Rudder_C_DZ,	Rudder_R_DZ,	Rudder_Curve[profile],	Rudder_Zoom);
+			DefEventHandler(EV_HID_INPUT_DATA, &MyRudder, TRUDDER);
+		}
+
+		if (StartupLock) {
+			printf("Joystick & Rudder Curves	... done.\x0a");
+			printf("-----------------------------------------------------------------------------------------------------------------------------------------------\x0a");
+		}
+		else if (announce) {
+			fnTextToSpeech(VoiceTxt);
+		}
+		
+		if (print) {
+			printf("Joystick Curves[%s]	: LDZ=%d, CDZ=%d,  RDZ=%d, Curve= %d, Zoom= %d\x0a", JSCurveSetting, Joystick_L_DZ, Joystick_C_DZ, Joystick_R_DZ, Joystick_Curve[profile], Joystick_Zoom);
+			printf("Rudder Curves[%s]	: LDZ=%d, CDZ=%d, RDZ=%d, Curve= %d, Zoom= %d\x0a", JSCurveSetting, Rudder_L_DZ, Rudder_C_DZ, Rudder_R_DZ, Rudder_Curve[profile], Rudder_Zoom);
+			printf("Slew Curves[%s]	: LDZ=%d, CDZ=%d, RDZ=%d, Curve= %d, Zoom= %d\x0a", JSCurveSetting, Slew_L_DZ, Slew_C_DZ, Slew_R_DZ, Slew_Curve[profile], Slew_Zoom);
+		}
+		else if (announce) {
+			printf("Curve Profile: [%s]\x0a", JSCurveSetting);
+		}
+	}
+
+
+	// FUNCTION:	Set context driven DX-SLIDER curves
+	// Parameter:	0 = linear, 1 or 2 = non-linear
+
+	int initSliderCurve(int x) {
+		DXCurveSetting = x;												// Variable used in Status Printout
+		int SliderProfile;
+		int SliderCurve;												// Used to define the LIST and can use within EXEC
+		
+		if (x == 0) {													// FSS Mode Radar
+			SetJCurve(&MyThrottle, TANT, 50, 50);						// Linear progression. Low sensitivity
+			SliderProfile = "FSS Mode";
+		}
+		if (x == 1)	{													// Normal flight
+			SliderCurve = LIST(0,0, 25,25, 50,50, 75,75, 100,100);		// Linear 
+			SetCustomCurve(&MyThrottle, TANT, SliderCurve);
+			SliderProfile = "Normal Flight";
+			
+		}
+		if (x == 2)	{													// Supercruise
+			SliderCurve = LIST(0,0, 25,25, 50,50, 75,75, 100,100);		// Linear 
+			SetCustomCurve(&MyThrottle, TANT, SliderCurve);
+			SliderProfile = "Supercruise";
+		}
+		
+		DefEventHandler(EV_HID_INPUT_DATA, &MyThrottle, TANT);		// Forces re-read of slider axis
+
+		if (!StartupLock) {
+			printf("++	Slider Curve Profile:	[%d] %s\x0a", x, SliderProfile);
+		}
+	}
+
+
+	// FUNCTION: Initialise Text To Speech Engine
+	
+	int initTextToSpeech() {
+		if (EnableVoice) {
+			fnVPOutput("Text to speech function enabled", 0, 1);
+		}
+		else {
+			printf("\x0a\++	Voice feedback via 'fnTextToSpeech()' not enabled\x0a");
+		}
+	}
+
+
+	// FUNCTION: Initialise Sound Effacts Engine 
+	
+	int initSoundFX() {
+		SounderExists = fopen(&SoundPath, "r");
+		if (SounderExists) {
+			fclose(SounderExists);
+			fnVPOutput("Script based sound FX enabled", 0, 1);			
+		}
+		else {
+			EnableSoundFX = DISABLED;
+			printf("\x0a\++	Sounder.exe not present at %s\x0a", &SoundPath);
+			printf("!!	Set correct path in ED_UserSettings.tmh if you want this script to use the fnSoundFX() function\x0a");
+			printf("\x0a\++	Sound Effects via fnSoundFX() not available\x0a");
+		}
+	}
+
+
+	// FUNCTION:	Save all changeable USERSETTINGS (refer ED_UserSettings.tmh)
+	// Parameter:	dummy - allows calls from REXEC and DeferCall
+
+	// Global VARS
+		
+	//		Default User Settings	|||||||||||||||||||| 	REVIEW: Move these somewhere else?
+
+	// Binary flag settings
+	int		defCurveInfo;			// PRINT/NOPRINT
+	int		defAutoHangar;			// ENABLED/DISABLED
+	int		defAutoGearUP;			// ENABLED/DISABLED
+	int		defAutoGearDOWN;		// ENABLED/DISABLED
+	int		defAutoLandingLights;	// ENABLED/DISABLED
+	int		defAutoHeatsink;		// ENABLED/DISABLED
+	int		defAutoStrobe;			// ENABLED/DISABLED
+	int		defAutoHONK;			// ENABLED/DISABLED
+	int		defAutoRecall;			// ENABLED/DISABLED
+	int		defAutoRETRACT;			// ENABLED/DISABLED
+	int		defNVGUI;				// ON/OFF
+	int		defFSDGUI;				// ON/OFF 
+	int		defTrainingMode;		// ENABLED/DISABLED
+	int		defAnnounceTraining;	// ENABLED/DISABLED
+	int		defUseAltVoice;			// YES/NO 
+	int		defEnableVoice;			// ENABLED/DISABLED 
+	int		defFlashLEDs;			// ENABLED/DISABLED
+	int		defEnableSoundFX;		// ENABLED/DISABLED
+	int		defAutoAbort;			// ENABLED/DISABLED
+	int		defSCOLowFuelFailsafe;	// ENABLED/DISABLED
+	int		defAutoDisembark;		// ENABLED/DISABLED
+	int		defAnnounceTripTime;	// ENABLED/DISABLED
+
+	// Integer settings
+	int		defFAOFFCurves;			// OFF, SLOWEST, SLOW, MEDIUM, MILD 
+	int		defChatTABs;			// 1 - 4
+	int		defAltVoiceRate;		// -10 < 0 > +10 
+	int		defVoiceRate;			// -10 < 0 > +10
+	int		defVoiceVolume;			// 0 - 100
+	int		defLEDLevel;			// 0 - 5
+	int		defThrustUpTime;		// 0 - ???? (milliseconds)
+	int		defPIPMode;				// 0 - 5
+	int		defUserSettings;		// Binary encoded via fnEncodeUserSettings()
+
+	int		DEBUGMODE;
+	
+	int initUserSettings(int dummy = 0) {
+		
+		printf("\x0a++	Record User Settings ...\x0a");
+
+		// Binary flag settings
+		defCurveInfo			= CurveInfo;			// PRINT/NOPRINT
+		defAutoHangar			= AutoHangar;			// ENABLED/DISABLED
+		defAutoGearUP			= AutoGearUP;			// ENABLED/DISABLED
+		defAutoGearDOWN			= AutoGearDOWN;			// ENABLED/DISABLED
+		defAutoLandingLights	= AutoLandingLights;	// ENABLED/DISABLED
+		defAutoHeatsink			= AutoHeatsink;			// ENABLED/DISABLED
+		defAutoStrobe			= AutoStrobe;			// ENABLED/DISABLED
+		defAutoHONK				= AutoHONK;				// ENABLED/DISABLED
+		defAutoRecall			= AutoRecall;			// ENABLED/DISABLED
+		defAutoRETRACT			= AutoRETRACT;			// ENABLED/DISABLED
+		defNVGUI				= NVGUI;				// ON/OFF
+		defFSDGUI				= FSDGUI;				// ON/OFF 
+		defTrainingMode			= TrainingMode;			// ENABLED/DISABLED
+		defAnnounceTraining		= AnnounceTraining;		// ENABLED/DISABLED
+		defUseAltVoice			= UseAltVoice;			// YES/NO 
+		defEnableVoice			= EnableVoice;			// ENABLED/DISABLED 
+		defFlashLEDs			= FlashLEDs;			// ENABLED/DISABLED
+		defEnableSoundFX		= EnableSoundFX;		// ENABLED/DISABLED
+		defAutoAbort			= AutoAbort;			// ENABLED/DISABLED
+		defSCOLowFuelFailsafe	= SCOLowFuelFailsafe;	// ENABLED/DISABLED
+		defAutoDisembark		= AutoDisembark;		// ENABLED/DISABLED
+		defAnnounceTripTime		= AnnounceTripTime; 	// ENABLED/DISABLED
+		
+		// Integer settings
+		defFAOFFCurves			= FAOFFCurves;			// OFF, SLOWEST, SLOW, MEDIUM, MILD  
+		defChatTABs				= ChatTABs;				// 1 - 4
+		defAltVoiceRate			= AltVoiceRate;			// -10 < 0 > +10 
+		defVoiceRate			= VoiceRate;			// -10 < 0 > +10
+		defVoiceVolume			= VoiceVolume;			// 0 - 100
+		defLEDLevel				= LEDLevel;				// 0 - 5
+		defThrustUpTime			= ThrustUpTime;			// 0 - ???? (milliseconds)
+		defPIPMode				= PIPMode;				// 0 - 5
+
+		defUserSettings 		= fnEncodeUserSettings(0);
+		
+		printf("++	User Settings recorded\x0a");
+		
+		if (DEBUG == 0) DEBUGMODE = "OFF";
+		if (DEBUG == 1) DEBUGMODE = "ON";
+		if (DEBUG == 2) DEBUGMODE = "LOG";
+		if (DEBUG == 3) DEBUGMODE = "VERBOSE";
+		if (DEBUG > 3 | DEBUG < 0)	DEBUGMODE = "NOT SET";
+				
+	}
+	
+	
+	// FUNCTION:	Restore all changeable USERSETTINGS to original settings (refer ED_UserSettings.tmh)
+	// Parameter:	dummy - allows calls from REXEC and DeferCall
+	
+	int fnResetUserSettings(int dummy = 0) {
+	
+		printf("\x0a++	Restore User Settings to default...\x0a");
+		
+		// Binary flag settings
+		CurveInfo			= defCurveInfo;				// PRINT/NOPRINT
+		AutoHangar			= defAutoHangar;			// ENABLED/DISABLED
+		AutoGearUP			= defAutoGearUP;			// ENABLED/DISABLED
+		AutoGearDOWN		= defAutoGearDOWN;			// ENABLED/DISABLED
+		AutoLandingLights	= defAutoLandingLights;		// ENABLED/DISABLED
+		AutoHeatsink		= defAutoHeatsink;			// ENABLED/DISABLED
+		AutoStrobe			= defAutoStrobe;			// ENABLED/DISABLED
+		AutoHONK			= defAutoHONK;				// ENABLED/DISABLED
+		AutoRecall			= defAutoRecall;			// ENABLED/DISABLED
+		AutoRETRACT			= defAutoRETRACT;			// ENABLED/DISABLED
+		NVGUI				= defNVGUI;					// ON/OFF
+		FSDGUI				= defFSDGUI;				// ON/OFF 
+		TrainingMode		= defTrainingMode;			// ENABLED/DISABLED
+		AnnounceTraining	= defAnnounceTraining;		// ENABLED/DISABLED
+		UseAltVoice			= defUseAltVoice;			// YES/NO 
+		EnableVoice			= defEnableVoice;			// ENABLED/DISABLED 
+		FlashLEDs			= defFlashLEDs;				// ENABLED/DISABLED
+		EnableSoundFX		= defEnableSoundFX;			// ENABLED/DISABLED
+		AutoAbort			= defAutoAbort;				// ENABLED/DISABLED
+		SCOLowFuelFailsafe	= defSCOLowFuelFailsafe;	// ENABLED/DISABLED
+		AutoDisembark		= defAutoDisembark;			// ENABLED/DISABLED
+		AnnounceTripTime	= defAnnounceTripTime;		// ENABLED/DISABLED 
+		
+		// Integer settings
+		FAOFFCurves			= defFAOFFCurves;			// OFF, SLOWEST, SLOW, MEDIUM, MILD 
+		ChatTABs			= defChatTABs;				// 1 - 4
+		AltVoiceRate		= defAltVoiceRate;			// -10 < 0 > +10 
+		VoiceRate			= defVoiceRate;				// -10 < 0 > +10
+		VoiceVolume			= defVoiceVolume;			// 0 - 100
+		LEDLevel			= defLEDLevel;				// 0 - 5
+		ThrustUpTime		= defThrustUpTime;			// 0 - ???? (milliseconds)
+		PIPMode				= defPIPMode;				// 0 - 5
+
+		printf("++	User settings restored\x0a");
+	}
+
+	// FUNCTION:	Encode all binary users ettings. Save via stfnMyStates()
+	//				This ensures settings carry over from last session
+	// Parameter:	dummy - allows calls from REXEC and DeferCall
+		
+	int fnEncodeUserSettings(int dummy = 0) {
+		
+		int EncodedSettings = 0;
+
+		if (CurveInfo)			EncodedSettings = EncodedSettings | (1 << 0);	// Bit 0
+		if (AutoHangar)         EncodedSettings = EncodedSettings | (1 << 1); 	// Bit 1
+		if (AutoGearUP)         EncodedSettings = EncodedSettings | (1 << 2); 	// Bit 2
+		if (AutoGearDOWN)       EncodedSettings = EncodedSettings | (1 << 3); 	// Bit 3
+		if (AutoLandingLights)  EncodedSettings = EncodedSettings | (1 << 4); 	// Bit 4
+		if (AutoHeatsink)		EncodedSettings = EncodedSettings | (1 << 5); 	// Bit 5
+		if (AutoStrobe)			EncodedSettings = EncodedSettings | (1 << 6); 	// Bit 6
+		if (AutoHONK)			EncodedSettings = EncodedSettings | (1 << 7); 	// Bit 7
+		if (AutoRecall)			EncodedSettings = EncodedSettings | (1 << 8); 	// Bit 8
+		if (AutoRETRACT)		EncodedSettings = EncodedSettings | (1 << 9); 	// Bit 9
+		if (NVGUI)				EncodedSettings = EncodedSettings | (1 << 10); 	// Bit 10
+		if (FSDGUI)				EncodedSettings = EncodedSettings | (1 << 11);	// Bit 11
+		if (TrainingMode)		EncodedSettings = EncodedSettings | (1 << 12);	// Bit 12
+		if (AnnounceTraining)	EncodedSettings = EncodedSettings | (1 << 13);	// Bit 13
+		if (UseAltVoice)		EncodedSettings = EncodedSettings | (1 << 14);	// Bit 14
+		if (EnableVoice)		EncodedSettings = EncodedSettings | (1 << 15);	// Bit 15
+		if (FlashLEDs)			EncodedSettings = EncodedSettings | (1 << 16);	// Bit 16
+		if (EnableSoundFX)		EncodedSettings = EncodedSettings | (1 << 17);	// Bit 17
+		if (AutoAbort)			EncodedSettings = EncodedSettings | (1 << 18);	// Bit 18
+		if (SCOLowFuelFailsafe) EncodedSettings = EncodedSettings | (1 << 19);  // Bit 19
+		if (AutoDisembark)		EncodedSettings = EncodedSettings | (1 << 20);	// Bit 20
+		if (AnnounceTripTime)	EncodedSettings = EncodedSettings | (1 << 21);	// Bit 21
+		
+		printf("++	Encoded User Settings = %d\x0a", EncodedSettings);
+		
+		return EncodedSettings;
+
+	}
+
+	// FUNCTION:	Decode all usersettings retieved from stfnMystates()
+	// Parameter:	DecodeSettings. Encoded binary user settings flags loaded via stfnMyStates()
+	
+	int fnDecodeUserSettings(int DecodeSettings) {
+
+		if ((DecodeSettings & (1 << 0))		!= 0) CurveInfo = 1;			else CurveInfo = 0;
+		if ((DecodeSettings & (1 << 1))		!= 0) AutoHangar = 1;			else AutoHangar = 0;
+		if ((DecodeSettings & (1 << 2))		!= 0) AutoGearUP = 1;			else AutoGearUP = 0;
+		if ((DecodeSettings & (1 << 3))		!= 0) AutoGearDOWN = 1;			else AutoGearDOWN = 0;
+		if ((DecodeSettings & (1 << 4))		!= 0) AutoLandingLights = 1;	else AutoLandingLights = 0;
+		if ((DecodeSettings & (1 << 5))		!= 0) AutoHeatsink = 1;			else AutoHeatsink = 0; 
+		if ((DecodeSettings & (1 << 6))		!= 0) AutoStrobe = 1;			else AutoStrobe = 0;
+		if ((DecodeSettings & (1 << 7))		!= 0) AutoHONK = 1;				else AutoHONK = 0;
+		if ((DecodeSettings & (1 << 8))		!= 0) AutoRecall = 1;			else AutoRecall = 0;
+		if ((DecodeSettings & (1 << 9))		!= 0) AutoRETRACT = 1;			else AutoRETRACT = 0;
+		if ((DecodeSettings & (1 << 10))	!= 0) NVGUI = 1;				else NVGUI = 0;
+		if ((DecodeSettings & (1 << 11))	!= 0) FSDGUI = 1;				else FSDGUI =0;
+		if ((DecodeSettings & (1 << 12))	!= 0) TrainingMode = 1;			else TrainingMode = 0;
+		if ((DecodeSettings & (1 << 13))	!= 0) AnnounceTraining = 1;		else AnnounceTraining = 0;
+		if ((DecodeSettings & (1 << 14))	!= 0) UseAltVoice = 1;			else UseAltVoice = 0;
+		if ((DecodeSettings & (1 << 15))	!= 0) EnableVoice = 1;			else EnableVoice = 0;
+		if ((DecodeSettings & (1 << 16))	!= 0) FlashLEDs = 1;			else FlashLEDs = 0;
+		if ((DecodeSettings & (1 << 17))	!= 0) EnableSoundFX = 1;		else EnableSoundFX = 0;
+		if ((DecodeSettings & (1 << 18))	!= 0) AutoAbort = 1;			else AutoAbort = 0;
+		if ((DecodeSettings & (1 << 19))	!= 0) SCOLowFuelFailsafe = 1;	else SCOLowFuelFailsafe = 0;
+		if ((DecodeSettings & (1 << 20))	!= 0) AutoDisembark = 1;		else AutoDisembark = 0;
+		if ((DecodeSettings & (1 << 21))	!= 0) AnnounceTripTime = 1;		else AnnounceTripTime = 0;
+
+		printf("++	User settings decoded\x0a");
+		
+	}
+	
+	//	FUNCTION:	Print UserSettings delta to console
+	//	Parameter:	dummy:	Enables DeferCall and REXEC
+
+	int fnUserSettingsDelta(int dummy = 0)	{
+
+		printf("++	The following UserSettings vary from ED_UserSettings.tmh\x0a\x0a");
+		printf("	Setting			Value	(Default)\x0a");
+		printf("=============================================\x0a");
+		
+		// Binary user settings flags
+		if (CurveInfo			!= defCurveInfo)			printf("	CurvoInfo		= %d	(%d)\x0a",	CurveInfo, defCurveInfo);
+		if (AutoHangar			!= defAutoHangar)			printf("	AutoHangar		= %d	(%d)\x0a",	AutoHangar, defAutoHangar);
+		if (AutoGearUP			!= defAutoGearUP)			printf("	AutoGearUP		= %d	(%d)\x0a",	AutoGearUP, defAutoGearUP);
+		if (AutoGearDOWN		!= defAutoGearDOWN)			printf("	AutoGearDOWN		= %d	(%d)\x0a",	AutoGearDOWN, defAutoGearDOWN);
+		if (AutoLandingLights	!= defAutoLandingLights)	printf("	AutoLandingLights		= %d	(%d)\x0a",	AutoLandingLights, defAutoLandingLights);
+		if (AutoHeatsink		!= defAutoHeatsink)			printf("	AutoHeatsink		= %d	(%d)\x0a",	AutoHeatsink, defAutoHeatsink);
+		if (AutoStrobe			!= defAutoStrobe)			printf("	AutoStrobe		= %d	(%d)\x0a",	AutoStrobe, defAutoStrobe);
+		if (AutoHONK			!= defAutoHONK)				printf("	AutoHONK		= %d	(%d)\x0a",	AutoHONK, defAutoHONK);
+		if (AutoRecall			!= defAutoRecall)			printf("	AutoRecall		= %d	(%d)\x0a",	AutoRecall, defAutoRecall);
+		if (AutoRETRACT			!= defAutoRETRACT)			printf("	AutoRETRACT		= %d	(%d)\x0a",	AutoRETRACT, defAutoRETRACT);
+		if (NVGUI				!= defNVGUI)				printf("	NVGUI			= %d	(%d)\x0a",	NVGUI, defNVGUI);
+		if (FSDGUI				!= defFSDGUI)				printf("	FSDGUI			= %d	(%d)\x0a",	FSDGUI, defFSDGUI);
+		if (TrainingMode		!= defTrainingMode)			printf("	TrainingMode		= %d	(%d)\x0a",	TrainingMode, defTrainingMode);
+		if (AnnounceTraining	!= defAnnounceTraining)		printf("	AnnounceTraining		= %d	(%d)\x0a",	AnnounceTraining, defAnnounceTraining);
+		if (UseAltVoice			!= defUseAltVoice)			printf("	UseAltVoice		= %d	(%d)\x0a",	UseAltVoice, defUseAltVoice);
+		if (EnableVoice			!= defEnableVoice)			printf("	EnableVoice		= %d	(%d)\x0a",	EnableVoice, defEnableVoice);
+		if (FlashLEDs			!= defFlashLEDs)			printf("	FlashLEDs		= %d	(%d)\x0a",	FlashLEDs, defFlashLEDs);
+		if (EnableSoundFX		!= defEnableSoundFX)		printf("	EnableSoundFX		= %d	(%d)\x0a",	EnableSoundFX, defEnableSoundFX);
+		if (AutoAbort			!= defAutoAbort)			printf("	AutoAbort		= %d	(%d)\x0a",	AutoAbort, defAutoAbort);
+		if (SCOLowFuelFailsafe	!= defSCOLowFuelFailsafe)	printf("	SCOLowFuelFailsafe	= %d	(%d)\x0a",	SCOLowFuelFailsafe, defSCOLowFuelFailsafe);
+		if (AutoDisembark		!= defAutoDisembark)		printf("	AutoDisembark		= %d	(%d)\x0a",	AutoDisembark, defAutoDisembark);
+		if (AnnounceTripTime	!= defAnnounceTripTime)		printf("	AnnounceTripTime	= %d	(%d)\x0a",	AnnounceTripTime, defAnnounceTripTime);
+			
+		// Integer user settings
+		if (FAOFFCurves			!= defFAOFFCurves)			printf("	FAOFFCurves		= %d	(%d)\x0a", FAOFFCurves, defFAOFFCurves);		// OFF, SLOWEST, SLOW, MEDIUM, MILD 
+		if (ChatTABs			!= defChatTABs)				printf("	ChatTABs		= %d	(%d)\x0a", ChatTABs, defChatTABs);				// 1 - 4
+		if (AltVoiceRate		!= defAltVoiceRate)			printf("	AltVoiceRate		= %d	(%d)\x0a", AltVoiceRate, defAltVoiceRate);	// -10 < 0 > +10 
+		if (VoiceRate			!= defVoiceRate)			printf("	VoiceRate		= %d	(%d)\x0a", VoiceRate, defVoiceRate);			// -10 < 0 > +10
+		if (VoiceVolume			!= defVoiceVolume)			printf("	VoiceVolume		= %d	(%d)\x0a", VoiceVolume, defVoiceVolume);		// 0 - 100
+		if (LEDLevel			!= defLEDLevel)				printf("	LEDLevel		= %d	(%d)\x0a", LEDLevel, defLEDLevel);				// 0 - 5
+		if (ThrustUpTime		!= defThrustUpTime)			printf("	ThrustUpTime		= %d	(%d)\x0a", ThrustUpTime, defThrustUpTime);	// 0 - ???? (milliseconds)		
+		if (PIPMode				!= defPIPMode)				printf("	PIPMode		= %d	(%d)\x0a", PIPMode, defPIPMode);					// 0 - 5
+
+		printf("=============================================\x0a\x0a");
+
+	}
+
+	//	FUNCTION:	Compares non-binary integer based user settings with values in ED_UserSettings.tmh
+	//	Parameter:	dummy: enables REXEC and DeferCall
+	
+	int fnCompareIntSettings(int dummy = 0) {
+		int DeltaFound = 0;
+		
+		if (FAOFFCurves		!= defFAOFFCurves)	DeltaFound = 1;
+		if (ChatTABs		!= defChatTABs)		DeltaFound = 1;
+		if (AltVoiceRate	!= defAltVoiceRate)	DeltaFound = 1;
+		if (VoiceRate		!= defVoiceRate)	DeltaFound = 1;
+		if (VoiceVolume		!= defVoiceVolume)	DeltaFound = 1;
+		if (LEDLevel		!= defLEDLevel)		DeltaFound = 1;
+		if (ThrustUpTime	!= defThrustUpTime)	DeltaFound = 1;
+		if (PIPMode			!= defPIPMode)		DeltaFound = 1;
+		
+		return DeltaFound;
+		
+	}
+
+	
+//	END

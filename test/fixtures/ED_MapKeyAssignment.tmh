@@ -1,0 +1,1099 @@
+
+	//--------------------------------------------------------------------------------------//
+	//		  CMDR Clicker's Elite Dangerous Enhanced Thrustmaster TARGET Script			//
+	//--------------------------------------------------------------------------------------//
+
+	//								T16000 + TWCS REQUIRED									//
+
+	//							This file: ED_MapKeyAssignment.tmh							//
+
+	// Contains MapKey Statements for all button and switch actions
+	// Contains MapKey Statements to announce via TextToSpeech and printf to console for each button or switch action (training mode)
+
+/* 
+	Index:			FUNCTION
+	Line 31: 		int MainKeyMap() {
+	Line 44:			Joystick Buttons
+	Line 339:			Throttle Buttons 
+	Line 597: 		int TrainingKeyMap() {
+	Line 607:			Joystick buttons
+	Line 892:			Throttle buttons
+*/
+
+	// START
+
+	// -------------------------- //
+	//  KeyMaps for Running Game  //
+	// -------------------------- //
+
+	// FUNCTION:	This MapKey set is called from fnGameStarted() when we detect Game is running
+	
+	int MainKeyMap() {
+
+		printf("\x0a\HOTAS Mode:	GAME\x0a");
+			
+	// ---------------------------------------- //
+	// Map Joystick triggers, switches and hats //
+	// ---------------------------------------- //
+
+		// Include MapKey for everything.
+		// Include MapKeyR only where used.
+				
+	//===================================================================================================
+
+	//	Joystick Buttons
+	//	----------------
+
+	//	(Trigger Switch 1 - Primary Fire)
+	//	---------------------------------
+
+		if (MapKeyProfile == BASIC) {			// ...use BASIC profile settings	// MapKeyProfile is set within ED_UserSettings.tmh
+			MapKeyUMD(&MyJoystick, TS1,
+				0,																	// U - 
+				PrimaryFire,														// M - DX1 - Trigger
+				0																	// D - 
+				);			
+		}
+		else {									// ...use FULL profile settings 
+			MapKeyUMD(&MyJoystick, TS1,
+				EXEC("tgTriggerMode(1);"),											// U - Increment trigger mode for shifted Primary Fire
+				EXEC("fnAdvFireControl(0);"),										// M - Default Primary Fire action
+				EXEC("fnAdvFireControl(1);")										// D - Shifted Primary Fire action
+				);
+			MapKeyRUMD(&MyJoystick, TG1,		// TG1 RELEASE
+				0,																	// U -
+				PrimaryFire,														// M - Release trigger
+				0																	// D -			
+				);
+		}
+
+	//	(Trigger Switch 2 - Secondary Fire)
+	//	-----------------------------------
+
+		if (MapKeyProfile == BASIC) {			// 
+			MapKeyUMD(&MyJoystick, TS2,
+				PULSE+HUDMode,														// U - '/' - Switch between Combat and Discovery HUD modes 
+				SecondaryFire,														// M - DX2 - Rear Thumb
+				EXEC("fnVPOutput(\"not used\");")									// D - 				
+				);			
+		}
+		else {									// 
+			MapKeyUMD(&MyJoystick, TS2,
+				EXEC("tgTriggerMode(2);"),											// U - Swap trigger action between timed and press-to-fire/press-to-stop
+				EXEC("fnAdvFireControl(2);"),										// M - Default Secondary Fire action
+				EXEC("fnAdvFireControl(3);")										// D - Shifted Secondary Fire action
+				);			
+			MapKeyRUMD(&MyJoystick, TS2,		// S2 RELEASE
+				0,																	// U -
+				SecondaryFire,														// M - Release trigger 
+				0																	// D -
+				);
+		}
+
+	//	(Trigger Switch 3 - Flight Assist)
+	//	----------------------------------
+		
+		if (MapKeyProfile == BASIC) {			// 
+			MapKeyUMD(&MyJoystick, TS3,
+				PULSE+SilentRunning,												// U - 'DELETE' - Map "Silent Running" within game binding to TOGGLE		
+				PULSE+FlightAssist,													// M - 'z' - Right Thumb - Set Flight Assist to "TOGGLE" in game binding
+				EXEC("fnVPOutput(\"not used\");")									// D - 
+				);			
+		}
+		else {									// 
+			MapKeyUMD(&MyJoystick, TS3,
+				SEQ(EXEC("tgSilentRunning(ON);"), EXEC("tgSilentRunning(OFF);")),	// U - TOGGLE: Silent Running ON/OFF 
+				EXEC("tgEnhancedFAOFF(0);"),										// M - TOGGLE: FA-OFF/ON
+				EXEC("fnVPOutput(\"not used\");")									// D - 
+				);
+		}
+
+	//	(Trigger Switch 4 - Hardpoints)
+	//	-------------------------------
+		
+		if (MapKeyProfile == BASIC) {			// 
+			MapKeyUMD(&MyJoystick, TS4, 
+				PULSE+HUDMode,														// U - '/'
+				PULSE+DeployHardpoints,												// M - 'u' - Left Thumb
+				EXEC("fnVPOutput(\"not used\");")									// D - 
+				);	
+		}
+		else {									// 
+			MapKeyUMD(&MyJoystick, TS4, 
+				EXEC("tgHUDMode(0);"),												// U - Toggle - Analysis/Combat Mode
+				EXEC("tgHardpoints();"),											// M - Deploy/Retract Hard-points - Toggles HUD Mode in Supercruise
+				EXEC("tgXAxis(SET);")												// D - Toggle Joystick X-Axis between Roll and Yaw
+				);
+		}
+		
+	//===================================================================================================
+
+	//	Joystick POV Hat
+	//	----------------
+
+		if (MapKeyProfile == BASIC) {			// 
+			MapKeyUMD(&MyJoystick, H1U, 
+				PULSE+SelectHighestThreat,											// U - 'y'
+				PULSE+SelectTargetAhead,											// M - 't'
+				PULSE+SelectNextHostileShip											// D - 'h'
+				);
+		}
+		else {
+			MapKeyUMD(&MyJoystick, H1U, 
+				PULSE+SelectHighestThreat,											// U - 'y'
+				PULSE+SelectTargetAhead,											// M - 't'
+				PULSE+SelectNextHostileShip											// D - 'h'
+				);
+		}
+
+		if (MapKeyProfile == BASIC) {			// 		
+			MapKeyUMD(&MyJoystick, H1D, 
+				PULSE+WingmanTarget,												// U - '5'
+				SEQ(PULSE+SelectWingman1,											// M - '8'
+					PULSE+SelectWingman2,											//   - '9'
+					PULSE+SelectWingman3),											//   - '0'
+				PULSE+WingmanNavLock												// D - '6'
+				);
+		}
+		else {
+			MapKeyUMD(&MyJoystick, H1D, 
+				PULSE+WingmanTarget,												// U - '5'
+				SEQ(PULSE+SelectWingman1,											// M - '8'
+					PULSE+SelectWingman2,											//   - '9'
+					PULSE+SelectWingman3),											//   - '0'
+				PULSE+WingmanNavLock												// D - '6'
+				);
+		}
+				
+		if (MapKeyProfile == BASIC) {			// 				
+			MapKeyUMD(&MyJoystick, H1L, 
+				PULSE+LandingGear,													// U - 'l' - lowercase L 
+				PULSE+NextFireGroup,												// M - ',' - comma 
+				PULSE+CargoScoop													// D - 'HOME' key 
+				);
+		}
+		else {
+			MapKeyUMD(&MyJoystick, H1L, 
+				EXEC("tgLandingGear(0);"),											// U - Toggle Landing Gear
+				PULSE+NextFireGroup,												// M - ',' - comma
+				SEQ(EXEC("tgCargoScoop(DEPLOY);"),EXEC("tgCargoScoop(RETRACT);") )	// D - Deploy if retracted, Otherwise Retract 
+				);
+		}
+		
+		if (MapKeyProfile == BASIC) {			// 
+			MapKeyUMD(&MyJoystick, H1R, 
+				PULSE+ShipLights,													// U - 'INSERT'
+				PULSE+SelectNextShip,												// M - 'g'
+				PULSE+NightVision													// D - LeftAlt+'INSERT'
+				);
+		}
+		else {
+			MapKeyUMD(&MyJoystick, H1R, 
+				EXEC("tgLights(OFF);"),												// U - Sequence Lights 
+				PULSE+SelectNextShip,												// M - 'g'
+				EXEC("tgLights(ON);")												// D - Turn on Night Vision
+				);
+		}
+		
+		
+	//===================================================================================================
+
+	//	Joystick Base Buttons
+	//	---------------------
+
+		if (MapKeyProfile == BASIC) {			// 		
+			MapKey(&MyJoystick, B5,  PULSE+GalMap);									// LeftShift+';'
+		}
+		else {
+			MapKeyUMD(&MyJoystick, B5, 
+				EXEC("fnVPOutput(\"not used\");"),									// U - 
+				PULSE+GalMap,														// LeftShift+';'
+				EXEC("fnVPOutput(\"not used\");")									// D - 
+				);
+		}
+
+		if (MapKeyProfile == BASIC) {			// 		
+			MapKey(&MyJoystick, B6, EXEC("fnVPOutput(\"not used\");"));				//
+		}
+		else {
+			MapKeyUMD(&MyJoystick, B6,
+				EXEC("fnVPOutput(\"not used\");"),									// U - 
+				EXEC("fnDRShip();"),												// M - Dismiss or recall the ship when on foot or in SRV 
+				EXEC("fnVPOutput(\"not used\");")									// D - 
+				);
+		}
+
+		if (MapKeyProfile == BASIC) {			// 		
+			MapKey(&MyJoystick, B7,  PULSE+HideShipGUI);							// LeftCTRL+LeftALT+'g'
+		}
+		else {
+			MapKeyUMD(&MyJoystick, B7,
+				EXEC("fnVPOutput(\"not used\");"),									// U - 
+				PULSE+HideShipGUI,													// M - LeftCTRL+LeftALT+'g'
+				EXEC("fnVPOutput(\"not used\");")									// D -
+				);
+		}
+		
+		if (MapKeyProfile == BASIC) {			// 
+			MapKey(&MyJoystick, B8, EXEC("fnVPOutput(\"not used\");"));				//
+		}
+		else {
+			MapKeyUMD(&MyJoystick, B8,
+				EXEC("fnVPOutput(\"not used\");"),									// U - 
+				EXEC("fnHangarServices(ENTER);"),									// M - 
+				EXEC("fnVPOutput(\"not used\");")									// D -
+				);
+		}
+
+		if (MapKeyProfile == BASIC) {			// 		
+			MapKey(&MyJoystick, B9,  PULSE+ExtCamera);								// 'NUMPAD 5' - External camera ON/OFF
+		}
+		else {
+			MapKeyUMD(&MyJoystick, B9,
+				EXEC("fnVPOutput(\"not used\");"),									// U - 
+				EXEC("tgExtCamera();"),												// M - External Camera ON/OFF 
+				EXEC("fnVPOutput(\"not used\");")									// D -
+				);
+		}
+		
+		if (MapKeyProfile == BASIC) {			// 		
+			MapKey(&MyJoystick, B10, PULSE+SystemMap);								// ';'
+		}
+		else {
+			MapKeyUMD(&MyJoystick, B10,
+				EXEC("fnVPOutput(\"not used\");"),									// U - 
+				PULSE+SystemMap,													// M - ';' 
+				EXEC("fnStateDump();")												// D - Debug function. Prints States Banner
+				);
+		}
+		
+		if (MapKeyProfile == BASIC) {			// 
+			MapKey(&MyJoystick, B11, PULSE+ShowConnectionStatus);					// 'LCTRL+b' 
+		}
+		else {
+			MapKeyUMD(&MyJoystick, B11,
+				EXEC("fnVPOutput(\"not used\");"),									// U - 
+				PULSE+m_ShowGameStats,												// M - Show both Frame Rate and Connection Status 
+				EXEC("fnVPOutput(\"not used\");")									// D -
+				);
+		}
+
+		if (MapKeyProfile == BASIC) {			// 
+			MapKey(&MyJoystick, B12, EXEC("fnVPOutput(\"not used\");"));			//
+		}
+		else {
+			MapKeyUMD(&MyJoystick, B12,
+				EXEC("fnVPOutput(\"not used\");"),									// U - 
+				EXEC("fnClearChatBox(0);"),											// M - Clear the COMMS panel chat box
+				EXEC("fnVPOutput(\"not used\");")									// D -
+				);
+		}
+
+		if (MapKeyProfile == BASIC) {			// 
+			MapKey(&MyJoystick, B13, EXEC("fnVPOutput(\"not used\");"));			//
+		}
+		else {
+			MapKeyUMD(&MyJoystick, B13,
+				EXEC("fnVPOutput(\"not used\");"),									// U - 
+//-				SEQ(PULSE+m_NAVBeaconWing, PULSE+m_NAVBeaconOff),					// M - My NAV Beacon - ON/OFF
+				EXEC("tgWingBeacon(0);"),											// M - My NAV Beacon - ON/OFF
+				EXEC("fnVPOutput(\"not used\");")									// D -
+				);
+		}
+		
+		if (MapKeyProfile == BASIC) {			// 
+			MapKey(&MyJoystick, B14, EXEC("fnVPOutput(\"not used\");"));			//
+		}
+		else {
+			MapKeyUMD(&MyJoystick, B14, 
+				EXEC("initCurves(MEDIUM,	CurveInfo);"),							// U - Set Curves = MEDIUM
+				EXEC("initCurves(OFF,		CurveInfo);"),							// M - Set Curves = OFF
+				EXEC("initCurves(SLOWEST,	CurveInfo);")							// D - Set Curves = SLOWEST
+				);
+		}
+
+		if (MapKeyProfile == BASIC) {			// 
+			MapKey(&MyJoystick, B15, EXEC("fnVPOutput(\"not used\");"));			// 
+		}
+		else {
+			MapKeyUMD(&MyJoystick, B15,
+				EXEC("fnVPOutput(\"not used\");"),									// U - 
+				PULSE+m_ChangeColours,												// M - Change Engine and Weapon Colours
+				EXEC("fnVPOutput(\"not used\");")									// D -
+				);
+		}
+		
+		if (MapKeyProfile == BASIC) {			// 
+			MapKey(&MyJoystick, B16, PULSE+ShowFramerate);							// LCTRL+f 
+		}
+		else {
+			MapKeyUMD(&MyJoystick, B16,
+				EXEC("fnModeSwitch(1);"),											// U - Menulog to Private Group
+				EXEC("fnModeSwitch(2);"),											// M - Menulog to Solo 
+				EXEC("fnModeSwitch(0);")											// D - Menulog to Open 
+				);
+		}
+		
+	//===================================================================================================
+
+	//	Throttle Buttons
+	//	----------------
+
+		
+		if (MapKeyProfile == BASIC) {			// 
+			MapKey(&MyThrottle, TBTN1, PULSE+LookOnOff);							// 'o' - thumb button 
+		}
+		else {
+			MapKeyUMD(&MyThrottle, TBTN1, 
+				EXEC("fnRequestDock();"),											// U - Fire Req Dock seq macro
+				PULSE+LookOnOff,													// M - 'o' - Thumb
+				EXEC("fnVPOutput(\"not used\");")									// D - 
+				);
+		}
+
+		if (MapKeyProfile == BASIC) {			// 
+			MapKey(&MyThrottle, TBTN2, 0);											//  ** DO NOT TOUCH ** Used as ShiftButton for UMD - UP 
+		}
+		else {
+			MapKey(&MyThrottle, TBTN2, REXEC(hSoundFX, 3000, "fnSoundFX(\"boop\", 50);", RNOSTOP));	//  ShiftButton: Sound Reminder every 3 seconds
+			MapKeyR(&MyThrottle, TBTN2, EXEC("StopAutoRepeat(hSoundFX);"));		//RELEASE			//  Cancel reminder soundfx
+		}
+		if (MapKeyProfile == BASIC) {			// 
+			MapKey(&MyThrottle, TBTN3, 0);											//  ** DO NOT TOUCH ** Used as ShiftButton for UMD - DOWN 
+		}
+		else {
+			MapKey(&MyThrottle, TBTN3, REXEC(hSoundFX, 3000, "fnSoundFX(\"boop\", 50);", RNOSTOP));	//  ShiftButton: Sound Reminder every 3 seconds
+			MapKeyR(&MyThrottle, TBTN3, EXEC("StopAutoRepeat(hSoundFX);"));		//RELEASE			//  Cancel reminder soundfx
+		}
+
+		if (MapKeyProfile == BASIC) {			// 
+			MapKeyUMD(&MyThrottle, TBTN4, 
+				EXEC("fnVPOutput(\"not used\");"),									// U - 
+				PULSE+EngineBoost,													// M - LeftShift+'b' - Middle Finger UP
+				EXEC("fnVPOutput(\"not used\");")									// D - 
+				);
+		}
+		else {
+			MapKeyUMD(&MyThrottle, TBTN4, 
+				EXEC("fnVoiceVolume(INCREASE);"),									// U - Increase Text to Speech Volume
+				EXEC("tgBoost();"),													// M - Boost
+				EXEC("fnVPOutput(\"not used\");")									// D - 
+				);
+		}
+		
+		if (MapKeyProfile == BASIC) {			// 
+			MapKeyUMD(&MyThrottle, TBTN5, 
+				EXEC("fnVPOutput(\"not used\");"),									// U - 
+				PULSE+ReverseThrottle,												// M - NP '*' - Middle Finger DOWN - set to TOGGLE
+				PULSE+SRVHandbrake													// D - 'x'
+				);
+		}
+		else {
+			MapKeyUMD(&MyThrottle, TBTN5, 
+				EXEC("fnVoiceVolume(DECREASE);"),									// U - Decrease Text to Speech Volume 
+				SEQ(EXEC("tgReverseThrust(1);"), EXEC("tgReverseThrust(3);")),		// M - Standard Reverse	- Deploy Speedbrake if Hardpoints deployed
+				PULSE+SRVHandbrake													// D - 'x'
+				);
+		}
+
+		if (MapKeyProfile == BASIC) {			// 
+			MapKeyUMD(&MyThrottle, TLOCK, 
+				EXEC("fnVPOutput(\"not used\");"),									// U - 
+				PULSE+ResetHeadOrientation,											// M - '~' - Slew Control - PRESS 
+				PULSE+EjectCargo													// D - 'END'
+				);
+		}
+		else{
+			MapKeyUMD(&MyThrottle, TLOCK, 
+				EXEC("fnVPOutput(\"not used\");"),									// U - 
+				PULSE+ResetHeadOrientation,											// M - '~' - Slew Control - PRESS 
+				PULSE+EjectCargo													// D - 'END'
+				);
+		}
+
+	//===================================================================================================
+
+	//	Throttle HAT1 - Middle - Travel Management
+	//	------------------------------------------
+
+		if (MapKeyProfile == BASIC) {			// 
+			MapKeyUMD(&MyThrottle, THAT1U, 
+				PULSE+FSSModeON,													// U - LShift+/			
+				PULSE+Supercruise,													// M - NP '/'	- Numberpad forward slash key 
+				PULSE+DSSModeOFF													// D - 'BACKSPACE'
+				);
+		}
+		else {
+			MapKeyUMD(&MyThrottle, THAT1U, 
+				EXEC("tgFSSMode();"),												// U - Toggle FSS mode  
+				EXEC("tgWarpDrive(0);"),											// M - Toggle: Engage Super-cruise Engine
+				PULSE+DSSModeOFF													// D - 'BACKSPACE'
+				);		
+		}
+		
+		if (MapKeyProfile == BASIC) {			// 
+			MapKeyUMD(&MyThrottle, THAT1D, 
+				PULSE+FBView,														// U - LShift+\
+				PULSE+HyperJump,													// M - 'j'
+				EXEC("fnVPOutput(\"not used\");")									// D - 
+				);
+		}
+		else {
+			MapKeyUMD(&MyThrottle, THAT1D, 
+				EXEC("tgPlanetView();"),											// U - Front/Back View
+				EXEC("tgWarpDrive(1);"),											// M - Toggle: Initiate Hyper Jump
+				EXEC("fnVPOutput(\"not used\");")									// D - 
+				);		
+		}
+		
+		if (MapKeyProfile == BASIC) {			// 
+			MapKeyUMD(&MyThrottle, THAT1L,
+				PULSE+FSSZoomOUT,													// U - '['
+				PULSE+SelectNextSystemInRoute,										// M - 'm'
+				EXEC("fnVPOutput(\"not used\");")									// D - 
+				);
+		}
+		else {
+			MapKeyUMD(&MyThrottle, THAT1L, 
+				PULSE+FSSZoomOUT,													// U - '['
+				PULSE+SelectNextSystemInRoute,										// M - 'm' - Target next system in jump route
+				EXEC("fnVPOutput(\"not used\");")									// D - 
+				);					
+		}
+		
+		if (MapKeyProfile == BASIC) {			// 
+			MapKeyUMD(&MyThrottle, THAT1R, 
+				PULSE+FSSZoomIN,													// U - ']'
+				PULSE+OrbitLines,													// M - '='
+				EXEC("fnVPOutput(\"not used\");")									// D - 
+				);
+		}
+		else {
+			MapKeyUMD(&MyThrottle, THAT1R, 
+				PULSE+FSSZoomIN,													// U - ']'
+				PULSE+OrbitLines,													// M - '=' - Toggle Orbit Lines ON/OFF 
+				EXEC("fnVPOutput(\"not used\");")									// D - 
+				);					
+		}
+		
+	//===================================================================================================
+
+	//	Throttle HAT2 - Top - PIP Management
+	//	------------------------------------
+
+		if (MapKeyProfile == BASIC) {			// 
+			MapKey(&MyThrottle, THAT2U, PULSE+PowerEng);							// LeftShift+UP		arrow key combo		
+		}
+		else {
+			MapKeyUMD(&MyThrottle, THAT2U,
+				EXEC("fnPIPMode(INCREASE);"),										// U - Increment PIPMode
+				EXEC("fnPIPManager(ENG);"),											// M - Fire Engine focussed PIP sequence
+				EXEC("fnVPOutput(\"not used\");")									// D - 
+				);					
+		}
+		if (MapKeyProfile == BASIC) {			// 
+			MapKey(&MyThrottle, THAT2D, PULSE+BalancePower);						// LeftShift+DOWN	arrow key combo				
+		}
+		else {
+			MapKeyUMD(&MyThrottle, THAT2D, 	
+				EXEC("fnPIPMode(DECREASE);"),										// U - Decrement PIPMode  
+				PULSE+BalancePower,													// M - Balance PIP sequence
+				EXEC("fnVPOutput(\"not used\");")									// D - 
+				);		
+		}
+		if (MapKeyProfile == BASIC) {			// 
+			MapKeyUMD(&MyThrottle, THAT2L,
+				PULSE+TargetPrevSubsystem,											// U - 'k'
+				PULSE+PowerSys,														// LeftShift+LEFT	arrow key combo		
+				EXEC("fnVPOutput(\"not used\");")									// D - 
+				);
+		}
+		else {
+			MapKeyUMD(&MyThrottle, THAT2L, 
+				PULSE+TargetPrevSubsystem,											// U - 'k'
+				EXEC("fnPIPManager(SYS);"),											// M - Fire System focussed PIP sequence
+				EXEC("fnVPOutput(\"not used\");")									// D - 
+				);		
+		}
+		if (MapKeyProfile == BASIC) {			// 
+			MapKeyUMD(&MyThrottle, THAT2R,
+				PULSE+TargetNextSubsystem,											// U - 'i'
+				PULSE+PowerWep,														// M - LeftShift+RIGHT	arrow key combo	
+				EXEC("fnVPOutput(\"not used\");")									// D - 				
+				);
+		}
+		else {
+			MapKeyUMD(&MyThrottle, THAT2R,
+				PULSE+TargetNextSubsystem,											// U - 'i'
+				EXEC("fnPIPManager(WEP);"),											// M - Fire Weapon focussed PIP sequence
+				EXEC("fnVPOutput(\"not used\");")									// D - 
+				);		
+		}
+
+	//===================================================================================================
+
+	//	Throttle HAT3 - Bottom - Countermeasures
+	//	----------------------------------------
+
+		if (MapKeyProfile == BASIC) {			// 
+			MapKey(&MyThrottle, THAT3U, PULSE+UseShieldCell);						// ''' - single quote key 
+		}
+		else {
+			MapKeyUMD(&MyThrottle, THAT3U,
+				EXEC("fnAdvancedSCB(2);"),													// U - 'Double Bank" - 1xSCB, 1xHeatsink, 1xSCB
+				EXEC("fnAdvancedSCB(0);"), 													// M - Fire Shield Cell Bank
+				EXEC("fnAdvancedSCB(1);")													// D - 1xSCB + 1xHeatsink
+				);		
+		}
+		if (MapKeyProfile == BASIC) {			// 
+			MapKey(&MyThrottle, THAT3D, PULSE+DeployHeatSink);						// 'v'
+		}
+		else {
+			MapKeyUMD(&MyThrottle, THAT3D,
+				EXEC("fnTextToSpeech(\"Not used\");"),								// U -
+				EXEC("fnHeatsink();"),												// M - Fire Heat Sink
+				EXEC("fnTextToSpeech(\"Not used\");")								// D -
+				);		
+		}
+		if (MapKeyProfile == BASIC) {			// 
+			MapKey(&MyThrottle, THAT3L, ChargeECM);									// LeftShift+'c' - press to charge, release to fire
+		}
+		else {
+			MapKeyUMD(&MyThrottle, THAT3L,
+				EXEC("fnTextToSpeech(\"Not used\");"),								// U -
+				EXEC("ActKey(KEYON+ChargeECM); printf(\"! ECM Charging...\");"),	// M - Charge ECM (Electronic Counter Measures)
+				EXEC("fnTextToSpeech(\"Not used\");")								// D -
+				);		
+			MapKeyRUMD(&MyThrottle, THAT3L,		// RELEASE
+				EXEC("fnTextToSpeech(\"Not used\");"),								// RU - 
+				EXEC("ActKey(ChargeECM); printf(\"Fired !\\x0a\");"),				// RM - Fire ECM when trigger is released
+				EXEC("fnTextToSpeech(\"Not used\");")								// RD - 
+				);
+		}
+		if (MapKeyProfile == BASIC) {			// 
+			MapKey(&MyThrottle, THAT3R, PULSE+FireChaff);							// 'c'
+		}
+		else {
+			MapKeyUMD(&MyThrottle, THAT3R,
+				EXEC("fnTextToSpeech(\"Not used\");"),								// U -
+				EXEC("fnChaff();"),													// M - Fire Chaff
+				EXEC("fnTextToSpeech(\"Not used\");")								// D -
+				);		
+		}
+
+	} 	// End of MainKeyMap 
+
+	// =============================================================================================================================================
+	// =============================================================================================================================================
+
+
+	// --------------------------- //
+	//  KeyMaps for Training Mode  //
+	// --------------------------- //
+
+	// FUNCTION:	This MapKey set is called at startup if game is not running and user setting 'TrainingMode' is set to ENABLED in ED_UserSettings.tmh 
+	//				Also called from stfnProcessFlags() when we detect Game has halted
+
+	int TrainingKeyMap() {
+
+		printf("\x0a\HOTAS Mode:	TRAINING\x0a");
+		
+	// ---------------------------------------- //
+	// Map Joystick triggers, switches and hats //
+	// ---------------------------------------- //
+
+	//===================================================================================================
+
+	//	Joystick Buttons
+	//	----------------
+
+	//	(Trigger Switch 1 - Primary Fire)
+	//	---------------------------------
+
+		if (MapKeyProfile == BASIC) {			// ...use BASIC profile settings								// MapKeyProfile is set within ED_UserSettings.tmh
+			MapKeyUMD(&MyJoystick, TS1,
+				EXEC("fnVPOutput(\"not used\");"),									// U - 
+				EXEC("fnVPOutput(\"Primary Fire\");"),								// M - DX1 - Trigger
+				EXEC("fnVPOutput(\"not used\");")									// D - 
+				);			
+		}
+		else {									// ...use FULL profile settings 
+			MapKeyUMD(&MyJoystick, TS1,
+				EXEC("fnVPOutput(\"Increment trigger mode for primary fire\");"),	// U - 
+				EXEC("fnVPOutput(\"Standard primary fire\");"),						// M - 
+				EXEC("fnVPOutput(\"Alternate primary fire action\");")				// D - 
+				);
+		}
+
+	//	(Trigger Switch 2 - Secondary Fire)
+	//	-----------------------------------
+
+		if (MapKeyProfile == BASIC) {			// 
+			MapKeyUMD(&MyJoystick, TS2,
+				EXEC("fnVPOutput(\"Switch HUD Mode\");"),							// U - '/' - Switch between Combat and Discovery HUD modes 
+				EXEC("fnVPOutput(\"Secondary Fire\");"),							// M - DX2 - Rear Thumb
+				EXEC("fnVPOutput(\"FSS Mode ON, OFF\");")							// D - LShift+/
+				);			
+		}
+		else {									// 
+			MapKeyUMD(&MyJoystick, TS2,
+				EXEC("fnVPOutput(\"Increment trigger mode for secondary fire\");"),	// U -
+				EXEC("fnVPOutput(\"Standard secondary fire\");"),					// M -
+				EXEC("fnVPOutput(\"Alternate secondary fire action\");")			// D -
+				);
+		}
+
+	//	(Trigger Switch 3 - Flight Assist)
+	//	----------------------------------
+		
+		if (MapKeyProfile == BASIC) {			// 
+			MapKeyUMD(&MyJoystick, TS3,
+				EXEC("fnVPOutput(\"Silent Running ON, OFF\");"),					// U - 'DELETE' - Map "Silent Running" within game binding to TOGGLE		
+				EXEC("fnVPOutput(\"Flight Assist ON, OFF\");"),						// M - 'z' - Right Thumb - Set Flight Assist to "TOGGLE" in game binding
+				EXEC("fnVPOutput(\"FSS planet view front, back toggle\");")			// D - LShift+\
+				);			
+		}
+		else {									// 
+			MapKeyUMD(&MyJoystick, TS3,
+				EXEC("fnVPOutput(\"Silent running ON, OFF\");"),					// U - 
+				EXEC("fnVPOutput(\"Flight assist ON, OFF\");"),						// M - 
+				EXEC("fnVPOutput(\"not used\");")									// D - 
+				);
+		}
+
+	//	(Trigger Switch 4 - Hardpoints)
+	//	-------------------------------
+		
+		if (MapKeyProfile == BASIC) {			// 
+			MapKeyUMD(&MyJoystick, TS4, 
+				EXEC("fnVPOutput(\"Target next subsystem\");"),						// U - 'i'
+				EXEC("fnVPOutput(\"Deploy, stow hard points\");"),					// M - 'u' - Left Thumb
+				EXEC("fnVPOutput(\"not used\");") 									// D - 
+				);	
+		}
+		else {									// 
+			MapKeyUMD(&MyJoystick, TS4, 
+				EXEC("fnVPOutput(\"Toggle hud mode\");"),							// U - 
+				EXEC("fnVPOutput(\"Deploy, stow hard points\");"),					// M - 
+				EXEC("fnVPOutput(\"Toggle yaw, roll on joystick X axis\");")		// D - 
+				);
+		}
+		
+	//===================================================================================================
+
+	//	Joystick POV Hat
+	//	----------------
+
+		if (MapKeyProfile == BASIC) {			// 
+			MapKeyUMD(&MyJoystick, H1U, 
+				EXEC("fnVPOutput(\"Select highest threat\");"),						// U - 'y'
+				EXEC("fnVPOutput(\"Select target ahead\");"),						// M - 't'
+				EXEC("fnVPOutput(\"Select next hostile ship\");")					// D - 'h'
+				);
+		}
+		else {
+			MapKeyUMD(&MyJoystick, H1U, 
+				EXEC("fnVPOutput(\"Select highest threat\");"),						// U - 'y'
+				EXEC("fnVPOutput(\"Select target ahead\");"),						// M - 't'
+				EXEC("fnVPOutput(\"Select next hostile ship\");")					// D - 'h'
+				);
+		}
+
+		if (MapKeyProfile == BASIC) {			// 		
+			MapKeyUMD(&MyJoystick, H1D, 
+				EXEC("fnVPOutput(\"Select Wing mans Target\");"),					// U - '5'
+				EXEC("fnVPOutput(\"Select next win gman\");"),						// M - '8', "9", "0"
+				EXEC("fnVPOutput(\"Select Wing mans Nav Lock\");")					// D - '6'
+				);
+		}
+		else {
+			MapKeyUMD(&MyJoystick, H1D, 
+				EXEC("fnVPOutput(\"Select Wing mans Target\");"),					// U - '5'
+				EXEC("fnVPOutput(\"Select next wing man\");"),						// M - '8', "9", "0"
+				EXEC("fnVPOutput(\"Select Wing mans Nav Lock\");")					// D - '6'
+				);
+		}
+				
+		if (MapKeyProfile == BASIC) {			// 				
+			MapKeyUMD(&MyJoystick, H1L, 
+				EXEC("fnVPOutput(\"Deploy, retract cargo scoop\");"),				// U - 'HOME' key 
+				EXEC("fnVPOutput(\"Increment fire group\");"),						// M - ',' - comma
+				EXEC("fnVPOutput(\"Deploy, retract landing gear\");")				// M - 'l' - lowercase L 
+				);
+		}
+		else {
+			MapKeyUMD(&MyJoystick, H1L, 
+				EXEC("fnVPOutput(\"Deploy, retract landing gear\");"),				// U -
+				EXEC("fnVPOutput(\"Increment fire group\");"),						// M - ',' - comma
+				EXEC("fnVPOutput(\"Deploy, retract cargo scoop\");")				// D -
+				);
+		}
+		
+		if (MapKeyProfile == BASIC) {			// 
+			MapKeyUMD(&MyJoystick, H1R, 
+				EXEC("fnVPOutput(\"Night Vision On, Off\");"),						// U - LeftAlt+'INSERT'
+				EXEC("fnVPOutput(\"Target next ship\");"),							// M - 'g' 
+				EXEC("fnVPOutput(\"Lights On, Off\");")								// D - 'INSERT' key 
+				);
+		}
+		else {
+			MapKeyUMD(&MyJoystick, H1R, 
+				EXEC("fnVPOutput(\"Lights On, Off\");"),							// U - Sequence lights 
+				EXEC("fnVPOutput(\"Target next ship\");"),							// M - 'g' 
+				EXEC("fnVPOutput(\"Night Vision On, Off\");")						// D - Toggle Nightvision
+				);
+		}
+		
+		
+	//===================================================================================================
+
+	//	Joystick Base Buttons
+	//	---------------------
+
+		if (MapKeyProfile == BASIC) {			// 		
+			MapKey(&MyJoystick, B5,  EXEC("fnVPOutput(\"Galaxy Map On, Off\");"));	// LeftShift+';'
+		}
+		else {
+			MapKeyUMD(&MyJoystick, B5,
+				EXEC("fnVPOutput(\"not used\");"),									// U -
+				EXEC("fnVPOutput(\"Galaxy Map On, Off\");"),						// M - 
+				EXEC("fnVPOutput(\"not used\");")									// D -
+				);
+		}
+
+		if (MapKeyProfile == BASIC) {			// 		
+			MapKey(&MyJoystick, B6,  EXEC("fnVPOutput(\"not used\");"));			//
+		}
+		else {
+			MapKeyUMD(&MyJoystick, B6,
+				EXEC("fnVPOutput(\"not used\");"),									// U - 
+				EXEC("fnVPOutput(\"not used\");"),									// M - 
+				EXEC("fnVPOutput(\"not used\");")									// D -
+				);
+		}
+
+		if (MapKeyProfile == BASIC) {			// 		
+			MapKey(&MyJoystick, B7,  EXEC("fnVPOutput(\"Ship g u i, off, on\");"));	// LeftCTRL+LeftALT+'g'
+		}
+		else {
+			MapKeyUMD(&MyJoystick, B7,
+				EXEC("fnVPOutput(\"not used\");"),									// U - 
+				EXEC("fnVPOutput(\"Ship g u i, off, on\");"),							// M - 
+				EXEC("fnVPOutput(\"not used\");")									// D -
+				);
+
+		}
+		
+		if (MapKeyProfile == BASIC) {			// 
+			// Press B8 to cycle selection of Wingmen
+			MapKey(&MyJoystick, B8,  SEQ(	EXEC("fnVPOutput(\"Select Wing man 1\");"),		// '8' 
+											EXEC("fnVPOutput(\"Select Wing man 2\");"),		// '9'
+											EXEC("fnVPOutput(\"Select Wing man 3\");")		// '0'
+										)													// close SEQ 
+				);																			// close MapKey
+		}
+		else {
+			MapKeyUMD(&MyJoystick, B8,
+				0,																			// U - 
+				EXEC("fnVPOutput(\"Restock and enter Hangar services\");"),					// M - 
+				0																			// D -
+				);		}
+
+		if (MapKeyProfile == BASIC) {			// 		
+			MapKey(&MyJoystick, B9,  EXEC("fnVPOutput(\"External camera\");"));				// 'NUMPAD 5'
+		}
+		else {
+			MapKeyUMD(&MyJoystick, B9, 
+				EXEC("fnVPOutput(\"not used\");"),											// U -
+				EXEC("fnVPOutput(\"External Camera on, off\");"),							// M -
+				EXEC("fnVPOutput(\"not used\");")											// D -
+				);
+		}
+		
+		if (MapKeyProfile == BASIC) {			// 		
+			MapKey(&MyJoystick, B10, EXEC("fnVPOutput(\"System Map On, Off\");"));			// ';'
+		}
+		else {
+			MapKeyUMD(&MyJoystick, B10,
+				EXEC("fnVPOutput(\"not used\");"),											// U -
+				EXEC("fnVPOutput(\"System Map On, Off\");"),								// M -
+				EXEC("fnVPOutput(\"Print states to console\");")							// D - 
+				);
+		}
+		
+		if (MapKeyProfile == BASIC) {			// 
+			MapKey(&MyJoystick, B11, EXEC("fnVPOutput(\"Show connection status\");"));		// LCTRL+b 
+		}
+		else {
+			MapKeyUMD(&MyJoystick, B11,
+				EXEC("fnVPOutput(\"not used\");"),											// U -
+				EXEC("fnVPOutput(\"Show connection status\");"),							// M -
+				EXEC("fnVPOutput(\"not used\");")											// D -
+				);
+		}
+
+		if (MapKeyProfile == BASIC) {			// 
+			MapKey(&MyJoystick, B12, EXEC("fnVPOutput(\"not used\");"));					//
+		}
+		else {
+			MapKeyUMD(&MyJoystick, B12,
+				EXEC("fnVPOutput(\"not used\");"),											// U - 
+				EXEC("fnVPOutput(\"Clear the chat box in comms panel\");"),					// M -
+				EXEC("fnVPOutput(\"not used\");")											// D -
+				);	
+		}
+
+		if (MapKeyProfile == BASIC) {			 
+			MapKey(&MyJoystick, B13, EXEC("fnVPOutput(\"not used\");"));					//
+		}
+		else {
+			MapKeyUMD(&MyJoystick, B13,
+				EXEC("fnVPOutput(\"not used\");"),											// U - 
+				EXEC("fnVPOutput(\"Nav Beacon on, off\");"),									// M -
+				EXEC("fnVPOutput(\"not used\");")											// D - 
+				);		
+		}
+		
+		if (MapKeyProfile == BASIC) {			// 
+			MapKey(&MyJoystick, B14, EXEC("fnVPOutput(\"not used\");"));					//
+		}
+		else {
+			MapKeyUMD(&MyJoystick, B14, 
+				EXEC("fnVPOutput(\"Set Curves to Medium\");"),								// U - Set Curves = MEDIUM
+				EXEC("fnVPOutput(\"Set Curves to Off\");"),									// M - Set Curves = OFF
+				EXEC("fnVPOutput(\"Set Curves to Slowest\");")								// D - Set Curves = SLOWEST
+				);
+		}
+
+		if (MapKeyProfile == BASIC) {			// 
+			MapKey(&MyJoystick, B15, EXEC("fnVPOutput(\"not used\");"));					// 
+		}
+		else {
+			MapKeyUMD(&MyJoystick, B15, 
+				EXEC("fnVPOutput(\"not used\");"),											// U - 
+				EXEC("fnVPOutput(\"Change Engine and weapon colours\");"),					// M -
+				EXEC("fnVPOutput(\"not used\");")											// D -
+				);
+		}
+		
+		if (MapKeyProfile == BASIC) {			// 
+			MapKey(&MyJoystick, B16, EXEC("fnVPOutput(\"Show frame rate\");"));				// LCTRL+f 
+		}
+		else {
+			MapKeyUMD(&MyJoystick, B16, 
+				EXEC("fnVPOutput(\"Switch to private group\");"),							// U -
+				EXEC("fnVPOutput(\"Switch to solo\");"),									// M -
+				EXEC("fnVPOutput(\"Swwitch to Open\");")									// D - 
+				);
+		}
+		
+	//===================================================================================================
+
+	//	Throttle Buttons
+	//	----------------
+
+		
+		if (MapKeyProfile == BASIC) {			// 
+			MapKey(&MyThrottle, TBTN1, EXEC("fnVPOutput(\"Turn Headlook On, Off\");"));		// 'o' - Thumb button 
+		}
+		else {
+			MapKeyUMD(&MyThrottle, TBTN1, 
+				EXEC("fnVPOutput(\"Request docking permission\");"),				// U - 
+				EXEC("fnVPOutput(\"Turn Headlook On, Off\");"),						// M - 
+				EXEC("fnVPOutput(\"not used\");")									// D - 
+				);
+		}
+
+		MapKey(&MyThrottle, TBTN2, EXEC("fnVPOutput(\"UP Shift button\");"));		//  ** DO NOT TOUCH ** Used as ShiftButton for UMD
+		MapKey(&MyThrottle, TBTN3, EXEC("fnVPOutput(\"DOWN Shift button\");"));		//  ** DO NOT TOUCH ** Used as ShiftButton for UMD
+
+		if (MapKeyProfile == BASIC) {			// 
+			MapKeyUMD(&MyThrottle, TBTN4, 
+				EXEC("fnVPOutput(\"not used\");"),									// U - 
+				EXEC("fnVPOutput(\"Engine Boost and S C O\");"),					// LeftShift+'b' - Middle Finger UP
+				EXEC("fnVPOutput(\"not used\");")									// D - 
+				);
+		}
+		else {
+			MapKeyUMD(&MyThrottle, TBTN4, 
+				EXEC("fnVPOutput(\"Increase text to speech volume\");"),			//  - 
+				EXEC("fnVPOutput(\"Engine Boost and S C O\");"),					// M -
+				EXEC("fnVPOutput(\"not used\");")									// D - 
+				);
+		}
+		
+		if (MapKeyProfile == BASIC) {			// 
+			MapKeyUMD(&MyThrottle, TBTN5, 
+				EXEC("fnVPOutput(\"not used\");"),									// U - 
+				EXEC("fnVPOutput(\"Reverse throttle\");"),							// M - NP '*' - Middle Finger DOWN - set to TOGGLE
+				EXEC("fnVPOutput(\"S R V Hand brake\");")							// D - 'x'
+				);
+		}
+		else {
+			MapKeyUMD(&MyThrottle, TBTN5, 
+				EXEC("fnVPOutput(\"Decrease text to speech volume\");"),			// U - 
+				EXEC("fnVPOutput(\"Reverse throttle\");"),							// M - NP '*' - Middle Finger DOWN - set to TOGGLE
+				EXEC("fnVPOutput(\"S R V Hand brake\");")							// D - 'x'				
+				);
+		}
+
+		if (MapKeyProfile == BASIC) {
+			MapKeyUMD(&MyThrottle, TLOCK, 
+				EXEC("fnVPOutput(\"not used\");"),									// U - 
+				EXEC("fnVPOutput(\"Reset Head Look\");"),							// M - '~' - Slew Control - PRESS 
+				EXEC("fnVPOutput(\"not used\");")									// D - 
+				);
+		}
+		else{
+			MapKeyUMD(&MyThrottle, TLOCK, 
+				EXEC("fnVPOutput(\"not used\");"),									// U - 
+				EXEC("fnVPOutput(\"Reset Head Look\");"),							// M - 
+				EXEC("fnVPOutput(\"Eject all cargo\");")							// D - 'END' key
+				);
+		}
+
+	//===================================================================================================
+
+	//	Throttle HAT1 - Middle
+	//	----------------------
+
+		if (MapKeyProfile == BASIC) {			// 
+			MapKey(&MyThrottle, THAT1U, EXEC("fnVPOutput(\"Engage Super Cruise\");"));	// NP '/'	- Numberpad forward slash key 
+		}
+		else {
+			MapKeyUMD(&MyThrottle, THAT1U, 
+				EXEC("fnVPOutput(\"Toggle FSS mode\");"),							// U -
+				EXEC("fnVPOutput(\"Engage super cruise\");"),						// M - 
+				EXEC("fnVPOutput(\"Exit DSS mode\");")								// D - 
+				);		
+		}
+		
+		if (MapKeyProfile == BASIC) {			// 
+			MapKey(&MyThrottle, THAT1D, EXEC("fnVPOutput(\"Hyper Jump\");"));		// 'j'
+		}
+		else {
+			MapKeyUMD(&MyThrottle, THAT1D, 
+				EXEC("fnVPOutput(\"Planet view front, back\");"),					// U - 
+				EXEC("fnVPOutput(\"Engage hyper jump\");"),							// M -
+				EXEC("fnVPOutput(\"not used\");")									// D -
+				);		
+		}
+		
+		if (MapKeyProfile == BASIC) {			// 
+			MapKey(&MyThrottle, THAT1L, EXEC("fnVPOutput(\"Select Next System in Route\");"));	// 'm'
+		}
+		else {
+			MapKeyUMD(&MyThrottle, THAT1L, 
+				EXEC("fnVPOutput(\"FSS Zoom out\");"),								// U -
+				EXEC("fnVPOutput(\"Select Next System in Route\");"),				// M - 
+				EXEC("fnVPOutput(\"not used\");")									// D - 
+				);		
+		}
+		
+		if (MapKeyProfile == BASIC) {			// 
+			MapKey(&MyThrottle, THAT1R, EXEC("fnVPOutput(\"Orbit lines On, Off\");"));	// '='
+		}
+		else {
+			MapKeyUMD(&MyThrottle, THAT1R, 
+				EXEC("fnVPOutput(\"FSS Zoom in\");"),								// U -
+				EXEC("fnVPOutput(\"Orbit lines On, Off\");"),						// M -	
+				EXEC("fnVPOutput(\"Select Next System in Route\");")				// D - 
+				);		
+		}
+		
+	//===================================================================================================
+
+	//	Throttle HAT2 - Top 
+	//	-------------------
+
+		if (MapKeyProfile == BASIC) {			// 
+			MapKey(&MyThrottle, THAT2U, EXEC("fnVPOutput(\"Pips, Power to Engine\");"));	// LeftShift+UP		arrow key combo		
+		}
+		else {
+			MapKeyUMD(&MyThrottle, THAT2U, 
+				EXEC("fnVPOutput(\"Increment pip mode\");"),						// U -
+				EXEC("fnVPOutput(\"Pips, Power to Engines\");"),					// M -
+				EXEC("fnVPOutput(\"Decrement pip mode\");")							// D -
+				);		
+		}
+		if (MapKeyProfile == BASIC) {			// 
+			MapKey(&MyThrottle, THAT2D, EXEC("fnVPOutput(\"Pips, Balance Power\");"));	// LeftShift+DOWN	arrow key combo				
+		}
+		else {
+			MapKeyUMD(&MyThrottle, THAT2D,
+				EXEC("fnVPOutput(\"Reset pip mode to default\");"),					// U -
+				EXEC("fnVPOutput(\"Pips, Balance Power\");"),						// M - 
+				EXEC("fnVPOutput(\"not used\");")									// D -
+				);		
+		}
+		if (MapKeyProfile == BASIC) {			// 
+			MapKey(&MyThrottle, THAT2L, EXEC("fnVPOutput(\"Pips, Power to Systems\");"));	// LeftShift+LEFT	arrow key combo		
+		}
+		else {
+			MapKeyUMD(&MyThrottle, THAT2L,
+				EXEC("fnVPOutput(\"Target previous subsystem\");"),					// U -
+				EXEC("fnVPOutput(\"Pips, Power to systems\");"),					// M -
+				EXEC("fnVPOutput(\"not used\");")									// D - 
+				);			
+		}
+		if (MapKeyProfile == BASIC) {			// 
+			MapKey(&MyThrottle, THAT2R, EXEC("fnVPOutput(\"Pips, Power to Weapons\");"));	// LeftShift+RIGHT	arrow key combo	
+		}
+		else {
+			MapKeyUMD(&MyThrottle, THAT2R,
+				EXEC("fnVPOutput(\"Target next subsystem\");"),						// U -
+				EXEC("fnVPOutput(\"Pips, Power to weapons\");"),					// M -
+				EXEC("fnVPOutput(\"not used\");")									// D - 
+				);					
+		}
+
+	//===================================================================================================
+
+	//	Throttle HAT3 - Bottom
+	//	----------------------
+
+		if (MapKeyProfile == BASIC) {			// 
+			MapKey(&MyThrottle, THAT3U, EXEC("fnVPOutput(\"Use Shield Cell Bank\");"));	// ''' - single quote key 
+		}
+		else {
+			MapKeyUMD(&MyThrottle, THAT3U,
+				EXEC("fnVPOutput(\"Double shield cell bank plus heatsink\");"),		// U -
+				EXEC("fnVPOutput(\"Fire shield cell bank\");"),						// M -
+				EXEC("fnVPOutput(\"Shield cell bank plus heat sink\");")			// D - 
+				);			
+		}
+		if (MapKeyProfile == BASIC) {			// 
+			MapKey(&MyThrottle, THAT3D, EXEC("fnVPOutput(\"Deploy Heat Sink\");"));	// 'v'
+		}
+		else {
+			MapKeyUMD(&MyThrottle, THAT3D,
+				EXEC("fnVPOutput(\"not used\");"),									// U -
+				EXEC("fnVPOutput(\"Fire Heat Sink\");"),							// M -
+				EXEC("fnVPOutput(\"not used\");")									// D - 
+				);
+		}
+		if (MapKeyProfile == BASIC) {			// 
+			MapKey(&MyThrottle, THAT3L, EXEC("fnVPOutput(\"Hold to charge ECM, release to fire\");"));	// LeftShift+'c' - press to charge, release to fire
+		}
+		else {
+			MapKeyUMD(&MyThrottle, THAT3L,
+				EXEC("fnVPOutput(\"not used\");"),									// U -
+				EXEC("fnVPOutput(\"Hold to charge ECM, release to fire\");"),		// M -
+				EXEC("fnVPOutput(\"not used\");")									// D - 
+				);			
+		}
+		if (MapKeyProfile == BASIC) {		 
+			MapKey(&MyThrottle, THAT3R, EXEC("fnVPOutput(\"Fire Chaff\");"));		// 'c'
+		}
+		else {
+			MapKeyUMD(&MyThrottle, THAT3R,
+				EXEC("fnVPOutput(\"not used\");"),									// U -
+				EXEC("fnVPOutput(\"Fire Chaff\");"),								// M -
+				EXEC("fnVPOutput(\"not used\");")									// D - 
+				);			
+		}
+
+	//===================================================================================================
+
+	}	// end of TrainingKeyMap
+

@@ -1,0 +1,95 @@
+{
+  "name": "target-script",
+  "displayName": "TARGET Script (Thrustmaster)",
+  "description": "Language support for the Thrustmaster T.A.R.G.E.T. HOTAS scripting language (.tmc, .tmh, .ttm): syntax highlighting, device-aware completion, hover docs, outline and diagnostics.",
+  "version": "0.1.0",
+  "publisher": "bobjoe400",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Snippets",
+    "Linters"
+  ],
+  "keywords": [
+    "target",
+    "thrustmaster",
+    "hotas",
+    "warthog",
+    "t16000",
+    "joystick",
+    "tmc",
+    "tmh"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bobjoe400/TARGET-scripting-language-vscode-extension"
+  },
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onLanguage:target"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "target",
+        "aliases": [
+          "TARGET Script",
+          "target"
+        ],
+        "extensions": [
+          ".tmc",
+          ".tmh",
+          ".ttm"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "target",
+        "scopeName": "source.target",
+        "path": "./syntaxes/target.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "target",
+        "path": "./snippets/target.json"
+      }
+    ],
+    "configuration": {
+      "title": "TARGET Script",
+      "properties": {
+        "targetScript.installPath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Path to the TARGET installation's `scripts` folder (the one containing `target.tmh`). Leave empty to auto-detect the default install location. Used to resolve `include \"target.tmh\"`."
+        },
+        "targetScript.diagnostics.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable diagnostics (arity checks, EXEC restrictions, range checks, DirectX limits)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "vscode:prepublish": "npm run compile",
+    "gen": "node tools/gen-builtins.mjs && node tools/gen-grammar.mjs",
+    "test:grammar": "node test/run-grammar-test.mjs",
+    "test": "npm run compile && node test/run-grammar-test.mjs && node test/run-diagnostics-test.mjs && node test/run-provider-test.mjs",
+    "package": "npx --yes @vscode/vsce@2 package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.4.0",
+    "vscode-textmate": "^9.0.0",
+    "vscode-oniguruma": "^2.0.1"
+  }
+}

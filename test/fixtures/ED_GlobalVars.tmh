@@ -1,0 +1,72 @@
+
+	//--------------------------------------------------------------------------------------//
+	//		  CMDR Clicker's Elite Dangerous Enhanced Thrustmaster TARGET Script			//
+	//--------------------------------------------------------------------------------------//
+
+	// This file: ED_GlobalVars.tmh
+
+	// NOTE:	All user related settings can be found in the ED_UserSettings.tmh file
+	//			Changing any of the below global variables will have significant effect on the script
+	//			and may cause errors. Change these at your own risk
+
+	// START
+
+	char 	CMDRName;					// Set via fnMyName() and read from MyJournalData.json 
+	char	StationName;				// Set via fnGetStationName() and read from MyJournalData.json 
+	char	DockingStatus;				// Set via fnDockingStatus() and read from MyJournalData.json 
+
+	//--------------------//
+	// Connected Hardware //
+	//--------------------//
+
+	alias	MyJoystick;					// Global Joystick handle. Set in ED_Main depending on which compatible Joystic/Base is detected
+	alias	MyThrottle;					// Global Throttle handle. Set in ED_Main depending on which compatible Throttle is detected
+	alias	MyRudder;					// Global Rudder handle. Set in ED_Main depending on which compatible Rudder is detected	
+
+	char	NOJOYSTICK	= 0;			// Set during CheckControllers if no compatible device found
+	char	NOTHROTTLE	= 0;			// Set during CheckControllers if no compatible device found
+	char	NORUDDER	= 0;			// Set during CheckControllers if no compatible device found
+	
+	//----------------//
+	// DEFAULT STATES //   					// GLOBAL VARIABLE INITIALISATION, DESCRIPTION & USAGE
+	//----------------//
+
+	int SounderExists;					// Declared here and set in initSoundFX()
+
+	int JSProfile;						// Used in initCurves() and fnEnhancedFAOFF() (see EDFunctions.tmh) Values = 0, 1 or 2
+	int JSCurveSetting;
+	int DXCurveSetting;
+	int OldCurves;
+
+	int PIPMode;						// Set/Reset via H4P and fnPIPMode() and used in fnPIPManager() to change PIP management profile (see EDFunctions.tmh)
+										// PIPMode saved/restored via stfnMyStates()
+	int PIPTxt;							// PIPMode descriptor
+	
+	int StartupLock			= 1;		// Prevent triggering keystrokes during initialisation
+	int GameLoaded			= 0;		// Set in fnGameStarted() when game is detected as running
+	int ShieldsDroppedShip	= 0;		// Track when shields drop whilst in Ship, so we can announce when they come back
+	int ShieldsDroppedSRV	= 0;		// Track when shields drop whilst in SRV, so we can announce when they come back
+	int ConnectionStatus	= 0;		// Track if "ShowConnectionStatus" is on or off to avoid accidental toggle off during mode switch
+	int ReverseThrust		= 0;		// Set/Reset in tgReverseThrust()
+	int SpeedbrakeDeployed	= 0;		// Set/Reset in tgReverseThrust() and used in tgLandingGear()
+	int FSSMode				= 0;		// Set/Reset in tgFSSMode()
+	int SAAMode				= 0;		// Used in tgPlanetView()
+	int CameraMode			= 0;		// Set/Reset in tgExtCamera() and used in fnAdvancedSCB() and fnHeatsink() (for console Zoom messages)
+	int SelectDrop			= 0;		// Use to detect if Supercruise drop was selected or forced
+	int FireModeP			= 0;		// 0 = Press to fire/Release to Stop, 1 = Press to fire, Press again to stop
+	int FireModeS			= 0;		// 0 = Press to fire/Release to Stop, 1 = Press to fire, Press again to stop
+	int ShipDismissed		= 0;		// Track when Ship is dismissed/recalled via EORIGN-U
+	int SilentStrobe		= 0;		// Used to track when we are using the Silent Running Strobe feature
+	int XAxisYAW			= 0;		// Used to track which mode X-Axis is, Roll (default) or Yaw
+	int GUIState			= 1;		// Used to track when ship's HUD GUI is turned off or on (default = ON)
+	
+	int ActiveFighter		= 0;		// Read from MyJournalData
+	
+	int RetryCounter		= 0;		// Failed Warpdrive retry count (eg target obscured, not enough fuel, target too far etc)
+	
+	int ThrustUpTime		= 1500;		// Used in m_Launch macro. Future feature = table of ships and thruster stats and modify on the fly
+
+	int	UseAltVoice			= NO;		// Set UseAltVoice = 'YES'; prior to calling fnTextToSpeech() or fnVPOutput() for situations you cannot parse the voice alias to be used
+
+				
+	// END

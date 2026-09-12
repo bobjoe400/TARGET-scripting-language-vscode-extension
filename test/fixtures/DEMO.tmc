@@ -1,0 +1,40 @@
+	//  DEMO - open this to see what the extension does.
+	//  Everything flagged below is flagged for a reason; hover any squiggle.
+
+	include "target.tmh"				// must come first, and does
+
+	int main()
+	{
+		if(Init(&EventHandle)) return 1;
+
+		Configure(&T16000, MODE_EXCLUDED);
+		Configure(&TWCSThrottle, MODE_EXCLUDED);
+
+		// ---- these are correct ------------------------------------------------
+		MapKey(&T16000, TS1, DX1);						// hover MapKey for the signature
+		MapKeyIO(&T16000, TS2, DX2, DX3);
+		MapAxis(&T16000, JOYX, DX_X_AXIS, AXIS_NORMAL, MAP_ABSOLUTE);
+		SetSCurve(&T16000, JOYX, 0, 0, 0, 5, 0);
+		MapKey(&T16000, TS4, EXEC("SetSCurve(&T16000, JOYY, 0,0,0,5,0);"));
+		MapKey(&T16000, B5, CHAIN(DX4, D(), DX5));
+
+		// ---- each of these is a real mistake ----------------------------------
+		MapKey(&T16000);								// too few arguments
+		MapKey(&T16000, APALT, DX6);					// APALT is a Warthog Throttle control
+		MapKey(&T16000, TG1, DX7);						// works, but TG1 is the Warthog name for index 0
+		REXEC(150, 500, "fnThing();", RNOSTOP);			// handle must be 0-99
+		MapKey(&T16000, B6, EXEC("SEQ(DX8, DX9);"));	// SEQ is forbidden inside EXEC
+		SetSCurve(&T16000, JOYY, 0, 0, 0, 99, 0);		// curve is -32..32
+		AXMAP2(3, DX10, DX11);							// 3 zones, 2 events
+		LEDV(&TWCSThrottle, 1, 200);					// value is masked to 0-7
+
+		for(i = 0; i < 3; i = i + 1) { }				// TARGET has no for loop
+	}
+
+	//  Put the cursor inside the parentheses and press Ctrl+Space:
+	//    MapKey(&TWCSThrottle, <here>)   offers only TWCS controls
+	//    MapAxis(&T16000, <here>)        offers that stick's axes first
+	int EventHandle(int type, alias o, int x)
+	{
+		DefaultMapping(&o, x);
+	}

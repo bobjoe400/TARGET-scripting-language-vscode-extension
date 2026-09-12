@@ -1,0 +1,315 @@
+
+	//--------------------------------------------------------------------------------------//
+	//		  CMDR Clicker's Elite Dangerous Enhanced Thrustmaster TARGET Script			//
+	//--------------------------------------------------------------------------------------//
+
+	// This file: ED_Macros.ttm
+
+/*
+	Index:				FUNCTION
+	Line    44: 		int initMacroChains() {
+	Line    49: 			m_RequestDock = CHAIN(
+	Line    62: 			m_DeploySRV = CHAIN(
+	Line    74: 			m_BoardShip = CHAIN(
+	Line    85: 			m_DeployNPCFighter = CHAIN(
+	Line    99: 			m_DeployFighter = CHAIN(
+	Line   113: 			m_ShowGameStats = CHAIN(								// Keystroke sequence =
+	Line   119: 			m_FastModeSwitch0 = CHAIN(
+	Line   130: 			m_FastModeSwitch1a = CHAIN(
+	Line   150: 			m_FastModeSwitch1b = CHAIN(
+	Line   171: 			m_FastModeSwitch2 = CHAIN(
+	Line   184: 			m_ReportCrimesToggle = CHAIN(
+	Line   206: 			m_WingBeaconTeam = CHAIN(
+	Line   233: 			m_WingBeaconOff = CHAIN(
+	Line   258: 			m_EnterHangar = CHAIN(
+	Line   274: 			m_Launch = CHAIN(
+	Line   285: 			m_Disembark = CHAIN(
+	Line   299: 			m_ChangeColours = CHAIN(
+	Line   305: 			m_NextFG = CHAIN(
+	Line   310: 			m_PrevFG = CHAIN(
+*/
+
+	// START
+
+	// Declare macros (must be declared as global)
+	
+	int	m_RequestDock,		m_DeploySRV,		m_ShowGameStats,	m_ReportCrimesToggle,	m_WingBeaconTeam,	m_WingBeaconOff;
+	int m_FastModeSwitch0,	m_FastModeSwitch1a,	m_FastModeSwitch1b,	m_FastModeSwitch2,	m_BoardShip,			m_EnterHangar,		m_ChangeColours;
+	int m_Launch,			m_NextFG,			m_PrevFG,			m_DeployNPCFighter,		m_DeployFighter,	m_Disembark;
+
+	//---------------//			// MACROS fire a sequence of key presses within a 'CHAIN()' to perform a specific task within the game.
+	// CUSTOM MACROS //			// The action identifiers (keystroke labels) used below can be found within the 'ED_Defines.ttm' file.
+	//---------------//			// NOTE: Keys pressed are also defined within the game's bind file and MUST match what we're using here. 
+								// NOTE: It is wise to take note of duration time for each macro. Time in ms - Pulse 35, D() 100, set in ED_ScriptDefines 
+	int initMacroChains() {
+		
+		// Define macros...
+
+		// MACRO: Auto-Docking Request							Duration = 2750
+		m_RequestDock = CHAIN(
+			LOCK+PULSE+TargetPanel, D(500),						// Keystroke sequence = 1, e, e, left, right, spc, left, q, q, 1
+			PULSE+UINextPanel, D(200),							// Limitation: This will only work correctly if Target Panel cursor in
+			PULSE+UINextPanel, D(200),							//			   default/orig position, else will produce spurious result.
+			PULSE+UILeft, D(200),
+			PULSE+UIRight, D(200),
+			PULSE+UISelect, D(500),
+			PULSE+UIPrevPanel, D(),
+			PULSE+UIPrevPanel, D(),
+			PULSE+UIBack,
+			LOCK);
+
+		// MACRO: SRV - Deploy									Duration = 1880
+		m_DeploySRV = CHAIN(
+			LOCK+PULSE+RolePanel, D(500),						// Keystroke sequence = 3, up, up, up, down, down, right, spc
+			PULSE+UIUp, D(),									// Going 3xUP now ensures we're at the top
+			PULSE+UIUp, D(),
+			PULSE+UIUp, D(),
+			PULSE+UIDown, D(),
+			PULSE+UIDown, D(),
+			PULSE+UIRight, D(),
+			PULSE+UISelect, D(500),
+			LOCK);
+
+		// MACRO: SRV - Board Ship								Duration = 1495
+		m_BoardShip = CHAIN(
+			LOCK+PULSE+RolePanel, D(250),						// Keystroke sequence = 3, up, up, up, down, right, spc
+			PULSE+UIUp, D(),									// Going 3xUP ensures we're at the top
+			PULSE+UIUp, D(),
+			PULSE+UIUp, D(),
+			PULSE+UIDown, D(),
+			PULSE+UIRight, D(),
+			PULSE+UISelect, D(500),	
+			LOCK);
+
+		// MACRO: Fighter - Deploy (NPCCrewActive)				Duration = 2150
+		m_DeployNPCFighter = CHAIN(
+			LOCK+PULSE+RolePanel, D(500),						// Keystroke sequence = 3, down, right, spc, up, up, up, down, spc
+			PULSE+UIDown, D(),
+			PULSE+UIRight, D(),									// add or remove one of these lines
+			PULSE+UISelect, D(500),
+			PULSE+UIUp, D(),									// Go UP to ensure we're at the top
+			PULSE+UIUp, D(),
+			PULSE+UIUp, D(),
+			PULSE+UIDown, D(),									// Go 1 down to select NPC crew
+			PULSE+UISelect, D(),
+			PULSE+RolePanel, D(),
+			LOCK);
+
+		// MACRO: Fighter - Deploy (No NPCCrewActive)			Duration = 2550
+		m_DeployFighter = CHAIN(
+			LOCK+PULSE+RolePanel, D(500),						// Keystroke sequence = 3, down, right, spc, up, up, up, down, spc
+			PULSE+UIDown, D(),
+			PULSE+UISelect, D(500),
+			PULSE+UISelect, D(500),
+			PULSE+UIUp, D(),									// Go UP to ensure we're at the top
+			PULSE+UIUp, D(),
+			PULSE+UIUp, D(),
+			PULSE+UIDown, D(),									// Go 1 down to select NPC crew
+			PULSE+UISelect, D(),
+			PULSE+RolePanel, D(),
+			LOCK);
+
+		// MACRO: Display FPS & Bandwidth meters				Duration = 820				Not Used?
+		m_ShowGameStats = CHAIN(								// Keystroke sequence = 
+			PULSE+ShowFramerate, D(750),						// L_CTRL+F
+			PULSE+ShowConnectionStatus							// L_CTRL+B
+			);			
+
+		// MACRO: Menulog to OPEN								Duration = 9795
+		m_FastModeSwitch0 = CHAIN(
+			LOCK+PULSE+RolePanel, D(250),						// Select any panel to ensure GUIFocus is set (!=0)		
+			PULSE+MenuLog, D(650),								// Keystroke sequence = p, up, spc, spc, <wait>, spc, spc
+			PULSE+UIUp, D(650),
+			PULSE+UISelect, D(650),
+			PULSE+UISelect, D(6500),							// ** Depending on the load times of your PC, this value may need to be
+			PULSE+UISelect, D(650),								// 	  changed/increased (6000ms is default)
+			PULSE+UISelect, D(650),								// Select OPEN Mode
+			LOCK);
+
+		// MACRO: Menulog to PRIVATE GROUP (top)				Duration = 14200 (min), add 1370 for each addition UIDown+UISelect optional pair enabled
+		m_FastModeSwitch1a = CHAIN(
+			LOCK+PULSE+RolePanel, D(250),						// Select any panel to ensure GUIFocus is set (!=0) <-- Required???
+			PULSE+MenuLog, D(650),								//  Keystroke sequence = p, up, spc, spc, <wait>, spc, right, spc, spc, right, spc
+			PULSE+UIUp, D(650),
+			PULSE+UISelect, D(650),
+			PULSE+UISelect, D(8500),							// ** Depending on the load times of your PC, this value may need to be
+			PULSE+UISelect, D(650),								//    changed/increased
+			PULSE+UIRight, D(650),
+			PULSE+UISelect, D(650),								// Top option selected by default 
+	//		PULSE+UIDown, D(650),								// Optional #1 Remove comment marks to highlight 2nd option in list...
+	//		PULSE+UISelect, D(650),								// ...and select it 
+	//		PULSE+UIDown, D(650),								// Optional #2 Remove comment marks to highlight 3rd option in list
+	//		PULSE+UISelect, D(650),								// ...and select it 
+	//		PULSE+UIDown, D(650),								// Optional #3 etc. ... and so on 
+	//		PULSE+UISelect, D(650),								// ...and select it 
+			PULSE+UIRight, D(650),
+			PULSE+UISelect, D(1000),							// Selects Private Group
+			LOCK);
+
+		// MACRO: Menulog to PRIVATE GROUP (2nd)				Duration = 14200 (min), add 1370 for each addition UIDown+UISelect optional pair enabled
+		m_FastModeSwitch1b = CHAIN(
+			LOCK+PULSE+RolePanel, D(250),						// Select any panel to ensure GUIFocus is set (!=0) <-- Required???
+			PULSE+MenuLog, D(650),								//  Keystroke sequence = p, up, spc, spc, <wait>, spc, right, spc, spc, right, spc
+			PULSE+UIUp, D(650),
+			PULSE+UISelect, D(650),
+			PULSE+UISelect, D(8500),							// ** Depending on the load times of your PC, this value may need to be
+			PULSE+UISelect, D(650),								//    changed/increased
+			PULSE+UIRight, D(650),
+			PULSE+UISelect, D(650),								// Top option selected by default 
+			PULSE+UIDown, D(650),								// Optional #1 Remove comment marks to highlight 2nd option in list...
+			PULSE+UISelect, D(650),								// ...and select it 
+	//		PULSE+UIDown, D(650),								// Optional #2 Remove comment marks to highlight 3rd option in list
+	//		PULSE+UISelect, D(650),								// ...and select it 
+	//		PULSE+UIDown, D(650),								// Optional #3 etc. ... and so on 
+	//		PULSE+UISelect, D(650),								// ...and select it 
+			PULSE+UIRight, D(650),
+			PULSE+UISelect, D(1000),							// Selects Private Group
+			LOCK);
+
+		// MACRO: Menulog to SOLO								Duration = 11615
+		m_FastModeSwitch2 = CHAIN(
+			LOCK+PULSE+RolePanel, D(250),						// Select any panel to ensure GUIFocus is set (!=0)		
+			PULSE+MenuLog, D(650),								// Keystroke sequence = p, up, spc, spc, <wait>, spc, right, right, spc
+			PULSE+UIUp, D(650),
+			PULSE+UISelect, D(650),
+			PULSE+UISelect, D(6500),							// ** Depending on the load times of your PC, this value may need to be
+			PULSE+UISelect, D(650),								//    changed/increased
+			PULSE+UIRight, D(650),
+			PULSE+UIRight, D(650),
+			PULSE+UISelect, D(650),								// Selects SOLO mode
+			LOCK);
+
+		// MACRO: Toggle 'Report Crimes' on/off					Duration = 2995
+		m_ReportCrimesToggle = CHAIN(
+			LOCK+PULSE+SystemPanel, D(500),						// Keystroke sequence = 4, e, e, e, down, down, right, right, spc, left, left, up, up, q, q, q, 4
+			PULSE+UINextPanel, D(),								// Limitation: This will only work correctly if Target Panel cursor in
+			PULSE+UINextPanel, D(),								//			   default/orig position, else will be misaligned.
+			PULSE+UINextPanel, D(),
+			PULSE+UIDown, D(),
+			PULSE+UIDown, D(),
+			PULSE+UIRight, D(),
+			PULSE+UIRight, D(),
+			PULSE+UISelect, D(500),								// TEST REVIEW the macro stops where we'd hit select 
+			PULSE+UILeft, D(),		 							// send selector back to home position when done
+			PULSE+UILeft, D(),
+			PULSE+UIUp, D(),
+			PULSE+UIUp, D(),
+			PULSE+UIPrevPanel, D(),
+			PULSE+UIPrevPanel, D(),
+			PULSE+UIPrevPanel, D(),
+			PULSE+UIBack,
+			LOCK);
+		
+		// MACRO: Toggle 'Wingman Beacon' to TEAM				Duration = 4070
+		// Under additional testing 
+		m_WingBeaconTeam = CHAIN(
+			LOCK+PULSE+SystemPanel, D(500),						// Keystroke sequence = 4, e, e, e, right, down, down, down, down, spc, down, spc, up, up, up, up, left, q, q, q, 4
+			PULSE+UINextPanel, D(),								// Limitation: This will only work correctly if Target Panel cursor in
+			PULSE+UINextPanel, D(),								//			   default/orig position, else will be misaligned.
+			PULSE+UINextPanel, D(),
+			PULSE+UIRight, D(),
+			PULSE+UIDown, D(),
+			PULSE+UIDown, D(),
+			PULSE+UIDown, D(),
+			PULSE+UIDown, D(),
+			PULSE+UISelect, D(500),
+			PULSE+UIDown, D(),
+			PULSE+UISelect, D(500),								// TEST REVIEW the macro stops where we'd hit select 
+			PULSE+UIRight, D(),
+			PULSE+UIUp, D(),		 							// send selector back to home position when done <<-- TEST
+			PULSE+UIUp, D(),
+			PULSE+UIUp, D(),
+			PULSE+UIUp, D(),
+			PULSE+UILeft, D(),
+			PULSE+UIPrevPanel, D(),
+			PULSE+UIPrevPanel, D(),
+			PULSE+UIPrevPanel, D(),
+			PULSE+UIBack,
+			LOCK);
+
+		// MACRO: Toggle 'Wingman Beacon' to OFF				Duration = 4435
+		// --- additional testing required
+		m_WingBeaconOff = CHAIN(
+			LOCK+PULSE+SystemPanel, D(500),						// Keystroke sequence = 4, e, e, e, right, down, down, down, down, spc, spc, up, up, up, up, left, q, q, q, 4
+			PULSE+UINextPanel, D(),								// Limitation: This will only work correctly if Target Panel cursor in
+			PULSE+UINextPanel, D(),								//			   default/orig position, else will be misaligned.
+			PULSE+UINextPanel, D(),
+			PULSE+UIRight, D(),
+			PULSE+UIDown, D(),
+			PULSE+UIDown, D(),
+			PULSE+UIDown, D(),
+			PULSE+UIDown, D(),
+			PULSE+UISelect, D(750),								// Increase from 500
+			PULSE+UISelect, D(750),								// TEST REVIEW the macro stops where we'd hit final select 
+			PULSE+UIRight, D(),
+			PULSE+UIUp, D(),		 							// send selector back to home position when done <<-- TEST
+			PULSE+UIUp, D(),
+			PULSE+UIUp, D(),
+			PULSE+UIUp, D(),
+			PULSE+UILeft, D(),
+			PULSE+UIPrevPanel, D(),
+			PULSE+UIPrevPanel, D(),
+			PULSE+UIPrevPanel, D(),
+			PULSE+UIBack,
+			LOCK);
+
+		// MACRO: Refuel/repair/restock + ENTER STATION SVCS	Duration = 6950
+		m_EnterHangar = CHAIN(
+			LOCK+PULSE+UIUp, D(),								// Keystroke sequence = up, spc, right, spc, right, spc, right, spc, down, spc 
+			PULSE+UISelect, D(1500),							// Refuel >>> Note delay shortened to 1500 from 2000
+			PULSE+UIRight, D(),
+			PULSE+UISelect, D(1500),							// Repair
+			PULSE+UIRight, D(),
+			PULSE+UISelect, D(1500),							// Restock
+			PULSE+UIRight, D(),
+			PULSE+UISelect, D(1500),							// Enter Hangar		
+			PULSE+UIDown, D(),
+			PULSE+UISelect, D(),								// Station Services			
+			LOCK);
+			
+		// MACRO:		Launch the ship (from Launchpad screen)		Duration - 22000+ThrustUpTime
+		// Issue:		Tweak ThrustUPTime to suit ship.
+		// Development:	Retrieve shiptype and thruster stats from Journal to provide dynamic ThrustUP timer
+		m_Launch = CHAIN(
+			LOCK+PULSE+UIDown, D(500),							// Keystroke sequence = down, down, spc, (wait 20), R (hold for 'ThrustUpTime'), L, NUMPAD 1
+			PULSE+UIDown, D(500),
+			PULSE+UISelect, D(20000),							// Wait 20 seconds
+			DOWN+ThrustUp, D(ThrustUpTime),						// Hold for customisable Thurst Up time 
+			UP+ThrustUp, D(500),
+			PULSE+LandingGear, D(500),							// Retract gear
+			PULSE+SetSpeed25, D(),								// Forward 25%
+			LOCK);
+			
+		// MACRO: Refuel/repair/restock + DISEMBARK				Duration = 6950
+		m_Disembark = CHAIN(
+			LOCK+PULSE+UIUp, D(),								// Keystroke sequence = up, spc, right, spc, right, spc, down, down, down, spc 
+			PULSE+UISelect, D(1500),							// Refuel >>> Note delay shortened to 1500 from 2000
+			PULSE+UIRight, D(),
+			PULSE+UISelect, D(1500),							// Repair
+			PULSE+UIRight, D(),
+			PULSE+UISelect, D(1500),							// Restock
+			PULSE+UIDown, D(),
+			PULSE+UIDown, D(),
+			PULSE+UIDown, D(1000),								// Delay increased from default to 1000
+			PULSE+UISelect, D(),								// Disembark
+			LOCK);
+			
+		// MACRO: Change Engine and Weapon Colours				Duration = 570
+		m_ChangeColours = CHAIN(
+			PULSE+EngineColour, D(250),							// 'LeftALT+e'
+			PULSE+WeaponColour, D(250)							// 'LeftAlt+w'
+			);
+
+		// MACRO: Select Next Firegroup							Duration = 435
+		m_NextFG = CHAIN(
+			PULSE+NextFireGroup, D(400)	
+			);
+
+		// MACRO: Select Previous Firegroup						Duration = 435
+		m_PrevFG = CHAIN(
+			PULSE+PrevFireGroup, D(400)
+			);
+			
+	}	// End of initMacroChains()
+
+	// END

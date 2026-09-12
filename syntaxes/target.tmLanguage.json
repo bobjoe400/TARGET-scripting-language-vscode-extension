@@ -1,0 +1,404 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "TARGET Script",
+  "scopeName": "source.target",
+  "$generated": "Do not edit by hand - produced by tools/gen-grammar.mjs from src/data/builtins.json",
+  "fileTypes": [
+    "tmc",
+    "tmh",
+    "ttm"
+  ],
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#directives"
+    },
+    {
+      "include": "#exec-call"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#char-literal"
+    },
+    {
+      "include": "#usb-lookup"
+    },
+    {
+      "include": "#function-definition"
+    },
+    {
+      "include": "#device-ref"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#reserved-not-in-target"
+    },
+    {
+      "include": "#types"
+    },
+    {
+      "include": "#builtin-functions"
+    },
+    {
+      "include": "#devices"
+    },
+    {
+      "include": "#constants"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#operators"
+    },
+    {
+      "include": "#function-call"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.block.target",
+          "begin": "/\\*",
+          "end": "\\*/",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.definition.comment.begin.target"
+            }
+          },
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.definition.comment.end.target"
+            }
+          }
+        },
+        {
+          "name": "comment.line.double-slash.target",
+          "begin": "//",
+          "end": "$",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.definition.comment.target"
+            }
+          }
+        }
+      ]
+    },
+    "directives": {
+      "patterns": [
+        {
+          "name": "meta.preprocessor.include.target",
+          "match": "^\\s*(include)\\s+(\")([^\"]*)(\")",
+          "captures": {
+            "1": {
+              "name": "keyword.control.directive.include.target"
+            },
+            "2": {
+              "name": "punctuation.definition.string.begin.target"
+            },
+            "3": {
+              "name": "string.quoted.double.include.target"
+            },
+            "4": {
+              "name": "punctuation.definition.string.end.target"
+            }
+          }
+        },
+        {
+          "name": "meta.preprocessor.define.target",
+          "match": "^\\s*(define)\\s+([A-Za-z_]\\w*)",
+          "captures": {
+            "1": {
+              "name": "keyword.control.directive.define.target"
+            },
+            "2": {
+              "name": "entity.name.constant.preprocessor.target"
+            }
+          }
+        }
+      ]
+    },
+    "exec-call": {
+      "name": "meta.function-call.exec.target",
+      "begin": "\\b(REXEC|EXEC)\\s*(\\()",
+      "beginCaptures": {
+        "1": {
+          "name": "support.function.exec.target"
+        },
+        "2": {
+          "name": "punctuation.section.arguments.begin.target"
+        }
+      },
+      "end": "(\\))",
+      "endCaptures": {
+        "1": {
+          "name": "punctuation.section.arguments.end.target"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#comments"
+        },
+        {
+          "name": "meta.embedded.target",
+          "begin": "\"",
+          "end": "\"",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.definition.string.begin.target"
+            }
+          },
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.definition.string.end.target"
+            }
+          },
+          "contentName": "meta.embedded.block.target",
+          "patterns": [
+            {
+              "include": "#exec-nested-string"
+            },
+            {
+              "include": "#builtin-functions"
+            },
+            {
+              "include": "#devices"
+            },
+            {
+              "include": "#constants"
+            },
+            {
+              "include": "#numbers"
+            },
+            {
+              "include": "#exec-escape"
+            },
+            {
+              "include": "#operators"
+            },
+            {
+              "include": "#function-call"
+            },
+            {
+              "include": "#identifiers"
+            }
+          ]
+        },
+        {
+          "include": "#numbers"
+        },
+        {
+          "include": "#constants"
+        },
+        {
+          "include": "#operators"
+        },
+        {
+          "include": "#function-call"
+        },
+        {
+          "include": "#identifiers"
+        }
+      ]
+    },
+    "exec-nested-string": {
+      "name": "string.quoted.double.nested.target",
+      "begin": "\\\\\"",
+      "end": "\\\\\"",
+      "patterns": [
+        {
+          "match": "\\\\\\\\.",
+          "name": "constant.character.escape.target"
+        }
+      ]
+    },
+    "exec-escape": {
+      "name": "constant.character.escape.target",
+      "match": "\\\\."
+    },
+    "strings": {
+      "name": "string.quoted.double.target",
+      "begin": "\"",
+      "end": "\"",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.definition.string.begin.target"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.string.end.target"
+        }
+      },
+      "patterns": [
+        {
+          "name": "constant.character.escape.target",
+          "match": "\\\\(x[0-9A-Fa-f]+|[0-7]{1,3}|.)"
+        }
+      ]
+    },
+    "char-literal": {
+      "name": "string.quoted.single.target",
+      "match": "'(\\\\(x[0-9A-Fa-f]+|[0-7]{1,3}|.)|[^'\\\\])'"
+    },
+    "usb-lookup": {
+      "name": "meta.usb-lookup.target",
+      "match": "\\b(USB)\\s*(\\[)\\s*(0[xX][0-9A-Fa-f]+|\\d+)\\s*(\\])",
+      "captures": {
+        "1": {
+          "name": "support.constant.usb.target"
+        },
+        "2": {
+          "name": "punctuation.section.brackets.begin.target"
+        },
+        "3": {
+          "name": "constant.numeric.hex.usb.target"
+        },
+        "4": {
+          "name": "punctuation.section.brackets.end.target"
+        }
+      }
+    },
+    "function-definition": {
+      "match": "^\\s*(struct|alias|float|short|byte|char|word|int)\\s+([A-Za-z_]\\w*)\\s*(?=\\()",
+      "captures": {
+        "1": {
+          "name": "storage.type.target"
+        },
+        "2": {
+          "name": "entity.name.function.target"
+        }
+      }
+    },
+    "device-ref": {
+      "match": "(&)\\s*\\b(TCASidestickXCopilot|FarmStickXboxRight|TCASidestickXPilot|FarmStickXboxLeft|FarmStickRight|FarmStickLeft|TCAQuadrant12|TCAQuadrant34|TCAYokeBoeing|TCAQBoeing12|TCAQBoeing34|TFRPHARudder|TWCSThrottle|A320Copilot|JoystickF18|TFRPRudder|A320Pilot|AVA_SolRL|Sol_SolRL|ViperBBox|AVA_F16L|AVA_F18L|AVA_SolR|Joystick|Sol_F16L|Sol_F18L|Sol_SolR|Throttle|ViperTQS|AVA_F16|AVA_F18|HCougar|Sol_F16|Sol_F18|T16000L|T16000|LMFD|RMFD)\\b",
+      "captures": {
+        "1": {
+          "name": "keyword.operator.address-of.target"
+        },
+        "2": {
+          "name": "support.class.device.target"
+        }
+      }
+    },
+    "keywords": {
+      "name": "keyword.control.target",
+      "match": "\\b(return|break|while|else|goto|do|if)\\b"
+    },
+    "reserved-not-in-target": {
+      "name": "invalid.illegal.keyword-not-in-target.target",
+      "match": "\\b(for|switch|case|continue|typedef|enum|const|static|unsigned|signed|sizeof)\\b(?=\\s*[\\(\\{\\s;])"
+    },
+    "types": {
+      "name": "storage.type.target",
+      "match": "\\b(struct|alias|float|short|byte|char|word|int)\\b"
+    },
+    "builtin-functions": {
+      "patterns": [
+        {
+          "name": "support.function.exec.target",
+          "match": "\\b(REXEC|EXEC)\\b(?=\\s*\\()"
+        },
+        {
+          "name": "support.function.target",
+          "match": "\\b(GetDeviceCapabilities|RegisterGameCallback|GetCustomCurveValue|LockPulseTimestamps|FreeProcInstance|InitSocketServer|MakeProcInstance|SelectUsbDevices|DefEventHandler|SelectUsbDevice|SetEventHandler|DefaultMapping|GetProcAddress|SetCustomCurve|SetShiftButton|StopAutoRepeat|GetDeviceData|GetInputValue|VirtualOutput|MapKeyRIOUMD|PlugKeyboard|RotateDXAxis|CloseHandle|CreateFileA|FreeLibrary|GetAxisData|LED_control|LoadLibrary|MapKeyIOUMD|RemoveEvent|SetKBLayout|AutoRepeat|GameOutput|LockDXAxis|MapKeyRUMD|TrimDXAxis|Configure|DeferCall|DXSetAxis|GetMouseX|GetMouseY|MapKeyRIO|MapKeyUMD|PlugMouse|PostEvent|SetJCurve|SetKBRate|SetSCurve|WriteFile|elements|iexecute|LockAxis|MapKeyIO|PlugGame|PulseKey|defined|Exclude|execute|gettype|Hat2Btn|HoldKey|KeyAxis|MapAxis|MapKeyR|MapList|putchar|realloc|sprintf|strname|ActKey|AXMAP1|AXMAP2|DXAxis|fclose|fwrite|getmem|LEDRGB|malloc|MapKey|memcpy|printf|Select|setmem|sizeof|strcat|strchr|strcmp|strdel|strins|strlen|strstr|strsub|system|Abort|atan2|CHAIN|fgetc|fopen|fputc|fread|fseek|ftell|ieval|input|msize|Sleep|TEMPO|acos|asin|atan|AXIS|clip|eval|feof|free|Init|KeyD|KeyU|LEDV|sqrt|abs|cos|Dim|dis|exp|Key|LED|log|Map|pow|RPT|SEQ|SET|sgn|sin|tan|DX|ln|D|X)\\b(?=\\s*\\()"
+        },
+        {
+          "name": "support.function.internal.target",
+          "match": "\\b(GetLayerBits|GetIndexJoy|axmap1proc|axmap2proc|GetListPos|chaincall|chainproc|rexecproc|tempoproc|ASMAlloc|axisproc|execproc|ASMFind|AxisVal|cleanup|ledproc|P2Curve|seqproc|fcurve|RJLoop|tempo1|axis1|HatUp|LI)\\b(?=\\s*\\()"
+        },
+        {
+          "name": "support.function.target",
+          "match": "\\b(GetDeviceCapabilities|RegisterGameCallback|GetCustomCurveValue|LockPulseTimestamps|FreeProcInstance|InitSocketServer|MakeProcInstance|SelectUsbDevices|DefEventHandler|SelectUsbDevice|SetEventHandler|DefaultMapping|GetProcAddress|SetCustomCurve|SetShiftButton|StopAutoRepeat|GetDeviceData|GetInputValue|VirtualOutput|MapKeyRIOUMD|PlugKeyboard|RotateDXAxis|CloseHandle|CreateFileA|FreeLibrary|GetAxisData|LED_control|LoadLibrary|MapKeyIOUMD|RemoveEvent|SetKBLayout|AutoRepeat|GameOutput|LockDXAxis|MapKeyRUMD|TrimDXAxis|Configure|DeferCall|DXSetAxis|GetMouseX|GetMouseY|MapKeyRIO|MapKeyUMD|PlugMouse|PostEvent|SetJCurve|SetKBRate|SetSCurve|WriteFile|elements|iexecute|LockAxis|MapKeyIO|PlugGame|PulseKey|defined|Exclude|execute|gettype|Hat2Btn|HoldKey|KeyAxis|MapAxis|MapKeyR|MapList|putchar|realloc|sprintf|strname|ActKey|AXMAP1|AXMAP2|DXAxis|fclose|fwrite|getmem|LEDRGB|malloc|MapKey|memcpy|printf|Select|setmem|sizeof|strcat|strchr|strcmp|strdel|strins|strlen|strstr|strsub|system|Abort|atan2|CHAIN|fgetc|fopen|fputc|fread|fseek|ftell|ieval|input|msize|Sleep|TEMPO|acos|asin|atan|AXIS|clip|eval|feof|free|Init|KeyD|KeyU|LEDV|sqrt|abs|cos|Dim|dis|exp|Key|LED|log|Map|pow|RPT|SEQ|SET|sgn|sin|tan|DX|ln|D|X)\\b"
+        }
+      ]
+    },
+    "devices": {
+      "name": "support.class.device.target",
+      "match": "\\b(TCASidestickXCopilot|FarmStickXboxRight|TCASidestickXPilot|FarmStickXboxLeft|FarmStickRight|FarmStickLeft|TCAQuadrant12|TCAQuadrant34|TCAYokeBoeing|TCAQBoeing12|TCAQBoeing34|TFRPHARudder|TWCSThrottle|A320Copilot|JoystickF18|TFRPRudder|A320Pilot|AVA_SolRL|Sol_SolRL|ViperBBox|AVA_F16L|AVA_F18L|AVA_SolR|Joystick|Sol_F16L|Sol_F18L|Sol_SolR|Throttle|ViperTQS|AVA_F16|AVA_F18|HCougar|Sol_F16|Sol_F18|T16000L|T16000|LMFD|RMFD)\\b"
+    },
+    "constants": {
+      "patterns": [
+        {
+          "name": "support.constant.flag.target",
+          "match": "\\b(MODE_KEEPENABLED|CREATE_JOYSTICK|CREATE_KEYBOARD|AXIS_REVERSED|MODE_EXCLUDED|MODE_FILTERED|CREATE_MOUSE|MAP_ABSOLUTE|MAP_RELATIVE|AXIS_NORMAL|IOTOGGLE|UDTOGGLE|L_SHIFT|R_SHIFT|RNOSTOP|DELAY|KEYON|L_ALT|L_CTL|L_WIN|PULSE|R_ALT|R_CTL|R_WIN|DOWN|JUMP|LOCK|PROC|ALT|CTL|SHF|UP)\\b"
+        },
+        {
+          "name": "support.constant.button.target",
+          "match": "\\b(TFRPHA_RUDDER|Y_MINISTICK_X|Y_MINISTICK_Y|TFRPHA_RIGHT|TFRPHA_LEFT|QBR_RUDDER|QT_VL_BTN1|QT_VL_BTN2|QT_VL_BTN3|QT_VL_BTN4|QT_VR_BTN1|QT_VR_BTN2|QT_VR_BTN3|QT_VR_BTN4|QBR_RIGHT|QR_RUDDER|QS_V_BTN1|QS_V_BTN2|QS_V_BTN3|QS_V_BTN4|QS_V_BTN5|TCSRUDDER|THR_RIGHT|ANT_ELEV|AVA_SG10|AVA_SG11|AVA_SG12|AVA_SG13|AVA_SG14|AVA_SG15|AVA_SG16|AVA_SG17|AVA_SG18|AVA_SG19|AVA_SG20|AVA_SG21|BB_BTN10|BB_BTN11|BB_BTN12|BB_BTN13|BB_BTN14|BB_BTN15|BB_BTN16|BB_BTN17|BB_BTN18|BB_BTN19|BB_BTN20|BB_BTN21|BB_BTN22|BB_BTN23|BB_BTN24|BB_BTN25|BB_BTN26|BB_BTN27|BB_BTN28|BB_BTN29|BB_BTN30|BB_BTN31|BB_BTN32|BB_BTN33|BB_BTN34|BB_BTN35|BB_BTN36|BB_BTN37|BB_BTN38|BB_BTN39|BB_BTN40|BB_BTN41|BB_BTN42|BB_BTN43|EOLMOTOR|EORMOTOR|IDLELOFF|IDLEROFF|QB_BTN10|QB_BTN11|QB_BTN12|QB_BTN13|QB_BTN14|QB_BTN15|QB_BTN16|QB_BTN17|QB_BTN18|QB_BTN19|QB_BTN20|QB_BTN21|QB_BTN22|QB_BTN23|QB_BTN24|QB_BTN25|QB_BTN26|QB_BTN27|QB_BTN28|QB_BTN29|QB_BTN30|QB_BTN31|QB_BTN32|QB_BTN33|QB_BTN34|QB_BTN35|QB_BTN36|QB_BTN37|QB_BTN38|QB_BTN39|QB_BTN40|QB_BTN41|QB_BTN42|QB_BTN43|QBR_LEFT|QR_RIGHT|QS_SPEED|QT_RIGHT|SOL_SG24|SOL_SG25|SOL_SG26|SOL_SG27|SOL_SG28|SOL_SG29|SOL_SG30|SOL_SG31|SOL_SG32|SOL_SG33|SOL_SG34|SOL_SG35|SOL_SG36|SOL_SG37|SOL_SG38|SOL_SG39|SOL_SG40|SOL_SG41|SOL_SG42|SOL_SG43|SOL_SG44|TCSRIGHT|THR_LEFT|THROTTLE|TRPRIGHT|VB1_AXIS|VQ1_AXIS|VQ2_AXIS|VQ3_AXIS|VQ4_AXIS|VQ5_AXIS|AVA_SG1|AVA_SG2|AVA_SG3|AVA_SG4|AVA_SG5|AVA_SG6|AVA_SG7|AVA_SG8|AVA_SG9|BB_BTN1|BB_BTN2|BB_BTN3|BB_BTN4|BB_BTN5|BB_BTN6|BB_BTN7|BB_BTN8|BB_BTN9|EFLNORM|EFLOVER|EFRNORM|EFROVER|EOLNORM|EORNORM|IDLELON|IDLERON|MAN_RNG|Q_BTN10|Q_BTN11|Q_BTN12|Q_BTN13|Q_BTN14|Q_BTN15|Q_BTN16|Q_BTN17|Q_BTN18|Q_BTN19|Q_BTN20|Q_BTN21|Q1_AXIS|Q2_AXIS|Q3_AXIS|QB_BTN1|QB_BTN2|QB_BTN3|QB_BTN4|QB_BTN5|QB_BTN6|QB_BTN7|QB_BTN8|QB_BTN9|QF_BTN1|QF_BTN2|QF_BTN3|QF_BTN4|QF_FLAP|QR_LEFT|QS_BTN1|QS_BTN2|QS_BTN3|QS_BTN4|QS_BTN5|QS_BTN6|QT_BTN1|QT_BTN2|QT_BTN3|QT_BTN4|QT_BTN5|QT_BTN6|QT_BTN7|QT_BTN8|QT_LEFT|SLIDER0|SOL_B10|SOL_B11|SOL_B12|SOL_B13|SOL_B14|SOL_B15|SOL_B16|SOL_B17|SOL_B18|SOL_B19|SOL_B20|SOL_B21|SOL_B22|SOL_B23|SOL_H1D|SOL_H1L|SOL_H1R|SOL_H1U|SOL_H2D|SOL_H2L|SOL_H2P|SOL_H2R|SOL_H2U|SOL_H3D|SOL_H3L|SOL_H3P|SOL_H3R|SOL_H3U|SOL_H4D|SOL_H4L|SOL_H4P|SOL_H4R|SOL_H4U|SOL_POV|SOL_TG1|SOL_TG2|TCSLEFT|TRPLEFT|TRUDDER|Y_BTN10|Y_BTN11|Y_BTN12|Y_BTN13|Y_BTN14|Y_BTN15|Y_BTN16|Y_BTN17|Y_BTN18|Y_PITCH|APUOFF|EACOFF|EOLIGN|EORIGN|Q_BTN1|Q_BTN2|Q_BTN3|Q_BTN4|Q_BTN5|Q_BTN6|Q_BTN7|Q_BTN8|Q_BTN9|RDRDIS|RDRNRM|ROCKER|RUDDER|SOL_B1|SOL_B2|SOL_B3|SOL_B4|SOL_B5|SOL_B6|SOL_B7|SOL_B8|SOL_B9|SOL_S1|SOL_S2|SOL_S3|SOL_S4|THAT1D|THAT1L|THAT1R|THAT1U|THAT2D|THAT2L|THAT2R|THAT2U|THAT3D|THAT3L|THAT3R|THAT3U|THR_FC|Y_BTN1|Y_BTN2|Y_BTN3|Y_BTN4|Y_BTN5|Y_BTN6|Y_BTN7|Y_BTN8|Y_BTN9|Y_ROLL|APALT|APDIS|APENG|APPAT|APUON|AXIS1|AXIS2|AXIS3|AXIS4|AXIS5|AXIS6|AXIS7|AXIS8|AXIS9|EACON|FLAPD|FLAPM|FLAPU|GAIND|GAINU|MS_LR|MS_UD|OSB01|OSB02|OSB03|OSB04|OSB05|OSB06|OSB07|OSB08|OSB09|OSB10|OSB11|OSB12|OSB13|OSB14|OSB15|OSB16|OSB17|OSB18|OSB19|OSB20|RDR_X|RDR_Y|TBTN1|TBTN2|TBTN3|TBTN4|TBTN5|THAT2|TLOCK|TMSTX|TMSTY|APAH|BRTD|BRTU|COND|CONU|DIAL|JOYX|JOYY|LDGH|SPDB|SPDF|SPDM|SYMD|SYMU|TANT|TRDR|TTHR|Y_S1|Y_S2|B10|B11|B12|B13|B14|B15|B16|B17|B18|B19|B20|B21|B22|B23|B24|B25|B26|B27|B28|B29|B30|B31|B32|B33|B34|B35|B36|B37|B38|B39|BSB|BSF|BSM|CHB|CHF|CHM|CSD|CSL|CSR|CSU|DFM|H1D|H1L|H1R|H1U|H2D|H2L|H2P|H2R|H2U|H3D|H3L|H3P|H3R|H3U|H4D|H4L|H4P|H4R|H4U|HAT|LTB|MSD|MSL|MSP|MSR|MSU|POV|PSB|PSF|PSM|SCX|SCY|T10|TG1|TG2|THR|TS1|TS2|TS3|TS4|B1|B2|B3|B4|B5|B6|B7|B8|B9|CS|S1|S2|S3|S4|SC|T1|T2|T3|T4|T5|T6|T7|T8|T9)\\b"
+        },
+        {
+          "name": "support.constant.directx.target",
+          "match": "\\b(DX_THROTTLE_AXIS|DX_SLIDER_AXIS|DXHATDOWNRIGHT|DXHATDOWNLEFT|DX_XROT_AXIS|DX_YROT_AXIS|DX_ZROT_AXIS|DXHATUPRIGHT|MOUSE_CENTER|MOUSE_X_AXIS|MOUSE_Y_AXIS|MOUSE_Z_AXIS|DXHATUPLEFT|MOUSE_RIGHT|DXHATRIGHT|MOUSE_BTN4|MOUSE_BTN5|MOUSE_LEFT|DX_X_AXIS|DX_Y_AXIS|DX_Z_AXIS|DXHATDOWN|DXHATLEFT|DXHATUP|DX100|DX101|DX102|DX103|DX104|DX105|DX106|DX107|DX108|DX109|DX110|DX111|DX112|DX113|DX114|DX115|DX116|DX117|DX118|DX119|DX120|DX121|DX122|DX123|DX124|DX125|DX126|DX127|DX128|DX10|DX11|DX12|DX13|DX14|DX15|DX16|DX17|DX18|DX19|DX20|DX21|DX22|DX23|DX24|DX25|DX26|DX27|DX28|DX29|DX30|DX31|DX32|DX33|DX34|DX35|DX36|DX37|DX38|DX39|DX40|DX41|DX42|DX43|DX44|DX45|DX46|DX47|DX48|DX49|DX50|DX51|DX52|DX53|DX54|DX55|DX56|DX57|DX58|DX59|DX60|DX61|DX62|DX63|DX64|DX65|DX66|DX67|DX68|DX69|DX70|DX71|DX72|DX73|DX74|DX75|DX76|DX77|DX78|DX79|DX80|DX81|DX82|DX83|DX84|DX85|DX86|DX87|DX88|DX89|DX90|DX91|DX92|DX93|DX94|DX95|DX96|DX97|DX98|DX99|DX1|DX2|DX3|DX4|DX5|DX6|DX7|DX8|DX9)\\b"
+        },
+        {
+          "name": "support.constant.keyboard.target",
+          "match": "\\b(PRNTSCRN|ASC_AGR|ASC_SHF|DARROW|LARROW|RARROW|SCRLCK|UARROW|KPENT|APPS|CAPS|HOME|LALT|LCTL|LSHF|LWIN|NUML|PGDN|PGUP|RALT|RCTL|RSHF|RWIN|ALT|BRK|BSP|CTL|DEL|END|ENT|ESC|F10|F11|F12|F13|F14|F15|F16|F17|F18|F19|F20|F21|F22|F23|F24|INS|KP0|KP1|KP2|KP3|KP4|KP5|KP6|KP7|KP8|KP9|SHF|SPC|TAB|F1|F2|F3|F4|F5|F6|F7|F8|F9)\\b"
+        },
+        {
+          "name": "support.constant.target",
+          "match": "\\b(OUT_VALUE_BUTTON_PRESS_RELEASE|IN_POSITION_AXIS_THROTTLE|EV_HID_INPUT_DATA_FILTER|IN_POSITION_AXIS_SLIDER1|IN_POSITION_AXIS_SLIDER2|IN_POSITION_AXIS_SLIDER3|IN_POSITION_AXIS_SLIDER4|OUT_VALUE_BUTTON_RELEASE|IN_OFFSET_AXIS_THROTTLE|OUT_VALUE_BUTTON_TOGGLE|IN_OFFSET_AXIS_SLIDER1|IN_OFFSET_AXIS_SLIDER2|IN_OFFSET_AXIS_SLIDER3|IN_OFFSET_AXIS_SLIDER4|OUT_VALUE_BUTTON_PRESS|FILE_ATTRIBUTE_NORMAL|OUT_VALUE_TIMER_START|INVALID_HANDLE_VALUE|OUT_ID_LED_BACKLIGHT|OUT_ID_LED_INTENSITY|OUT_VALUE_TIMER_STOP|IN_POSITION_AXIS_RX|IN_POSITION_AXIS_RY|IN_POSITION_AXIS_RZ|IN_POSITION_BUTTONS|IN_POSITION_AXIS_X|IN_POSITION_AXIS_Y|IN_POSITION_AXIS_Z|EV_HID_INPUT_DATA|IN_OFFSET_AXIS_RX|IN_OFFSET_AXIS_RY|IN_OFFSET_AXIS_RZ|OUT_TYPE_KEYBOARD|IN_OFFSET_AXIS_X|IN_OFFSET_AXIS_Y|IN_OFFSET_AXIS_Z|IN_POSITION_AXES|IN_POSITION_SIZE|OUT_TYPE_UNKNOWN|IN_POSITION_HAT|IN_MAX_BUTTONS|OUT_ID_HID_MAX|OUT_TYPE_MOUSE|GENERIC_WRITE|LED_INTENSITY|OPEN_EXISTING|OUT_ID_BUTTON|OUT_TYPE_GAME|EV_GAME_DATA|MAP_IPTR_VPN|MAP_THISCALL|OUT_ID_LED_1|OUT_ID_LED_2|OUT_ID_LED_3|OUT_ID_LED_4|OUT_ID_LED_5|OUT_ID_TIMER|EV_HID_NONE|IN_MAX_AXES|LED_CURRENT|OUT_ID_AXIS|AXDATASIZE|IN_MAX_HAT|MAP_NORMAL|MAXKEYDATA|OUT_ID_HAT|OUT_ID_LED|VAR_STRUCT|KDATASIZE|LED_ONOFF|MAXAXDATA|POVCENTER|VAR_ALIAS|VAR_FLOAT|VAR_SHORT|MAP_IPTR|SEEK_CUR|SEEK_END|SEEK_SET|VAR_BYTE|VAR_CHAR|VAR_NONE|VAR_WORD|CURRENT|VAR_INT|EV_USR|KB_ENG|KB_GER|AMAXF|KB_FR|POVDL|POVDR|POVUL|POVUR|AMAX|LED0|LED1|LED2|LED3|LED4|LED5|LIST|POVD|POVL|POVR|POVU)\\b"
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.hex.target",
+          "match": "\\b0[xX][0-9A-Fa-f]+\\b"
+        },
+        {
+          "name": "constant.numeric.float.target",
+          "match": "\\b\\d+\\.\\d*([eE][-+]?\\d+)?\\b|\\b\\d+\\.(?!\\w)"
+        },
+        {
+          "name": "constant.numeric.integer.target",
+          "match": "\\b\\d+\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.logical.target",
+          "match": "&&|\\|\\||!(?!=)"
+        },
+        {
+          "name": "keyword.operator.comparison.target",
+          "match": "==|!=|<=|>=|<(?![<])|>(?![>])"
+        },
+        {
+          "name": "keyword.operator.bitwise.target",
+          "match": ">>|<<|&|\\||\\^|~"
+        },
+        {
+          "name": "keyword.operator.arithmetic.target",
+          "match": "\\+|-|\\*|/|%"
+        },
+        {
+          "name": "keyword.operator.assignment.target",
+          "match": "="
+        }
+      ]
+    },
+    "function-call": {
+      "match": "\\b([A-Za-z_]\\w*)\\s*(?=\\()",
+      "captures": {
+        "1": {
+          "name": "entity.name.function.call.target"
+        }
+      }
+    },
+    "identifiers": {
+      "name": "variable.other.target",
+      "match": "\\b[A-Za-z_]\\w*\\b"
+    }
+  }
+}
