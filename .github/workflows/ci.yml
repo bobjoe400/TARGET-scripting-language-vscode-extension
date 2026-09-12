@@ -1,0 +1,31 @@
+# Runs the suite on every push and pull request.
+#
+# Five of the six suites need nothing but Node. The sixth shells out to the real
+# Interpreter.exe and exits cleanly when TARGET is not installed, which is every
+# runner - so what this proves is that the language layer holds up away from the one
+# machine it was written on.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+      # The package must actually build, or a green suite still means a failed release.
+      - run: npx @vscode/vsce package --no-dependencies --out /tmp/check.vsix
