@@ -33,6 +33,8 @@ export type DeclKind = 'function' | 'variable' | 'define' | 'alias' | 'struct';
 export interface Decl {
   kind: DeclKind;
   name: string;
+  /** Comment block documenting this declaration, or '' when it has none. */
+  doc: string;
   start: number;
   end: number;
   /** Whole statement span, used for the symbol's outline range. */
@@ -68,6 +70,74 @@ interface Frame {
   argStart: number;
 }
 
+/**
+ * The comment block documenting a declaration at `offset`.
+ *
+ * Real scripts separate the block from the declaration by a blank line:
+ *
+ *     // FUNCTION:  Sets PIP profiles
+ *     // Parameter: 0 = Reset, 1 = Increment, 2 = Decrement
+ *
+ *     int fnPIPMode(int x) {
+ *
+ * so a search for comments immediately above would find nothing. Up to two blank
+ * lines are stepped over, and a banner of dashes or equals signs ends the search:
+ * it divides sections rather than documenting the line beneath it.
+ */
+export function docCommentAbove(lines: string[], lineIndex: number): string {
+  const isBanner = (s: string) => /^\s*\/[/*]\s*[-=*_#]{3,}/.test(s) || /^\s*[-=*_#]{5,}\s*$/.test(s);
+  const collected: string[] = [];
+  let i = lineIndex - 1;
+  let blanks = 0;
+
+  while (i >= 0) {
+    const line = lines[i];
+    if (line.trim() === '') {
+      // Blank lines are allowed before the block, but end it once it has started.
+      if (collected.length) break;
+      if (++blanks > 2) break;
+      i--;
+      continue;
+    }
+    if (isBanner(line)) break;
+
+    const lineComment = line.match(/^\s*\/\/\s?(.*)$/);
+    if (lineComment) {
+      collected.unshift(lineComment[1].replace(/\s+$/, ''));
+      i--;
+      continue;
+    }
+
+    // A block comment ending just above, e.g. `... */`.
+    if (/\*\/\s*$/.test(line) && !collected.length) {
+      const block: string[] = [];
+      let j = i;
+      while (j >= 0 && !/\/\*/.test(lines[j])) {
+        block.unshift(lines[j]);
+        j--;
+      }
+      if (j >= 0) {
+        block.unshift(lines[j]);
+        const body = block
+          .join('\n')
+          .replace(/^[\s\S]*?\/\*+/, '')
+          .replace(/\*+\/\s*$/, '')
+          .split('\n')
+          .map((l) => l.replace(/^\s*\*?\s?/, '').replace(/\s+$/, ''));
+        while (body.length && body[0].trim() === '') body.shift();
+        while (body.length && body[body.length - 1].trim() === '') body.pop();
+        return body.join('\n');
+      }
+    }
+    break; // code
+  }
+
+  while (collected.length && collected[0].trim() === '') collected.shift();
+  while (collected.length && collected[collected.length - 1].trim() === '') collected.pop();
+  // Tabs are used for alignment inside these blocks and mean nothing in markdown.
+  return collected.map((l) => l.replace(/\t+/g, ' ')).join('\n');
+}
+
 export function buildModel(text: string): DocModel {
   const tokens = lex(text);
   const sig = tokens.filter((t) => t.kind !== TokKind.Comment);
@@ -81,11 +151,27 @@ export function buildModel(text: string): DocModel {
   const callStack: CallNode[] = [];
   let braceDepth = 0;
 
+  // Built once: computing a line number per declaration by scanning from the start
+  // would be quadratic on the larger headers.
+  const lines = text.split('\n');
+  const lineStarts: number[] = [0];
+  for (let i = 0; i < lines.length; i++) lineStarts.push(lineStarts[i] + lines[i].length + 1);
   const lineOf = (offset: number) => {
-    let line = 0;
-    for (let i = 0; i < offset && i < text.length; i++) if (text[i] === '\n') line++;
-    return line;
+    let lo = 0;
+    let hi = lines.length - 1;
+    let ans = 0;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (lineStarts[mid] <= offset) {
+        ans = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    return ans;
   };
+  const docAbove = (offset: number) => docCommentAbove(lines, lineOf(offset));
 
   for (let i = 0; i < sig.length; i++) {
     const t = sig[i];
@@ -180,6 +266,7 @@ export function buildModel(text: string): DocModel {
         const rawValue = stripComment(text.slice(name.end, stop)).trim();
         decls.push({
           kind: 'define',
+          doc: docAbove(t.start),
           name: name.value,
           start: name.start,
           end: name.end,
@@ -195,7 +282,7 @@ export function buildModel(text: string): DocModel {
     }
 
     if (TYPE_KEYWORDS.has(t.value)) {
-      i = parseDeclaration(text, sig, i, braceDepth, decls);
+      i = parseDeclaration(text, sig, i, braceDepth, decls, docAbove);
       continue;
     }
   }
@@ -221,7 +308,8 @@ function parseDeclaration(
   sig: Token[],
   start: number,
   braceDepth: number,
-  out: Decl[]
+  out: Decl[],
+  docAbove: (offset: number) => string
 ): number {
   const typeTok = sig[start];
   const type = typeTok.value;
@@ -232,6 +320,7 @@ function parseDeclaration(
     if (name?.kind === TokKind.Ident) {
       out.push({
         kind: 'struct',
+        doc: docAbove(typeTok.start),
         name: name.value,
         start: name.start,
         end: name.end,
@@ -295,6 +384,7 @@ function parseDeclaration(
         end = sig[k]?.end ?? end;
         out.push({
           kind: 'function',
+          doc: docAbove(typeTok.start),
           name: name.value,
           start: name.start,
           end: name.end,
@@ -311,6 +401,7 @@ function parseDeclaration(
       }
       out.push({
         kind: 'function',
+        doc: docAbove(typeTok.start),
         name: name.value,
         start: name.start,
         end: name.end,
@@ -343,6 +434,7 @@ function parseDeclaration(
     const isArray = next?.kind === TokKind.Punct && next.value === '[';
     out.push({
       kind: type === 'alias' ? 'alias' : 'variable',
+      doc: docAbove(typeTok.start),
       name: name.value,
       start: name.start,
       end: name.end,

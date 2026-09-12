@@ -31,7 +31,16 @@ MapKeyUMD(&MyJoystick, TS1, ...);
 Axis functions (`MapAxis`, `SetSCurve`, …) rank that device's axes first instead.
 
 **Hover and signature help** for all 171 builtins, with the real parameter lists and
-default values.
+default values - and for your own functions too, including the comment block above
+them, looked up across the include graph so a call site shows what a function in
+another file is for.
+
+TARGET defines no documentation format - the compiler ignores comments and ships no
+doc tooling - so nothing is privileged: whatever you wrote above the declaration is
+what you see, be it one line, several, a `/* */` block or something javadoc-shaped.
+A blank line between the comment and the declaration is stepped over, since that is
+how scripts are usually written, and a banner of dashes or equals signs is treated as
+a section divider rather than documentation.
 
 **Outline and go-to-definition**, including across `include` files — large scripts are
 split over a dozen headers and Thrustmaster's editor has no navigation at all.

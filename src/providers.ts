@@ -24,6 +24,22 @@ import {
 
 export const TARGET_SELECTOR: vscode.DocumentSelector = { language: 'target' };
 
+/**
+ * Markdown for a symbol the user declared: its signature, the comment block above it,
+ * and where it came from. Scripts are split across a dozen headers, so saying which
+ * file a name lives in is half the value.
+ */
+function describeDecl(decl: Decl, file: string, currentFile: string): string {
+  const parts = ['```c', decl.detail, '```'];
+  if (decl.doc.trim()) {
+    // Single newlines do not break lines in markdown; these blocks are written as
+    // lines and are meant to stay that way.
+    parts.push('', decl.doc.split('\n').join('  \n'));
+  }
+  if (file !== currentFile) parts.push('', `*declared in \`${path.basename(file)}\`*`);
+  return parts.join('\n');
+}
+
 /** Device handles a script binds itself, merged across the include graph. */
 function aliasBindingsFor(index: TargetIndex, doc: vscode.TextDocument): Map<string, Set<string>> {
   const merged = new Map<string, Set<string>>();
@@ -171,7 +187,7 @@ export class TargetCompletionProvider implements vscode.CompletionItemProvider {
       seenSym.add(decl.name);
       const it = new vscode.CompletionItem(decl.name, declKindToCompletionKind(decl.kind));
       it.detail = decl.detail;
-      it.documentation = new vscode.MarkdownString(`*declared in \`${path.basename(file)}\`*`);
+      it.documentation = new vscode.MarkdownString(describeDecl(decl, file, doc.uri.fsPath));
       it.sortText = `1_${decl.name}`;
       items.push(it);
     }
@@ -226,9 +242,7 @@ export class TargetHoverProvider implements vscode.HoverProvider {
 
     for (const { decl, file } of this.index.visibleDecls(doc)) {
       if (decl.name !== word) continue;
-      const parts = ['```c', decl.detail, '```'];
-      if (file !== doc.uri.fsPath) parts.push('', `*declared in \`${path.basename(file)}\`*`);
-      return md(parts.join('\n'));
+      return md(describeDecl(decl, file, doc.uri.fsPath));
     }
 
     // A handle the script binds to hardware.
@@ -268,7 +282,10 @@ export class TargetSignatureProvider implements vscode.SignatureHelpProvider {
 
     for (const { decl } of this.index.visibleDecls(doc)) {
       if (decl.kind !== 'function' || decl.name !== ctx.call.name) continue;
-      const sig = new vscode.SignatureInformation(decl.detail);
+      const sig = new vscode.SignatureInformation(
+        decl.detail,
+        decl.doc.trim() ? new vscode.MarkdownString(decl.doc.split('\n').join('  \n')) : undefined
+      );
       const inner = decl.detail.slice(decl.detail.indexOf('(') + 1, decl.detail.lastIndexOf(')'));
       sig.parameters = inner
         .split(',')

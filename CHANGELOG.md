@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.0
+
+- Hover, completion and signature help now show the comment block above a function,
+  variable, alias or define you declared, not just its signature - across the whole
+  include graph, so a call site shows what the function in another file is for.
+- TARGET defines no documentation format: the compiler ignores comments and ships no
+  doc tooling. Nothing is privileged as a result - the block above a declaration is
+  shown verbatim, whether it is a one-liner, several lines, a `/* */` block or a
+  javadoc-looking one. No labels such as `FUNCTION:` or `@param` are parsed.
+- A blank line between the block and the declaration is stepped over, which is how
+  real scripts are written. A banner of dashes or equals signs ends the search: it
+  divides sections rather than documenting what follows.
+
 ## 0.4.0
 
 - Flags C syntax the TARGET parser rejects. Every entry was confirmed against the

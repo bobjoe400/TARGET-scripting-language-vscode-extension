@@ -201,6 +201,103 @@ for (const [label, src, needle] of [
   }
 }
 
+
+// ---- documentation for the user's own functions -----------------------------
+// Real scripts document every function in a comment block above it, separated from
+// the declaration by a blank line. Surfacing that is what makes a large multi-file
+// script navigable.
+{
+  const src = [
+    '// FUNCTION:\tSets PIP profiles',
+    "// Parameter:\t0 = Reset, 1 = Increment, 2 = Decrement",
+    '',
+    'int fnPIPMode(int x)',
+    '{',
+    '\treturn x;',
+    '}',
+    '',
+    'int caller()',
+    '{',
+    '\tfnPIPMode(1);',
+    '}',
+    '',
+  ].join('\n');
+
+  // Hover over the definition shows the block.
+  const h = hoverAt(src.replace('int fnPIPMode(int x)', 'int fnPIP|Mode(int x)'));
+  if (h && /Sets PIP profiles/.test(h) && /int fnPIPMode\(int x\)/.test(h)) {
+    ok('hover shows a user function doc comment');
+    console.log('  ok    hover shows a user function doc comment');
+  } else fail('hover user doc', `got ${JSON.stringify((h || '').slice(0, 120))}`);
+
+  // Hover over a call site shows it too.
+  const h2 = hoverAt(src.replace('\tfnPIPMode(1);', '\tfnPIP|Mode(1);'));
+  if (h2 && /Sets PIP profiles/.test(h2)) {
+    ok('hover at call site');
+    console.log('  ok    hover at a call site shows the same doc');
+  } else fail('hover call site doc', `got ${JSON.stringify((h2 || '').slice(0, 120))}`);
+
+  // Completion carries it as the item's documentation.
+  const items = complete(src + '\nint other() { fnPIP| }\n');
+  const item = items.find((i) => i.label === 'fnPIPMode');
+  if (item && /Sets PIP profiles/.test(item.documentation?.value ?? '')) {
+    ok('completion doc');
+    console.log('  ok    completion carries the doc comment');
+  } else fail('completion doc', `documentation=${JSON.stringify(item?.documentation?.value ?? null)}`);
+
+  // Signature help shows it while typing the arguments.
+  {
+    const { doc, pos } = FakeDocument.withCursor(scratch(), src.replace('\tfnPIPMode(1);', '\tfnPIPMode(|);'));
+    stub.workspace.textDocuments = [doc];
+    const sh = signature.provideSignatureHelp(doc, pos);
+    const docText = sh?.signatures?.[0]?.documentation?.value ?? '';
+    if (/Sets PIP profiles/.test(docText)) {
+      ok('signature help doc');
+      console.log('  ok    signature help carries the doc comment');
+    } else fail('signature help doc', `documentation=${JSON.stringify(docText)}`);
+  }
+
+  // A banner above a function divides sections; it is not documentation.
+  const bannered = '// ------------------------------------------\n\nint fnPlain(int x)\n{\n\treturn x;\n}\n';
+  const h3 = hoverAt(bannered.replace('int fnPlain', 'int fnPl|ain'));
+  if (h3 && !/-{5,}/.test(h3)) {
+    ok('banner not treated as doc');
+    console.log('  ok    a separator banner is not mistaken for documentation');
+  } else fail('banner as doc', `got ${JSON.stringify((h3 || '').slice(0, 100))}`);
+}
+
+// TARGET defines no documentation format: the compiler ignores comments and ships no
+// doc tooling. So whatever comment style a script uses must work, and no particular
+// convention may be privileged - the block above a declaration is shown verbatim.
+{
+  const { buildModel } = require(path.join(repoRoot, 'out/model.js'));
+  const styles = [
+    ['plain one-liner', '// Toggles the landing gear\nint a(int x) { return x; }\n', 'Toggles the landing gear'],
+    ['several plain lines', '// Toggles the gear.\n// Pass 1 to force it down.\nint b(int x) { return x; }\n', 'Pass 1 to force it down.'],
+    ['block comment', '/*\n Toggles the gear.\n*/\nint c(int x) { return x; }\n', 'Toggles the gear.'],
+    ['javadoc-style, not parsed', '/**\n * Toggles it.\n * @param x force down\n */\nint d(int x) { return x; }\n', '@param x force down'],
+    ['blank line before the declaration', '// A note\n\nint e(int x) { return x; }\n', 'A note'],
+  ];
+  let styleOk = true;
+  for (const [label, src, needle] of styles) {
+    const decl = buildModel(src).decls.find((d) => d.kind === 'function');
+    if (!decl || !decl.doc.includes(needle)) {
+      failures.push(`doc style "${label}": expected ${JSON.stringify(needle)}, got ${JSON.stringify(decl?.doc ?? null)}`);
+      styleOk = false;
+    }
+  }
+  // A banner divides sections and documents nothing.
+  const banner = buildModel('// ==============================\nint h(int x) { return x; }\n').decls.find((d) => d.kind === 'function');
+  if (banner?.doc.trim()) {
+    failures.push(`a banner was treated as documentation: ${JSON.stringify(banner.doc)}`);
+    styleOk = false;
+  }
+  if (styleOk) {
+    pass++;
+    console.log(`  ok    doc extraction is style-agnostic (${styles.length} styles, banners excluded)`);
+  }
+}
+
 for (const f of failures) console.log(`  FAIL  ${f}`);
 console.log(`\n  ${pass}/${pass + failures.length} provider assertions passed`);
 if (failures.length) process.exit(1);
