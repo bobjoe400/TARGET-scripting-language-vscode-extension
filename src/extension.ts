@@ -107,6 +107,15 @@ export function activate(context: vscode.ExtensionContext): void {
   for (const doc of vscode.workspace.textDocuments) refresh(doc);
 
   // ---- compile / run --------------------------------------------------------
+  // Remembered so a command still works when the active tab is the extension page,
+  // a settings tab, or anything else that is not a text editor.
+  let lastTargetDoc: vscode.TextDocument | undefined;
+  const rememberTarget = (ed?: vscode.TextEditor) => {
+    if (ed && ed.document.languageId === 'target') lastTargetDoc = ed.document;
+  };
+  rememberTarget(vscode.window.activeTextEditor);
+  context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(rememberTarget));
+
   // Compile results live in their own collection so the live linter's updates do
   // not wipe them, and vice versa.
   const compileDiags = vscode.languages.createDiagnosticCollection('target-compile');
@@ -129,13 +138,57 @@ export function activate(context: vscode.ExtensionContext): void {
     return install;
   };
 
-  /** The .tmc to act on: the active file, or the single .tmc beside an open header. */
-  const activeEntryScript = async (): Promise<string | null> => {
-    const doc = vscode.window.activeTextEditor?.document;
-    if (!doc || doc.languageId !== 'target') {
-      vscode.window.showErrorMessage('Open a TARGET script first.');
-      return null;
+  /**
+   * The TARGET document a command should act on.
+   *
+   * `activeTextEditor` is undefined whenever the active tab is not a text editor -
+   * the extension details page, a settings tab, a diff, an image - so relying on it
+   * alone refuses to run while a perfectly good script sits in the next tab. The
+   * resource passed by an editor title-bar button is preferred, then the active
+   * editor, then the last TARGET file that was focused, then anything still open.
+   */
+  const pickTargetDocument = async (resource?: vscode.Uri): Promise<vscode.TextDocument | null> => {
+    const isTarget = (d: vscode.TextDocument) => d.languageId === 'target';
+
+    if (resource) {
+      const known = vscode.workspace.textDocuments.find((d) => d.uri.toString() === resource.toString());
+      if (known && isTarget(known)) return known;
+      try {
+        const opened = await vscode.workspace.openTextDocument(resource);
+        if (isTarget(opened)) return opened;
+      } catch {
+        /* fall through to the other candidates */
+      }
     }
+
+    const active = vscode.window.activeTextEditor?.document;
+    if (active && isTarget(active)) return active;
+
+    const visible = vscode.window.visibleTextEditors.map((e) => e.document).filter(isTarget);
+    if (visible.length === 1) return visible[0];
+
+    if (lastTargetDoc && !lastTargetDoc.isClosed && isTarget(lastTargetDoc)) return lastTargetDoc;
+
+    const open = vscode.workspace.textDocuments.filter(isTarget);
+    if (open.length === 1) return open[0];
+    if (open.length > 1) {
+      const pick = await vscode.window.showQuickPick(
+        open.map((d) => ({ label: path.basename(d.fileName), description: d.uri.fsPath, doc: d })),
+        { title: 'Which TARGET script?' }
+      );
+      return pick?.doc ?? null;
+    }
+
+    vscode.window.showErrorMessage(
+      'No TARGET script is open. Open a .tmc, .tmh or .ttm file, then run this command.'
+    );
+    return null;
+  };
+
+  /** The .tmc to act on: the chosen file, or the single .tmc beside an open header. */
+  const activeEntryScript = async (resource?: vscode.Uri): Promise<string | null> => {
+    const doc = await pickTargetDocument(resource);
+    if (!doc) return null;
     if (doc.isDirty) await doc.save();
 
     const { entry, candidates } = resolveEntryScript(doc.uri.fsPath);
@@ -162,11 +215,11 @@ export function activate(context: vscode.ExtensionContext): void {
   };
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('targetScript.compile', async () => {
+    vscode.commands.registerCommand('targetScript.compile', async (resource?: vscode.Uri) => {
       if (unsupportedHost()) return;
       const install = requireInstall();
       if (!install) return;
-      const entry = await activeEntryScript();
+      const entry = await activeEntryScript(resource);
       if (!entry) return;
 
       const result = await vscode.window.withProgress(
@@ -220,11 +273,11 @@ export function activate(context: vscode.ExtensionContext): void {
         });
     }),
 
-    vscode.commands.registerCommand('targetScript.run', async () => {
+    vscode.commands.registerCommand('targetScript.run', async (resource?: vscode.Uri) => {
       if (unsupportedHost()) return;
       const install = requireInstall();
       if (!install) return;
-      const entry = await activeEntryScript();
+      const entry = await activeEntryScript(resource);
       if (!entry) return;
 
       // Running creates the virtual devices and takes over the hardware, so a failing

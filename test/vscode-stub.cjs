@@ -40,17 +40,73 @@ const enumOf = (names) => Object.fromEntries(names.map((n, i) => [n, i]));
 
 const config = new Map();
 
+// Recorded interactions, so a test can assert what the extension told the user.
+const recorded = { errors: [], infos: [], commands: new Map(), quickPicks: [] };
+let quickPickAnswer = undefined;
+const noop = () => ({ dispose() {} });
+
 module.exports = {
   Position, Range, Location, MarkdownString, CompletionItem, Hover,
   SignatureHelp, SignatureInformation, ParameterInformation, DocumentSymbol,
   CompletionItemKind: enumOf(['Text','Method','Function','Constructor','Field','Variable','Class','Interface','Module','Property','Unit','Value','Enum','Keyword','Snippet','Color','File','Reference','Folder','EnumMember','Constant','Struct','Event','Operator','TypeParameter']),
   SymbolKind: enumOf(['File','Module','Namespace','Package','Class','Method','Property','Field','Constructor','Enum','Interface','Function','Variable','Constant','String','Number','Boolean','Array','Object','Key','Null','EnumMember','Struct','Event','Operator','TypeParameter']),
   DiagnosticSeverity: { Error: 0, Warning: 1, Information: 2, Hint: 3 },
-  Uri: { file: (p) => ({ fsPath: p, toString: () => `file://${p}` }) },
+  Uri: { file: (p) => ({ fsPath: p, toString: () => `file://${p}`, scheme: 'file' }) },
+  ProgressLocation: { SourceControl: 1, Window: 10, Notification: 15 },
+  EventEmitter: class { constructor() { this.event = noop; } fire() {} dispose() {} },
+  Selection: class { constructor(a, b) { this.anchor = a; this.active = b; this.start = a; this.end = b; } },
+  TextEditorRevealType: { Default: 0, InCenter: 1 },
+  Diagnostic: class { constructor(range, message, severity) { this.range = range; this.message = message; this.severity = severity; } },
+  languages: {
+    createDiagnosticCollection: () => ({ set() {}, delete() {}, clear() {}, dispose() {} }),
+    registerCompletionItemProvider: noop,
+    registerHoverProvider: noop,
+    registerSignatureHelpProvider: noop,
+    registerDocumentSymbolProvider: noop,
+    registerDefinitionProvider: noop,
+  },
+  commands: {
+    registerCommand: (id, fn) => { recorded.commands.set(id, fn); return { dispose() {} }; },
+    executeCommand: async () => undefined,
+  },
   workspace: {
     textDocuments: [],
     getConfiguration: () => ({ get: (key, dflt) => (config.has(key) ? config.get(key) : dflt) }),
     getWorkspaceFolder: () => undefined,
+    onDidOpenTextDocument: noop,
+    onDidChangeTextDocument: noop,
+    onDidSaveTextDocument: noop,
+    onDidCloseTextDocument: noop,
+    onDidChangeConfiguration: noop,
+    openTextDocument: async (uri) => {
+      const hit = module.exports.workspace.textDocuments.find(
+        (d) => d.uri.toString() === (uri.toString ? uri.toString() : String(uri))
+      );
+      if (hit) return hit;
+      throw new Error('not open');
+    },
+  },
+  window: {
+    activeTextEditor: undefined,
+    visibleTextEditors: [],
+    createOutputChannel: () => ({ appendLine() {}, show() {}, dispose() {} }),
+    onDidChangeActiveTextEditor: noop,
+    showErrorMessage: (msg) => { recorded.errors.push(msg); return Promise.resolve(undefined); },
+    showInformationMessage: (msg) => { recorded.infos.push(msg); return Promise.resolve(undefined); },
+    showQuickPick: (items) => { recorded.quickPicks.push(items); return Promise.resolve(quickPickAnswer); },
+    showTextDocument: async () => ({ selection: null, revealRange() {} }),
+    withProgress: (_opts, task) => task({ report() {} }, { isCancellationRequested: false }),
   },
   __setConfig: (k, v) => config.set(k, v),
+  __recorded: recorded,
+  __reset: () => {
+    recorded.errors.length = 0;
+    recorded.infos.length = 0;
+    recorded.quickPicks.length = 0;
+    quickPickAnswer = undefined;
+    module.exports.window.activeTextEditor = undefined;
+    module.exports.window.visibleTextEditors = [];
+    module.exports.workspace.textDocuments = [];
+  },
+  __setQuickPickAnswer: (a) => { quickPickAnswer = a; },
 };

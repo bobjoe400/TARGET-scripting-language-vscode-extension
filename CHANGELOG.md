@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.1
+
+- Fixed: the compile and run commands reported "Open a TARGET script first" when the
+  active tab was not a text editor - the extension details page, a settings tab, a
+  diff - even though the script was open in another tab. They now use the resource
+  passed by the editor title-bar button, then the active editor, then a visible
+  editor, then the last focused TARGET file, and only then report that nothing is
+  open. Covered by a new command-layer test suite.
+
 ## 0.2.0
 
 - Compile and run from the editor, without opening TARGET.
