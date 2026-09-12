@@ -336,13 +336,22 @@ const noScriptError = () =>
   stub.window.activeTextEditor = { document: bindsDoc, selection: { active: new stub.Position(0, 0) } };
 
   // 0x18 is bound in the sample .binds; asked for explicitly, as a hover link does.
-  await commands.get('targetScript.peekBindings')({ kind: 'key', code: '18' });
+  // The caret is deliberately elsewhere: a hover follows the mouse, so the link has to
+  // carry its own position or the peek opens at the caret and shows an unrelated part
+  // of the file - which reads as the peek disagreeing with the hover that opened it.
+  await commands.get('targetScript.peekBindings')({ kind: 'key', code: '18', line: 42, character: 7 });
   const peek = stub.__recorded.executed.find((e) => e.id === 'editor.action.peekLocations');
   if (peek && Array.isArray(peek.args[2]) && peek.args[2].length >= 1 && peek.args[2][0].uri) {
     pass++;
     console.log(`  ok    peek opens ${peek.args[2].length} location(s) for a bound key`);
   } else {
     failures.push(`peekBindings: ${JSON.stringify(stub.__recorded.executed.map((e) => e.id))}`);
+  }
+  if (peek && peek.args[1] && peek.args[1].line === 42 && peek.args[1].character === 7) {
+    pass++;
+    console.log('  ok    the peek anchors where the hover was, not at the caret');
+  } else {
+    failures.push(`peek anchor: ${JSON.stringify(peek && peek.args[1])}`);
   }
 
   // An unbound code says so rather than opening an empty peek.

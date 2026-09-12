@@ -10,6 +10,9 @@ import { BindingRef } from './binds';
 interface PeekTarget {
   kind: 'key' | 'button';
   code: string;
+  /** Where the hover was, so the peek opens there rather than at the caret. */
+  line?: number;
+  character?: number;
 }
 import { collectAliasBindings } from './model';
 import { computeDiagnostics, DIAG_SOURCE, RawDiagnostic, Severity } from './diagnostics';
@@ -742,11 +745,15 @@ export function activate(context: vscode.ExtensionContext): void {
       const ed = vscode.window.activeTextEditor;
       if (!ed || ed.document.languageId !== 'target') return;
       const doc = ed.document;
-      const pos = ed.selection.active;
-
-      // A hover follows the MOUSE, not the caret, so a link inside one has to name what
-      // it meant. Invoked from the menu or the palette there is no argument and the
-      // caret is the only thing to go on.
+      // A hover follows the MOUSE, not the caret, so a link inside one has to name both
+      // what it meant AND where it was. Anchoring on the caret opened the peek at an
+      // unrelated part of the file and showed that region's XML, which reads as the peek
+      // disagreeing with the hover that launched it. From the menu or the palette there
+      // is no argument and the caret is the only thing to go on.
+      const pos =
+        target?.line !== undefined
+          ? new vscode.Position(target.line, target.character ?? 0)
+          : ed.selection.active;
       const usb = target?.kind === 'key' ? null : doc.getWordRangeAtPosition(pos, /USB\s*\[\s*0[xX][0-9A-Fa-f]+\s*\]/);
       const dx = target?.kind === 'button' ? null : doc.getWordRangeAtPosition(pos, /\bDX\d+\b/);
       // Deliberately unnarrowed: the point is to see the whole picture.

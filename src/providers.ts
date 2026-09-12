@@ -429,7 +429,7 @@ export class TargetHoverProvider implements vscode.HoverProvider {
               label,
               binds.activePreset,
               true,
-              { kind: 'key', code: normalised },
+              { kind: 'key', code: normalised, line: usbRange.start.line, character: usbRange.start.character },
               vscode.workspace
                 .getConfiguration('targetScript', doc.uri)
                 .get<boolean>('diagnostics.unboundKeys') === true
@@ -496,7 +496,7 @@ export class TargetHoverProvider implements vscode.HoverProvider {
           word,
           this.index.getBindsIndex(doc).activePreset,
           false,
-          dxNumber ? { kind: 'button', code: dxNumber[1] } : undefined
+          dxNumber ? { kind: 'button', code: dxNumber[1], line: range.start.line, character: range.start.character } : undefined
         );
         const note = parts.findIndex((p) => p.startsWith('*'));
         if (note === -1) parts.push(...bindings);
@@ -711,7 +711,7 @@ export function renderBindings(
   keyLabel: string | null,
   activePreset: string | null,
   showChord = false,
-  peek?: { kind: 'key' | 'button'; code: string },
+  peek?: { kind: 'key' | 'button'; code: string; line?: number; character?: number },
   /** True when the unbound-key diagnostic is on and has already said this. */
   diagnosticSaysUnbound = false
 ): string[] {
