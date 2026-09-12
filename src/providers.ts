@@ -6,6 +6,7 @@ import * as vscode from 'vscode';
 import { TargetIndex } from './index';
 import { callContextAt, collectAliasBindings, Decl, DocModel } from './model';
 import { TokKind, tokenAt } from './lexer';
+import { BindingRef, humanizeAction } from './binds';
 import {
   allUsbCodes,
   anyControlLabel,
@@ -399,23 +400,17 @@ export class TargetHoverProvider implements vscode.HoverProvider {
       if (name) {
         const normalised = m![1].toUpperCase().replace(/^0+(?=.)/, '').padStart(2, '0');
         const parts = [
-          `**${name}**`,
+          // Escaped: several key names are punctuation, and "Keypad *" rendered as
+          // literal asterisks around a broken bold span.
+          `**${escapeMarkdown(name)}**`,
           `USB HID keyboard code \`0x${normalised}\`, sent through the virtual keyboard.`,
         ];
         // What the game does with that key, if a .binds file is to hand. The script
         // itself cannot say: it sends keystrokes and the game decides. Looked up by the
         // same normalised code, or USB[0x018] found its key name and missed its binding.
-        const bound = this.index.getBindsIndex(doc).byUsbCode.get(normalised);
-        if (bound?.length) {
-          const shown = bound.slice(0, 6).map((b) => {
-            const mods = b.modifiers.length ? `${b.modifiers.join('+')}+ ` : '';
-            return `- ${mods}\`${b.action}\` (${b.slot})`;
-          });
-          parts.push(
-            `**Bound in ${bound[0].file}:**`,
-            shown.join('\n') + (bound.length > 6 ? `\n- \u2026and ${bound.length - 6} more` : '')
-          );
-        }
+        const binds = this.index.getBindsIndex(doc);
+        const bound = binds.byUsbCode.get(normalised);
+        if (bound?.length) parts.push(...renderBindings(bound, binds.activePreset));
         return new vscode.Hover(new vscode.MarkdownString(parts.join('\n\n')), usbRange);
       }
     }
@@ -596,4 +591,75 @@ function locateRange(model: DocModel, d: Decl): vscode.Range {
     return new vscode.Position(line, col);
   };
   return new vscode.Range(toPos(d.start), toPos(d.end));
+}
+
+/**
+ * Markdown-safe text: key names are often punctuation, and "Keypad *" rendered as
+ * literal asterisks around a broken bold span.
+ *
+ * Only the characters that actually mean something inline are escaped. Escaping the
+ * whole punctuation set put backslashes through names like Clicker-ENHANCED_Warthog in
+ * any renderer that does not honour the escape.
+ */
+export function escapeMarkdown(text: string): string {
+  return text.replace(/([\\`*_[\]<>&~])/g, '\\$1');
+}
+
+/**
+ * What the game does with a key, said once.
+ *
+ * Bindings arrive as one flat row per slot per file, which made a hover that repeated
+ * the same action several times and then hid the rest behind "and 6 more". They are
+ * folded to one line per action, the slot carried as a suffix, and the game's
+ * CamelCase names written out.
+ */
+export function renderBindings(bound: BindingRef[], activePreset: string | null): string[] {
+  const byFile = new Map<string, Map<string, { slots: Set<string>; modifiers: string[] }>>();
+  for (const b of bound) {
+    if (!byFile.has(b.file)) byFile.set(b.file, new Map());
+    const actions = byFile.get(b.file)!;
+    const existing = actions.get(b.action);
+    if (existing) {
+      existing.slots.add(b.slot.toLowerCase());
+      if (!existing.modifiers.length) existing.modifiers = b.modifiers;
+    } else {
+      actions.set(b.action, { slots: new Set([b.slot.toLowerCase()]), modifiers: b.modifiers });
+    }
+  }
+
+  const LIMIT = 8;
+  const line = (action: string, info: { slots: Set<string>; modifiers: string[] }): string => {
+    const bits: string[] = [];
+    // The modifier is the part that changes what the key does on its own, so it leads.
+    if (info.modifiers.length) bits.push(`with ${escapeMarkdown(info.modifiers.join(' + '))}`);
+    // "primary" is the default slot, and repeating it down every line was noise. A
+    // binding that exists only in the secondary slot is worth saying.
+    if (info.slots.size === 1 && !info.slots.has('primary')) bits.push([...info.slots][0]);
+    const suffix = bits.length ? ` \u2014 ${bits.join(', ')}` : '';
+    return `- ${escapeMarkdown(humanizeAction(action))}${suffix}`;
+  };
+
+  const out: string[] = [];
+  if (byFile.size === 1) {
+    const [file, actions] = [...byFile][0];
+    const heading =
+      activePreset !== null
+        ? `In your active Elite Dangerous preset, **${escapeMarkdown(activePreset)}**:`
+        : `In **${escapeMarkdown(file)}**:`;
+    const rows = [...actions].slice(0, LIMIT).map(([a, i]) => line(a, i));
+    if (actions.size > LIMIT) rows.push(`- \u2026and ${actions.size - LIMIT} more`);
+    out.push(heading, rows.join('\n'));
+    return out;
+  }
+
+  // No single preset could be identified, so the files genuinely disagree and which one
+  // said what is the whole point. Named rather than merged.
+  out.push(`Bound in ${byFile.size} binding files:`);
+  const perFile = Math.max(2, Math.floor(LIMIT / byFile.size));
+  for (const [file, actions] of byFile) {
+    const rows = [...actions].slice(0, perFile).map(([a, i]) => line(a, i));
+    if (actions.size > perFile) rows.push(`- \u2026and ${actions.size - perFile} more`);
+    out.push(`**${escapeMarkdown(file)}**\n${rows.join('\n')}`);
+  }
+  return out;
 }

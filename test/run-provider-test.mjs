@@ -533,7 +533,9 @@ for (const [label, src, needle] of [
 // script authors name their defines however they like - of 200 defines in the corpus
 // only 15 match a game action name.
 {
-  const { usbCodeForEdKey, ED_MODIFIERS, buildBindsIndex } = require(path.join(repoRoot, 'out/binds.js'));
+  const { usbCodeForEdKey, ED_MODIFIERS, buildBindsIndex, activePresetNames, fileMatchesPreset, humanizeAction } =
+    require(path.join(repoRoot, 'out/binds.js'));
+  const { renderBindings, escapeMarkdown } = require(path.join(repoRoot, 'out/providers.js'));
 
   // Key resolution must be exact: Home and Keypad-7 are different keys.
   const resolutions = [
@@ -561,8 +563,57 @@ for (const [label, src, needle] of [
 
   // And it reaches the editor: hovering the scancode says what the game does.
   const h = hoverAt('int f() { MapKey(&Joystick, TG1, USB[0x1|8]); }', path.join(FIX, 'bindsdemo.tmc'));
-  if (h && /DeployHardpointToggle/.test(h)) { pass++; console.log('  ok    hover shows the game action a key is bound to'); }
+  // Written the way a reader says it, not the way the game spells it internally.
+  if (h && /Deploy Hardpoint Toggle/.test(h)) { pass++; console.log('  ok    hover shows the game action a key is bound to'); }
   else failures.push(`binds hover: ${JSON.stringify((h || '').slice(0, 200))}`);
+
+  // --- the hover has to be readable, not just correct -----------------------
+  // A Bindings folder accumulates every preset the player has tried, and the community
+  // layouts ship more beside the script. Merging them produced a hover that repeated one
+  // action four times and hid the rest behind "and 6 more".
+  if (humanizeAction('DeployHardpointToggle') === 'Deploy Hardpoint Toggle' && humanizeAction('ToggleReverseThrottleInputFreeCam') === 'Toggle Reverse Throttle Input Free Cam') {
+    pass++; console.log('  ok    game action names are written out');
+  } else failures.push(`humanize: ${humanizeAction('DeployHardpointToggle')}`);
+
+  // "Keypad *" used to render as literal asterisks around a broken bold span.
+  if (escapeMarkdown('Keypad *') === 'Keypad \\*' && escapeMarkdown('Clicker-ENHANCED_W') === 'Clicker-ENHANCED\\_W') {
+    pass++; console.log('  ok    punctuation key names survive markdown');
+  } else failures.push(`escape: ${escapeMarkdown('Keypad *')} / ${escapeMarkdown('Clicker-ENHANCED_W')}`);
+
+  // The same preset installed in the game's folder AND shipped beside the script is one
+  // fact, not two.
+  const twice = buildBindsIndex([bindsFile, bindsFile]);
+  const dedup = twice.byUsbCode.get('18');
+  if (dedup?.length === 1) { pass++; console.log('  ok    the same binding from two copies is listed once'); }
+  else failures.push(`dedupe: ${JSON.stringify(dedup)}`);
+
+  {
+    const refs = [
+      { action: 'CyclePreviousSubsystem', slot: 'Secondary', key: 'Key_K', modifiers: [], file: 'A.binds' },
+      { action: 'FixCameraWorldToggle', slot: 'Primary', key: 'Key_K', modifiers: [], file: 'A.binds' },
+      { action: 'RecallDismissShip', slot: 'Secondary', key: 'Key_K', modifiers: ['L_ALT'], file: 'A.binds' },
+    ];
+    const md = renderBindings(refs, 'MyPreset').join('\n');
+    const primaryNoise = /Fix Camera World Toggle \u2014 primary/.test(md);
+    if (/active Elite Dangerous preset/.test(md) && /Recall Dismiss Ship \u2014 with L\\_ALT, secondary/.test(md) && !primaryNoise) {
+      pass++; console.log('  ok    bindings render one line per action, modifiers called out');
+    } else failures.push(`render: ${JSON.stringify(md)}`);
+  }
+
+  // The preset the game will actually load, taken from the highest-numbered marker.
+  {
+    const nfs2 = require('node:fs');
+    const d = nfs2.mkdtempSync(path.join(require('node:os').tmpdir(), 'preset-'));
+    nfs2.writeFileSync(path.join(d, 'StartPreset.start'), 'KeyboardMouseOnly\n');
+    nfs2.writeFileSync(path.join(d, 'StartPreset.4.start'), 'MyPreset\nMyPreset\nCustom\n');
+    nfs2.writeFileSync(path.join(d, 'z_StartPreset.4.start'), 'Ignored\n');
+    const names = activePresetNames(d);
+    const matches = fileMatchesPreset('/x/MyPreset.4.2.binds', 'MyPreset') && !fileMatchesPreset('/x/Other.4.2.binds', 'MyPreset');
+    if (names[0] === 'MyPreset' && names.length === 2 && matches) {
+      pass++; console.log('  ok    the active preset is read from StartPreset');
+    } else failures.push(`preset: ${JSON.stringify(names)} matches=${matches}`);
+    nfs2.rmSync(d, { recursive: true, force: true });
+  }
 }
 
 for (const f of failures) console.log(`  FAIL  ${f}`);

@@ -9,6 +9,7 @@
 // game action name, and the game calls "deploy hardpoints" DeployHardpointToggle -
 // so matching by name would be mostly wrong. Keys are unambiguous.
 
+import * as fs from 'fs';
 import * as path from 'path';
 import { readTextFile } from './encoding';
 import { own, usbKeyName } from './builtins';
@@ -28,6 +29,53 @@ export interface BindsIndex {
   byUsbCode: Map<string, BindingRef[]>;
   actions: string[];
   files: string[];
+  /** The preset the game will actually load, if it could be determined. */
+  activePreset: string | null;
+}
+
+/**
+ * The preset Elite Dangerous will actually load.
+ *
+ * The game records it in StartPreset.start next to the binding files - one preset name
+ * per line, because the bindings are split into groups that can each come from a
+ * different preset. Later game versions use a numbered name (StartPreset.4.start) and
+ * ignore the unnumbered one, so the highest number wins.
+ *
+ * This matters more than it looks. A Bindings folder accumulates every preset the
+ * player has ever tried, plus the community ones shipped beside a script, and they all
+ * bind the same keys to different things. Without this, a hover is a pile of
+ * contradictory answers from files the game is not reading.
+ */
+export function activePresetNames(dir: string): string[] {
+  let best: { version: number; file: string } | null = null;
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(dir);
+  } catch {
+    return [];
+  }
+  for (const name of entries) {
+    // z_StartPreset.start and friends are the game's own disabled copies.
+    const m = /^StartPreset(?:\.(\d+))?\.start$/i.exec(name);
+    if (!m) continue;
+    const version = m[1] ? Number(m[1]) : 0;
+    if (!best || version > best.version) best = { version, file: path.join(dir, name) };
+  }
+  if (!best) return [];
+  const text = readTextFile(best.file);
+  if (text === null) return [];
+  const names = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  return [...new Set(names)];
+}
+
+/** Whether a .binds filename belongs to the named preset. */
+export function fileMatchesPreset(file: string, preset: string): boolean {
+  // Clicker-ENHANCED_Warthog.4.2.binds belongs to preset Clicker-ENHANCED_Warthog.
+  const base = path.basename(file).replace(/\.binds$/i, '');
+  return base === preset || new RegExp(`^${preset.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\.[\\d.]+)?$`).test(base);
 }
 
 /**
@@ -163,7 +211,7 @@ export function parseBinds(file: string): BindingRef[] {
 }
 
 /** Builds a key-indexed view of every binding in the given files. */
-export function buildBindsIndex(files: string[]): BindsIndex {
+export function buildBindsIndex(files: string[], activePreset: string | null = null): BindsIndex {
   const byUsbCode = new Map<string, BindingRef[]>();
   const actions = new Set<string>();
   const used: string[] = [];
@@ -178,5 +226,31 @@ export function buildBindsIndex(files: string[]): BindsIndex {
       byUsbCode.get(hex)!.push(ref);
     }
   }
-  return { byUsbCode, actions: [...actions].sort(), files: used };
+  // The same preset is routinely present twice - the copy shipped beside a script and
+  // the one installed in the game's folder - and identical entries from two paths are
+  // one fact, not two. Dedupe on what the binding actually says.
+  for (const [hex, refs] of byUsbCode) {
+    const seen = new Set<string>();
+    const unique: BindingRef[] = [];
+    for (const r of refs) {
+      const key = `${r.action}\u0000${r.slot}\u0000${r.modifiers.join('+')}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(r);
+    }
+    byUsbCode.set(hex, unique);
+  }
+  return { byUsbCode, actions: [...actions].sort(), files: used, activePreset };
+}
+
+/**
+ * The game's action name as a reader would say it: DeployHardpointToggle ->
+ * "Deploy Hardpoint Toggle". Acronyms and digits are kept together.
+ */
+export function humanizeAction(action: string): string {
+  return action
+    .replace(/_/g, ' ')
+    .replace(/([a-z\d])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .trim();
 }

@@ -6,7 +6,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { buildModel, DocModel, Decl } from './model';
 import { readTextFile } from './encoding';
-import { buildBindsIndex, BindsIndex } from './binds';
+import { buildBindsIndex, BindsIndex, activePresetNames, fileMatchesPreset } from './binds';
 import { windowsSystemRoot, resolveEntryScript } from './runner';
 
 /** Default locations of the TARGET install, used when the setting is empty. */
@@ -185,10 +185,12 @@ export class TargetIndex {
     if (folder) dirs.push(folder.uri.fsPath);
 
     const files: string[] = [];
+    const presetDirs: string[] = [];
     for (const dir of [...new Set(dirs)]) {
       for (const candidate of [dir, path.join(dir, 'BindFiles'), path.join(dir, 'Bindings')]) {
         try {
           if (!fs.statSync(candidate).isDirectory()) continue;
+          presetDirs.push(candidate);
           for (const name of fs.readdirSync(candidate)) {
             if (/\.binds$/i.test(name)) files.push(path.join(candidate, name));
           }
@@ -197,7 +199,25 @@ export class TargetIndex {
         }
       }
     }
-    const unique = [...new Set(files)].sort();
+    let unique = [...new Set(files)].sort();
+
+    // Which preset the game will actually load. A Bindings folder collects every preset
+    // the player has ever tried, and the community layouts ship more beside the script;
+    // they bind the same keys to different actions, so merging them answers the question
+    // with a pile of contradictions. When the active one is known, only it is read.
+    let activePreset: string | null = null;
+    for (const dir of presetDirs) {
+      const names = activePresetNames(dir);
+      const matched = names.find((n) => unique.some((f) => fileMatchesPreset(f, n)));
+      if (matched) {
+        activePreset = matched;
+        break;
+      }
+    }
+    if (activePreset) {
+      const inPreset = unique.filter((f) => fileMatchesPreset(f, activePreset!));
+      if (inPreset.length) unique = inPreset;
+    }
 
     // Rebuild only when the set of files or their timestamps change.
     const stamp = unique
@@ -211,14 +231,14 @@ export class TargetIndex {
       .join('|');
     // Keyed on the file set: two documents in different folders would otherwise
     // evict each other on every hover.
-    const cacheKey = unique.join('|');
+    const cacheKey = `${activePreset ?? ''}\u0000${unique.join('|')}`;
     const hit = this.bindsCache.get(cacheKey);
     if (hit && hit.stamp === stamp) {
       if (this.bindsScanCache.size > 16) this.bindsScanCache.clear();
       this.bindsScanCache.set(scanKey, { at: Date.now(), index: hit.index });
       return hit.index;
     }
-    const index = buildBindsIndex(unique);
+    const index = buildBindsIndex(unique, activePreset);
     if (this.bindsCache.size > 8) this.bindsCache.clear();
     this.bindsCache.set(cacheKey, { index, stamp });
     if (this.bindsScanCache.size > 16) this.bindsScanCache.clear();
