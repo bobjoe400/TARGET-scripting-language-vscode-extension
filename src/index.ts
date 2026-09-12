@@ -402,6 +402,56 @@ export class TargetIndex {
    * was fully resolved. An unresolved include means the table is incomplete, and
    * callers must not treat a missing name as proof it does not exist.
    */
+  /**
+   * Every name the PROJECT declares, resolved from the entry script rather than from
+   * this document.
+   *
+   * TARGET has no include guards and the order of includes matters, so a header
+   * routinely uses a name its includer defined earlier - ED_UserSettings.tmh reads
+   * `define CMDRNameOverride DISABLED` while DISABLED lives in ED_ScriptDefines.ttm,
+   * which it does not include. Judged on its own closure that is an undefined name; in
+   * the project it is perfectly ordinary. Anything reporting undefined names in a
+   * header has to ask the entry script, or it invents errors in working code.
+   */
+  projectSymbols(doc: vscode.TextDocument): { symbols: Set<string>; complete: boolean } {
+    const { entry, candidates } = resolveEntryScript(doc.uri.fsPath);
+    if (entry === doc.uri.fsPath) return this.symbolTable(doc);
+    // Every .tmc that could be the entry, not just an unambiguous one. A folder holding
+    // two profiles is ordinary, a header may belong to either, and a name defined by
+    // one of them is not a typo just because the other does not define it.
+    const roots = entry ? [entry] : candidates;
+    if (!roots.length) return this.symbolTable(doc);
+
+    const symbols = new Set<string>();
+    let complete = false;
+    let reachesThisFile = false;
+    for (const root of roots) {
+      const rootModel = this.getModelForPath(root);
+      if (!rootModel) continue;
+      const closure = this.includeClosure(root, rootModel);
+      if (!closure.some((c) => c.file === doc.uri.fsPath)) continue;
+      reachesThisFile = true;
+      let thisComplete = closure.length < CLOSURE_LIMIT;
+      const entryDir = this.entryDirFor(root);
+      for (const { file, model: m } of closure) {
+        for (const d of m.decls) symbols.add(d.name);
+        for (const inc of m.includes) {
+          const resolved = this.resolveInclude(file, inc.path, entryDir);
+          if (!resolved || !closure.some((c) => c.file === resolved)) thisComplete = false;
+        }
+      }
+      // One fully-resolved project is enough to judge against; a second that happens to
+      // be broken should not switch the checks off.
+      if (thisComplete) complete = true;
+    }
+    // A header no entry script includes is not part of any project here, and its names
+    // would be judged against the wrong table.
+    if (!reachesThisFile) return this.symbolTable(doc);
+    // The open buffer wins over what is on disk for its own declarations.
+    for (const d of this.getModel(doc).decls) symbols.add(d.name);
+    return { symbols, complete };
+  }
+
   symbolTable(doc: vscode.TextDocument): { symbols: Set<string>; complete: boolean } {
     const model = this.getModel(doc);
     const symbols = new Set<string>();

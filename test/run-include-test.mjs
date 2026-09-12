@@ -246,6 +246,7 @@ const entry = path.join(repoRoot, 'test/fixtures/ED_ENHANCED_T16000.tmc');
   }
 
   let noisy = 0;
+  let knownTypos = false;
   const idx = new TargetIndex();
   for (const file of files) {
     const doc = new FakeDocument(file, decode(fs.readFileSync(file)));
@@ -261,15 +262,30 @@ const entry = path.join(repoRoot, 'test/fixtures/ED_ENHANCED_T16000.tmc');
         for (const d of v) bindings.get(k).add(d);
       }
     }
+    const project = idx.projectSymbols(doc);
     const ds = computeDiagnostics(model, path.basename(file), {
       aliasBindings: bindings,
       knownSymbols: symbols,
       closureComplete: complete,
+      projectSymbols: project.symbols,
+      projectComplete: project.complete,
       isEntryScript: isEntry,
       includeProblems: graph?.problems,
       duplicateSymbols: graph?.duplicateSymbols,
     });
-    const bad = ds.filter((d) => d.severity === 'error' || d.severity === 'warning');
+    let bad = ds.filter((d) => d.severity === 'error' || d.severity === 'warning');
+    // The one exception, and it is a genuine finding rather than a tolerance: nine
+    // lines of ED_GameBindings.ttm read `L+CTL+USB[0x..]` where the comment beside them
+    // says LCTRL. `L` is declared in none of the four installed headers and nowhere in
+    // the project, and Interpreter.exe compiles it without complaint - confirmed by
+    // compiling it - because TARGET resolves symbols lazily and never checks. So this
+    // corpus is known-WORKING, not known-correct, and the count is pinned here so the
+    // rule cannot quietly stop finding them.
+    if (path.basename(file) === 'ED_GameBindings.ttm') {
+      const typos = bad.filter((d) => d.code === 'unknown-identifier' && /^L is not defined/.test(d.message));
+      if (typos.length === 9) knownTypos = true;
+      bad = bad.filter((d) => !typos.includes(d));
+    }
     if (bad.length) {
       noisy += bad.length;
       console.log(`  NOISE ${path.basename(file).padEnd(26)} ${bad.slice(0, 3).map((d) => `${d.code}: ${d.message.split('.')[0]}`).join(' | ')}`);
@@ -280,6 +296,12 @@ const entry = path.join(repoRoot, 'test/fixtures/ED_ENHANCED_T16000.tmc');
     console.log(`  ok    all ${files.length} known-good files stay clean through a full refresh`);
   } else {
     failures.push(`${noisy} error/warning diagnostics on known-good code through a full refresh`);
+  }
+  if (knownTypos) {
+    pass++;
+    console.log('  ok    the nine L+CTL typos in the corpus are still caught');
+  } else {
+    failures.push('the nine known L+CTL typos in ED_GameBindings.ttm are no longer reported');
   }
 }
 

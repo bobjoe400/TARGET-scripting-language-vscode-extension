@@ -121,6 +121,9 @@ export function activate(context: vscode.ExtensionContext): void {
     }
 
     const { symbols, complete } = index.symbolTable(doc);
+    // Resolved from the entry script, so a header is judged against the project it
+    // belongs to rather than against its own includes.
+    const project = index.projectSymbols(doc);
     // The include graph is only meaningful from an entry script: a header analysed on
     // its own is not what the compiler ever sees.
     const isEntry = doc.fileName.toLowerCase().endsWith('.tmc');
@@ -132,6 +135,8 @@ export function activate(context: vscode.ExtensionContext): void {
       isEntryScript: isEntry,
       includeProblems: graph?.problems,
       duplicateSymbols: graph?.duplicateSymbols,
+      projectSymbols: project.symbols,
+      projectComplete: project.complete,
     });
     diagnostics.set(doc.uri, raw.map((d) => toVsDiagnostic(doc, d)));
   };

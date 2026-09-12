@@ -7,6 +7,7 @@
 import * as path from 'path';
 import { DocModel, CallNode } from './model';
 import { TokKind, lex } from './lexer';
+import { SCRIPT_MODIFIERS, SCRIPT_STATE_FLAGS } from './binds';
 import {
   functionsByName,
   constantsByName,
@@ -177,6 +178,12 @@ export interface DiagnosticOptions {
    * structurally incomplete however well it resolves.
    */
   isEntryScript?: boolean;
+  /**
+   * Names declared anywhere in the PROJECT, resolved from the entry script. Headers are
+   * judged against this rather than their own closure, which they routinely outgrow.
+   */
+  projectSymbols?: Set<string>;
+  projectComplete?: boolean;
   /**
    * True only when every `include` in the graph was resolved. When a file could not
    * be found, the symbol table is incomplete and the checks that rely on it are
@@ -629,8 +636,40 @@ export function computeDiagnostics(
         'unknown-function'
       );
     }
+
   }
 
+  // ---- a name used in a define's value that nothing declares ---------------
+  // Gated on the PROJECT table, not this file's own: a header legitimately uses names
+  // its includer defined first, so judging it alone invents errors in working code.
+  const projectKnown = opts.projectSymbols;
+  if (projectKnown && opts.projectComplete) {
+  // `define CameraPreset1  L+CTL+USB[0x1E]` compiles clean even when the define is
+  // used - verified against Interpreter.exe - because the compiler resolves symbols
+  // lazily and never checks. So this is not redundant with the build: it is the only
+  // place a typo of this shape can be caught at all. Scoped to define VALUES, where a
+  // bare undeclared word is always wrong; elsewhere it would need full scope
+  // tracking for locals and parameters.
+  for (const d of model.decls) {
+    if (d.kind !== 'define' || !d.value) continue;
+    const base = model.text.indexOf(d.value, d.end);
+    if (base === -1) continue;
+    for (const t of lex(d.value)) {
+      if (t.kind !== TokKind.Ident) continue;
+      const id = d.value.slice(t.start, t.end);
+      if (projectKnown.has(id) || functionsByName.has(id) || constantsByName.has(id) || devicesByAlias.has(id)) continue;
+      if (id === 'USB' || CONTROL_WORDS.has(id)) continue;
+      if (own(SCRIPT_MODIFIERS, id) || SCRIPT_STATE_FLAGS.has(id)) continue;
+      add(
+        base + t.start,
+        base + t.end,
+        `${id} is not defined in this script or any file it includes, so ${d.name} does not send what it looks like it sends. The TARGET compiler does not check this.`,
+        'warning',
+        'unknown-identifier'
+      );
+    }
+  }
+  }
   function checkCall(call: CallNode): void {
     const fn = functionsByName.get(call.name);
 
