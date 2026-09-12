@@ -300,6 +300,18 @@ const firstExisting = (ps: string[]) => ps.find(safeIsFile) ?? null;
  * diagnosed.
  */
 export function isInstalledHeader(filePath: string, install: TargetInstall | null): boolean {
+  // By name as well as by location. Community TARGET projects routinely ship a copy of
+  // the vendor headers beside the script, and that copy is what `include "target.tmh"`
+  // binds to, since the entry script's own folder is searched first. Judged on path
+  // alone, the copy was ordinary user code - and because the builtin tables were
+  // generated from these very files, every declaration in it collided with a builtin:
+  // ~130 fabricated errors on a file that compiles perfectly, in the repo a stranger
+  // clones first. The same path-only rule also switched this guard off entirely when
+  // TARGET was not installed, or was installed somewhere unexpected.
+  //
+  // A project of one's own containing a file called defines.tmh loses diagnostics on
+  // that one file. That is the cheaper mistake by a wide margin.
+  if (TARGET_HEADERS.includes(path.basename(filePath).toLowerCase())) return true;
   if (!install) return false;
   const norm = (p: string) => path.resolve(p).replace(/\\/g, '/').toLowerCase();
   const dir = norm(install.scripts);
@@ -695,7 +707,7 @@ export async function runScript(
  * Forced, unlike the Script Editor case killImage exists for: the GUI holds the HID
  * devices and there is no unsaved work in it to lose.
  */
-export async function stopScript(): Promise<{ ok: boolean; error?: string }> {
+export async function stopScript(): Promise<{ ok: boolean; error?: string; wasRunning?: boolean }> {
   return killImage(IMAGE_GUI, true);
 }
 
@@ -809,14 +821,21 @@ async function listTargetProcessesUncached(): Promise<TargetProcesses> {
  * lets the application prompt; if the user cancels, it stays open and the caller
  * reports that rather than pretending it closed.
  */
-export async function killImage(image: string, force = false): Promise<{ ok: boolean; error?: string }> {
+export async function killImage(
+  image: string,
+  force = false
+): Promise<{ ok: boolean; error?: string; wasRunning?: boolean }> {
   try {
     const args = force ? ['/IM', image, '/F'] : ['/IM', image];
     await execFileAsync(systemTool('taskkill.exe'), args, systemToolOptions());
     return { ok: true };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    if (/not found|not running/i.test(msg)) return { ok: true };
+    // taskkill says this when the image was not running. Distinguished from a real
+    // success so a command can say "nothing was running" instead of claiming it stopped
+    // something. English-only, like taskkill's output - on a localized Windows this
+    // falls through to the error path, which is the safe direction.
+    if (/not found|not running/i.test(msg)) return { ok: true, wasRunning: false };
     return { ok: false, error: msg };
   }
 }

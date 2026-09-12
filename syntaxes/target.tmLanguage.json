@@ -166,10 +166,19 @@
               "include": "#exec-nested-string"
             },
             {
+              "include": "#usb-lookup"
+            },
+            {
               "include": "#builtin-functions"
             },
             {
               "include": "#devices"
+            },
+            {
+              "include": "#keywords"
+            },
+            {
+              "include": "#reserved-not-in-target"
             },
             {
               "include": "#constants"

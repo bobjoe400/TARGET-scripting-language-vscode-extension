@@ -84,8 +84,33 @@ console.log('Grammar assertions');
 console.log('------------------');
 for (const [label, src, needle, expect] of T) await check(label, src, needle, expect);
 
+// An EXEC argument is TARGET source code, so it must read as TARGET source code. Three
+// rule sets were missing from the embedded list, so `if` coloured as a function call in
+// there and USB[0x1E] lost its scancode scopes - in the one feature the README leads on.
+{
+  const outside = 'int f() { if (x) MapKey(&Joystick, TG1, USB[0x1E]); }';
+  const inside = 'MapKey(&Joystick, S4, EXEC("if (x) MapKey(&Joystick, TG1, USB[0x1E]);"));';
+  const scopeOf = async (line, word) => {
+    const toks = await tokenizeText(line);
+    const hit = toks.find((t) => t.text === word);
+    return hit ? leaf(hit) : null;
+  };
+  const bad = [];
+  for (const w of ['if', 'USB', '0x1E']) {
+    const a = await scopeOf(outside, w);
+    const b = await scopeOf(inside, w);
+    if (a !== b) bad.push(`${w}: ${a} vs ${b}`);
+  }
+  if (bad.length === 0) {
+    pass++;
+    console.log('  ok    embedded EXEC code scopes the same as top-level code');
+  } else {
+    failures.push(`EXEC body scopes differ - ${bad.join(' | ')}`);
+  }
+}
+
 for (const f of failures) console.log(`  FAIL  ${f}`);
-console.log(`  ${pass}/${T.length} assertions passed`);
+console.log(`  ${pass}/${pass + failures.length} assertions passed`);
 
 // ---- corpus sweep ----------------------------------------------------------
 // What matters is that the tokenizer never gets stuck: a string or block comment it

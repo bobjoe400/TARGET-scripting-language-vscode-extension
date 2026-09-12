@@ -57,9 +57,9 @@ export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel('TARGET Script');
   context.subscriptions.push(diagnostics, output);
 
-  output.appendLine(
-    `TARGET Script: builtin tables generated ${generated.at} from ${generated.from}`
-  );
+  // The path the tables were generated from is the author's machine and says nothing
+  // useful to anyone else; the date is the part that identifies the data.
+  output.appendLine(`TARGET Script: builtin tables generated ${generated.at}`);
 
   context.subscriptions.push(
     vscode.languages.registerCompletionItemProvider(
@@ -223,7 +223,10 @@ export function activate(context: vscode.ExtensionContext): void {
   });
 
   context.subscriptions.push(
-    vscode.workspace.onDidOpenTextDocument(refresh),
+    // Debounced like every other path into refresh. A cold refresh is ~107ms of
+    // synchronous work on the extension host's only thread, and opening a file is
+    // exactly when the user is waiting to see it.
+    vscode.workspace.onDidOpenTextDocument(refreshDependent),
     vscode.workspace.onDidChangeTextDocument((e) => refreshSoon(e.document)),
     vscode.workspace.onDidSaveTextDocument((doc) => {
       // Only a TARGET file can change a TARGET symbol table. Without this, saving a
@@ -803,7 +806,11 @@ export function activate(context: vscode.ExtensionContext): void {
       if (unsupportedHost()) return;
       const res = await stopScript();
       clearRunStatus();
-      if (res.ok) vscode.window.showInformationMessage('Stopped TARGET.');
+      if (res.ok) {
+        vscode.window.showInformationMessage(
+          res.wasRunning === false ? 'TARGET was not running.' : 'Stopped TARGET.'
+        );
+      }
       else vscode.window.showErrorMessage(`Could not stop TARGET: ${res.error}`);
     })
   );

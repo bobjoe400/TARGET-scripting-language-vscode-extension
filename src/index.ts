@@ -457,6 +457,20 @@ export class TargetIndex {
    * callers must not treat a missing name as proof it does not exist.
    */
   /**
+   * Whether two paths name the same file.
+   *
+   * A path built from an include directive carries the directive's spelling, which need
+   * not match the file's on-disk case. Windows and macOS resolve both, so both are real
+   * paths to one file - but compared as strings they differ, and a case-sensitive test
+   * then concludes the entry script does not reach this header at all. That silently
+   * dropped it back to its own symbol table, which is the fallback that invents errors
+   * in working code.
+   */
+  private static samePath(a: string, b: string): boolean {
+    return a === b || a.toLowerCase() === b.toLowerCase();
+  }
+
+  /**
    * Every name the PROJECT declares, resolved from the entry script rather than from
    * this document.
    *
@@ -469,7 +483,7 @@ export class TargetIndex {
    */
   projectSymbols(doc: vscode.TextDocument): { symbols: Set<string>; complete: boolean } {
     const { entry, candidates } = resolveEntryScript(doc.uri.fsPath);
-    if (entry === doc.uri.fsPath) return this.symbolTable(doc);
+    if (entry && TargetIndex.samePath(entry, doc.uri.fsPath)) return this.symbolTable(doc);
     // Every .tmc that could be the entry, not just an unambiguous one. A folder holding
     // two profiles is ordinary, a header may belong to either, and a name defined by
     // one of them is not a typo just because the other does not define it.
@@ -483,7 +497,7 @@ export class TargetIndex {
       const rootModel = this.getModelForPath(root);
       if (!rootModel) continue;
       const closure = this.includeClosure(root, rootModel);
-      if (!closure.some((c) => c.file === doc.uri.fsPath)) continue;
+      if (!closure.some((c) => TargetIndex.samePath(c.file, doc.uri.fsPath))) continue;
       reachesThisFile = true;
       // One fully-resolved project is enough to judge against; a second that happens to
       // be broken should not switch the checks off.
@@ -659,7 +673,7 @@ export class TargetIndex {
     const model = this.getModel(doc);
     const out: { decl: Decl; file: string }[] = [];
     for (const { file, model: m } of this.includeClosure(doc.uri.fsPath, model)) {
-      for (const d of m.decls) if (d.global || file === doc.uri.fsPath) out.push({ decl: d, file });
+      for (const d of m.decls) if (d.global || TargetIndex.samePath(file, doc.uri.fsPath)) out.push({ decl: d, file });
     }
     return out;
   }

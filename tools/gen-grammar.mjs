@@ -46,10 +46,17 @@ const TYPES = ['char', 'byte', 'short', 'word', 'int', 'float', 'alias', 'struct
 // is a single string literal, so it cannot contain comments or blocks, and its nested
 // string literals are backslash-escaped. Modelling that subset directly is more accurate
 // than recursing and hoping.
+// The same rules the top level uses, in the same order. An EXEC argument is TARGET
+// source code, so it should read as TARGET source code - `if` was colouring as a
+// function call in there and USB[0x1E] lost its scancode scope, which is exactly the
+// embedded-code highlighting this grammar exists to get right.
 const execBody = [
   { include: '#exec-nested-string' },
+  { include: '#usb-lookup' },
   { include: '#builtin-functions' },
   { include: '#devices' },
+  { include: '#keywords' },
+  { include: '#reserved-not-in-target' },
   { include: '#constants' },
   { include: '#numbers' },
   { include: '#exec-escape' },
