@@ -247,6 +247,7 @@ const entry = path.join(repoRoot, 'test/fixtures/ED_ENHANCED_T16000.tmc');
 
   let noisy = 0;
   let knownTypos = false;
+  let typosCheckable = false;
   const idx = new TargetIndex();
   for (const file of files) {
     const doc = new FakeDocument(file, decode(fs.readFileSync(file)));
@@ -284,6 +285,12 @@ const entry = path.join(repoRoot, 'test/fixtures/ED_ENHANCED_T16000.tmc');
     if (path.basename(file) === 'ED_GameBindings.ttm') {
       const typos = bad.filter((d) => d.code === 'unknown-identifier' && /^L is not defined/.test(d.message));
       if (typos.length === 9) knownTypos = true;
+      // The check needs a COMPLETE project symbol table, and that needs the vendor
+      // headers - `include "target.tmh"` cannot resolve without TARGET installed. So on
+      // a machine without it the rule correctly declines to call anything undefined,
+      // and this assertion has nothing to assert. Recorded rather than assumed, so a
+      // rule that stopped working is still a failure everywhere it could have worked.
+      typosCheckable = project.complete;
       bad = bad.filter((d) => !typos.includes(d));
     }
     if (bad.length) {
@@ -300,6 +307,8 @@ const entry = path.join(repoRoot, 'test/fixtures/ED_ENHANCED_T16000.tmc');
   if (knownTypos) {
     pass++;
     console.log('  ok    the nine L+CTL typos in the corpus are still caught');
+  } else if (!typosCheckable) {
+    console.log('  --    the L+CTL typo check needs the TARGET headers; not installed here, skipped');
   } else {
     failures.push('the nine known L+CTL typos in ED_GameBindings.ttm are no longer reported');
   }

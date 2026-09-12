@@ -113,6 +113,7 @@ split over a dozen headers and Thrustmaster's editor has no navigation at all.
 | Control named for the wrong device | `MapKey(&T16000, APALT, …)` — `APALT` is a Warthog Throttle control |
 | `include "target.tmh"` ordering | must come first |
 | Missing `main()` | TARGET runs `main()`; without it the script does nothing |
+| A name nothing declares | `define CameraPreset1 L+CTL+USB[0x1E]` — `L` is defined nowhere, and `Interpreter.exe` compiles it anyway because TARGET resolves symbols lazily. Needs the TARGET headers to be resolvable: without a complete picture of what the project declares, the check stays quiet rather than guess |
 | `main()` that never calls `Init()` | no virtual devices are ever created |
 | Event handler passed to `Init()` does not exist | fails at runtime with `Symbol not found` |
 | Handler that never calls `DefaultMapping()` | mappings and shift layers never take effect |
