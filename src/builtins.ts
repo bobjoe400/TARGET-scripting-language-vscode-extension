@@ -184,7 +184,10 @@ export type ArgDomain =
 const family = (prefix: string) => constants.filter((c) => c.name.startsWith(prefix)).map((c) => c.name);
 
 /** Everything that can stand as the event a button fires. */
-const EVENT_FUNCTIONS = ['SEQ', 'CHAIN', 'TEMPO', 'EXEC', 'REXEC', 'D', 'LOCK', 'AXIS', 'LIST', 'AXMAP1', 'AXMAP2', 'X'];
+// LIST is absent deliberately: `define LIST AXMAP2` makes it a define rather than a
+// function, so it is offered through the constant list below instead. Including it
+// here meant it was looked up as a function, not found, and silently dropped.
+const EVENT_FUNCTIONS = ['SEQ', 'CHAIN', 'TEMPO', 'EXEC', 'REXEC', 'D', 'LOCK', 'AXIS', 'AXMAP1', 'AXMAP2', 'X'];
 const EVENT_FLAGS = [
   'PULSE', 'DOWN', 'UP', 'KEYON', 'LOCK', 'RNOSTOP', 'DELAY', 'JUMP', 'PROC',
   'L_SHIFT', 'R_SHIFT', 'L_ALT', 'R_ALT', 'L_CTL', 'R_CTL', 'L_WIN', 'R_WIN',
@@ -195,7 +198,7 @@ export function eventDomainNames(): { functions: string[]; constants: string[] }
   const dx = constants.filter((c) => c.category === 'virtual joystick interface' || c.category === 'virtual mouse interface').map((c) => c.name);
   return {
     functions: EVENT_FUNCTIONS,
-    constants: [...new Set([...EVENT_FLAGS, ...dx, ...keyboard, 'USB'])],
+    constants: [...new Set([...EVENT_FLAGS, ...dx, ...keyboard, 'USB', 'LIST'])],
   };
 }
 
@@ -299,6 +302,16 @@ export function describeParam(fnName: string, paramName: string): string | null 
   return null;
 }
 
+/**
+ * Builtins that take any number of arguments.
+ *
+ * The headers cannot express it - they are declared `int SEQ(){...}` and mapped as
+ * variadic at runtime - so the generated table records minArgs 0, maxArgs 0. Reporting
+ * that as fact told the reader that SEQ, the most idiomatic construct in the language,
+ * takes no arguments. The arity check already skips them via `maxArgs > 0`.
+ */
+export const VARIADIC = new Set(['SEQ', 'CHAIN', 'AXMAP2', 'LIST', 'printf', 'sprintf']);
+
 export function describeFunction(f: BuiltinFunction): string {
   const parts = ['```c', f.signature, '```'];
   if (f.doc) parts.push('', f.doc);
@@ -307,6 +320,10 @@ export function describeFunction(f: BuiltinFunction): string {
     .filter((x) => x.d);
   if (layered.length) {
     parts.push('', ...layered.map((x) => `- \`${x.p.name}\` \u2014 ${x.d}`));
+  }
+  if (VARIADIC.has(f.name)) {
+    parts.push('', `*Takes any number of arguments · declared in \`${f.source}\`*`);
+    return parts.join('\n');
   }
   const arity = f.minArgs === f.maxArgs ? `${f.minArgs}` : `${f.minArgs}–${f.maxArgs}`;
   parts.push('', `*${arity} argument${f.maxArgs === 1 ? '' : 's'} · declared in \`${f.source}\`*`);

@@ -18,7 +18,7 @@
 //
 // This module deliberately avoids importing `vscode` so it can be tested directly.
 
-import { execFile, spawn } from 'child_process';
+import { execFile, execFileSync, spawn } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -47,6 +47,36 @@ export function detectHost(): Host {
     }
   }
   return 'unsupported';
+}
+
+/**
+ * Where the Windows system drive is mounted under WSL.
+ *
+ * /mnt/c is only the default: /etc/wsl.conf can set automount.root to anything, and
+ * `root = /` is a common choice. Asking wslpath is the same mechanism toWindowsPath
+ * already relies on, so it works wherever that does.
+ */
+let windowsRootCache: string | null | undefined;
+export function windowsSystemRoot(): string | null {
+  if (windowsRootCache !== undefined) return windowsRootCache;
+  if (process.platform === 'win32') {
+    windowsRootCache = 'C:\\';
+    return windowsRootCache;
+  }
+  try {
+    const out = execFileSync('wslpath', ['-u', 'C:\\'], { encoding: 'utf8' }).trim();
+    windowsRootCache = out || null;
+  } catch {
+    windowsRootCache = fs.existsSync('/mnt/c') ? '/mnt/c/' : null;
+  }
+  return windowsRootCache;
+}
+
+/** A Windows system32 tool, found wherever the drive is actually mounted. */
+function systemTool(name: string): string {
+  if (process.platform === 'win32') return name;
+  const root = windowsSystemRoot();
+  return root ? path.join(root, 'Windows', 'System32', name) : `/mnt/c/Windows/System32/${name}`;
 }
 
 /** A path in the form Windows understands. Under WSL that means asking wslpath. */
@@ -282,8 +312,11 @@ export async function compileCheck(
     // A byte-order mark makes the compiler fail on line 1 with "Type required", which
     // says nothing about the real cause. Thrustmaster's own editor writes UTF-16, so
     // this is easy to hit and baffling without being told.
-    if (problems.some((p) => p.line <= 1)) {
-      for (const b of bomFiles) {
+    const failedAtTop = new Set(problems.filter((p) => p.line <= 1).map((p) => p.file.toLowerCase()));
+    if (failedAtTop.size) {
+      // Only the file the compiler actually stopped on. Naming every BOM'd file in the
+      // project would point at ones that compiled fine.
+      for (const b of bomFiles.filter((b) => failedAtTop.has(b.file.toLowerCase()))) {
         problems.unshift({
           file: b.file,
           line: 1,
@@ -396,8 +429,8 @@ async function defaultStagingRoot(): Promise<string> {
   // Under WSL the tool is a Windows process, so it must be able to see the staging
   // directory: use the Windows temp directory rather than the Linux one.
   try {
-    const { stdout } = await execFileAsync('/mnt/c/Windows/System32/cmd.exe', ['/c', 'echo %TEMP%'], {
-      cwd: '/mnt/c',
+    const { stdout } = await execFileAsync(systemTool('cmd.exe'), ['/c', 'echo %TEMP%'], {
+      cwd: windowsSystemRoot() ?? '/mnt/c',
     });
     const win = stdout.trim().replace(/\r/g, '');
     if (win && !win.includes('%')) {
@@ -439,9 +472,9 @@ export async function runScript(
 /** Stops a running script by closing TARGETGUI. */
 export async function stopScript(): Promise<{ ok: boolean; error?: string }> {
   const host = detectHost();
-  const taskkill = host === 'windows' ? 'taskkill' : '/mnt/c/Windows/System32/taskkill.exe';
+  const taskkill = systemTool('taskkill.exe');
   try {
-    await execFileAsync(taskkill, ['/IM', 'TARGETGUI.exe', '/F'], { cwd: host === 'windows' ? undefined : '/mnt/c' });
+    await execFileAsync(taskkill, ['/IM', 'TARGETGUI.exe', '/F'], { cwd: host === 'windows' ? undefined : windowsSystemRoot() ?? '/mnt/c' });
     return { ok: true };
   } catch (e) {
     // taskkill exits non-zero when nothing matched, which is not a failure worth raising.
@@ -503,10 +536,10 @@ export async function listTargetProcesses(): Promise<TargetProcesses> {
 async function listTargetProcessesUncached(): Promise<TargetProcesses> {
   const running = async (image: string): Promise<boolean> => {
     const host = detectHost();
-    const tasklist = host === 'windows' ? 'tasklist' : '/mnt/c/Windows/System32/tasklist.exe';
+    const tasklist = systemTool('tasklist.exe');
     try {
       const { stdout } = await execFileAsync(tasklist, ['/FI', `IMAGENAME eq ${image}`], {
-        cwd: host === 'windows' ? undefined : '/mnt/c',
+        cwd: host === 'windows' ? undefined : windowsSystemRoot() ?? '/mnt/c',
         // Without this a stalled tasklist would hang the poll indefinitely.
         timeout: 10_000,
       });
@@ -520,12 +553,21 @@ async function listTargetProcessesUncached(): Promise<TargetProcesses> {
   return { gui, editor };
 }
 
-/** Closes one of TARGET's host applications by image name. */
-export async function killImage(image: string): Promise<{ ok: boolean; error?: string }> {
+/**
+ * Asks one of TARGET's host applications to close.
+ *
+ * Deliberately without /F. The Script Editor is where this audience writes scripts,
+ * and a forced kill skips WM_CLOSE entirely - no save prompt, no flush - so a button
+ * reading "Close Editor and Run" would silently discard their work. A polite close
+ * lets the application prompt; if the user cancels, it stays open and the caller
+ * reports that rather than pretending it closed.
+ */
+export async function killImage(image: string, force = false): Promise<{ ok: boolean; error?: string }> {
   const host = detectHost();
-  const taskkill = host === 'windows' ? 'taskkill' : '/mnt/c/Windows/System32/taskkill.exe';
+  const taskkill = systemTool('taskkill.exe');
   try {
-    await execFileAsync(taskkill, ['/IM', image, '/F'], { cwd: host === 'windows' ? undefined : '/mnt/c' });
+    const args = force ? ['/IM', image, '/F'] : ['/IM', image];
+    await execFileAsync(taskkill, args, { cwd: host === 'windows' ? undefined : windowsSystemRoot() ?? '/mnt/c' });
     return { ok: true };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

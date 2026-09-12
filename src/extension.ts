@@ -76,6 +76,10 @@ export function activate(context: vscode.ExtensionContext): void {
   // ---- diagnostics ----------------------------------------------------------
   const refresh = (doc: vscode.TextDocument) => {
     if (doc.languageId !== 'target') return;
+    // Git diffs, timeline entries and other virtual documents have no path on disk;
+    // resolving includes and writing diagnostics against them produces a second set of
+    // Problems entries for what looks like the same file.
+    if (doc.uri.scheme !== 'file') return;
     // Never diagnose the headers TARGET ships. The builtin tables were generated from
     // them, so every declaration in them looks like a redeclaration of a builtin -
     // over 200 fabricated errors against vendor files that compile perfectly. Go-to
@@ -109,6 +113,7 @@ export function activate(context: vscode.ExtensionContext): void {
       aliasBindings: bindings,
       knownSymbols: symbols,
       closureComplete: complete,
+      isEntryScript: isEntry,
       includeProblems: graph?.problems,
       duplicateSymbols: graph?.duplicateSymbols,
     });
@@ -128,8 +133,8 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   };
   const refreshSoon = (doc: vscode.TextDocument) => {
-    // Typing in any document in the window fires this; only TARGET files need it.
-    if (doc.languageId !== 'target') return;
+    // Typing in any document in the window fires this; only real TARGET files need it.
+    if (doc.languageId !== 'target' || doc.uri.scheme !== 'file') return;
     const key = doc.uri.toString();
     cancelRefresh(doc.uri);
     // A compile result describes the file as it was when it was compiled. Once it is
@@ -258,7 +263,7 @@ export function activate(context: vscode.ExtensionContext): void {
    * editor, then the last TARGET file that was focused, then anything still open.
    */
   const pickTargetDocument = async (resource?: vscode.Uri): Promise<vscode.TextDocument | null> => {
-    const isTarget = (d: vscode.TextDocument) => d.languageId === 'target';
+    const isTarget = (d: vscode.TextDocument) => d.languageId === 'target' && d.uri.scheme === 'file';
 
     if (resource) {
       const known = vscode.workspace.textDocuments.find((d) => d.uri.toString() === resource.toString());
@@ -299,7 +304,14 @@ export function activate(context: vscode.ExtensionContext): void {
   const activeEntryScript = async (resource?: vscode.Uri): Promise<string | null> => {
     const doc = await pickTargetDocument(resource);
     if (!doc) return null;
-    if (doc.isDirty) await doc.save();
+    // Every dirty TARGET document, not just this one: staging copies from disk, so an
+    // unsaved header would be compiled and run in its previous state while the user is
+    // told the script launched.
+    for (const open of vscode.workspace.textDocuments) {
+      if (open.languageId === 'target' && open.isDirty && open.uri.scheme === 'file') {
+        await open.save();
+      }
+    }
 
     const { entry, candidates } = resolveEntryScript(doc.uri.fsPath);
     if (entry) return entry;
@@ -341,7 +353,10 @@ export function activate(context: vscode.ExtensionContext): void {
       if (result.output.trim()) output.appendLine(result.output.trim());
       if (result.error) output.appendLine(`error: ${result.error}`);
 
-      compileDiags.clear();
+      // Only this entry script's own results; clear() wiped every file in the window,
+      // so compiling one project erased another project's errors.
+      compileDiags.delete(vscode.Uri.file(entry));
+      for (const p of result.problems) compileDiags.delete(vscode.Uri.file(p.file));
       if (result.error) {
         vscode.window.showErrorMessage(`Compile check failed: ${result.error}`);
         return;
@@ -443,7 +458,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const procs = await listTargetProcesses();
       if (procs.editor) {
         const pick = await vscode.window.showWarningMessage(
-          'TARGET Script Editor is open, and TARGET will not run a script while it is. Close it and run?',
+          'TARGET Script Editor is open, and TARGET will not run a script while it is. Ask it to close and then run? It will prompt you if it has unsaved changes.',
           { modal: false },
           'Close Editor and Run',
           'Cancel'
@@ -452,6 +467,15 @@ export function activate(context: vscode.ExtensionContext): void {
         const killed = await killImage(TARGET_IMAGES.editor);
         if (!killed.ok) {
           vscode.window.showErrorMessage(`Could not close TARGET Script Editor: ${killed.error}`);
+          return;
+        }
+        // A polite close can be refused - by an unsaved-changes prompt, or by the user
+        // declining it - so confirm rather than assuming it worked.
+        await new Promise((r) => setTimeout(r, 600));
+        if ((await listTargetProcesses()).editor) {
+          vscode.window.showWarningMessage(
+            'TARGET Script Editor is still open, so the script was not run. Close it yourself and try again.'
+          );
           return;
         }
       } else if (procs.gui) {

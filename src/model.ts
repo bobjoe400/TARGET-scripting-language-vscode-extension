@@ -300,7 +300,23 @@ export function buildModel(text: string): DocModel {
       }
 
       if (t.value === '{') braceDepth++;
-      else if (t.value === '}') braceDepth = Math.max(0, braceDepth - 1);
+      else if (t.value === '}') {
+        braceDepth = Math.max(0, braceDepth - 1);
+        // See the semicolon note below: a brace also ends any unclosed call.
+        frames.length = 0;
+        callStack.length = 0;
+      } else if (t.value === ';') {
+        // A statement terminator closes any call left open by a missing ')'.
+        //
+        // Declarations are only recognised while no call is in progress, and frames
+        // is popped only by ')'. So one unclosed paren - which is the state of the
+        // file for as long as you are mid-way through typing a call - made every
+        // declaration below it invisible: the outline emptied, and diagnostics
+        // reported missing-main and unknown-function for code three lines away.
+        // TARGET has no `for(;;)`, so a semicolon can never be inside an argument list.
+        frames.length = 0;
+        callStack.length = 0;
+      }
       continue;
     }
 

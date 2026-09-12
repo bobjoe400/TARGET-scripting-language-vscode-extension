@@ -134,6 +134,57 @@ const entry = path.join(repoRoot, 'test/fixtures/ED_ENHANCED_T16000.tmc');
   }
 }
 
+// The corpus swept the way the extension actually refreshes: with the cross-file
+// symbol table, one document at a time, headers included. The plain corpus sweep in
+// run-diagnostics-test.mjs passes no symbol table, so it cannot see a rule that
+// misfires only when one is present.
+{
+  const { computeDiagnostics } = require(path.join(repoRoot, 'out/diagnostics.js'));
+  const { collectAliasBindings } = require(path.join(repoRoot, 'out/model.js'));
+  const fixtures = path.join(repoRoot, 'test/fixtures');
+  const files = fs
+    .readdirSync(fixtures)
+    .filter((f) => /\.(tmc|tmh|ttm)$/i.test(f) && f !== 'DEMO.tmc')
+    .map((f) => path.join(fixtures, f));
+
+  let noisy = 0;
+  const idx = new TargetIndex();
+  for (const file of files) {
+    const doc = new FakeDocument(file, decode(fs.readFileSync(file)));
+    stub.workspace.textDocuments = [doc];
+    const model = idx.getModel(doc);
+    const { symbols, complete } = idx.symbolTable(doc);
+    const isEntry = file.toLowerCase().endsWith('.tmc');
+    const graph = isEntry ? idx.analyzeIncludes(doc) : null;
+    const bindings = new Map();
+    for (const { model: m } of idx.includeClosure(file, model)) {
+      for (const [k, v] of collectAliasBindings(m)) {
+        if (!bindings.has(k)) bindings.set(k, new Set());
+        for (const d of v) bindings.get(k).add(d);
+      }
+    }
+    const ds = computeDiagnostics(model, path.basename(file), {
+      aliasBindings: bindings,
+      knownSymbols: symbols,
+      closureComplete: complete,
+      isEntryScript: isEntry,
+      includeProblems: graph?.problems,
+      duplicateSymbols: graph?.duplicateSymbols,
+    });
+    const bad = ds.filter((d) => d.severity === 'error' || d.severity === 'warning');
+    if (bad.length) {
+      noisy += bad.length;
+      console.log(`  NOISE ${path.basename(file).padEnd(26)} ${bad.slice(0, 3).map((d) => `${d.code}: ${d.message.split('.')[0]}`).join(' | ')}`);
+    }
+  }
+  if (noisy === 0) {
+    pass++;
+    console.log(`  ok    all ${files.length} known-good files stay clean through a full refresh`);
+  } else {
+    failures.push(`${noisy} error/warning diagnostics on known-good code through a full refresh`);
+  }
+}
+
 for (const f of failures) console.log(`  FAIL  ${f}`);
 console.log(`\n  ${pass}/${pass + failures.length} include assertions passed`);
 if (failures.length) process.exit(1);

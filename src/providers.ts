@@ -30,6 +30,7 @@ import {
   NOT_IN_TARGET,
   own,
   usbKeyName,
+  VARIADIC,
 } from './builtins';
 
 export const TARGET_SELECTOR: vscode.DocumentSelector = { language: 'target' };
@@ -442,7 +443,11 @@ export class TargetSignatureProvider implements vscode.SignatureHelpProvider {
 
     const fn = functionsByName.get(ctx.call.name);
     if (fn) {
-      const sig = new vscode.SignatureInformation(fn.signature, new vscode.MarkdownString(fn.doc || ''));
+      const variadicNote = VARIADIC.has(fn.name) ? 'Takes any number of arguments.' : '';
+      const sig = new vscode.SignatureInformation(
+        VARIADIC.has(fn.name) ? `${fn.returnType} ${fn.name}(...)` : fn.signature,
+        new vscode.MarkdownString([variadicNote, fn.doc].filter(Boolean).join('\n\n'))
+      );
       sig.parameters = fn.params.map((p) => {
         const label = `${p.type ? p.type + ' ' : ''}${p.name}${p.default ? ' = ' + p.default : ''}`;
         // `keyIU` and friends mean nothing without the layer scheme spelled out.

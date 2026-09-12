@@ -31,6 +31,9 @@ const runFull = (src, name = 'test.tmc', extraSymbols = []) => {
     aliasBindings: collectAliasBindings(model),
     knownSymbols: symbols,
     closureComplete: true,
+    // Only an entry script has the whole project in view, so the checks that need a
+    // complete symbol table run there.
+    isEntryScript: name.toLowerCase().endsWith('.tmc'),
   });
 };
 
@@ -197,7 +200,11 @@ expectFull('handler without DefaultMapping',
   'include "target.tmh"\n\nint main()\n{\n\tif(Init(&EventHandle)) return 1;\n}\n\nint EventHandle(int type, alias o, int x)\n{\n}\n',
   'handler-missing-defaultmapping');
 expectFull('call to an undefined function',
-  SKELETON + '\nint other()\n{\n\tfnNeverDefined(1);\n}\n', 'unknown-function');
+  SKELETON + '\nint other()\n{\n\tfnNeverDefined(1);\n}\n', 'unknown-function', 'test.tmc');
+// A header analysed on its own is missing the rest of the project, so the check that
+// needs a complete symbol table must stay quiet there.
+expectFullClean('a header alone is not checked for unknown calls',
+  'int other()\n{\n\tfnDefinedElsewhere(1);\n}\n', 'helpers.tmh');
 // A header is not an entry point, so the structural rules must not apply to it.
 expectFullClean('header needs no main', 'int helperFn(int a)\n{\n\treturn a * 2;\n}\n', 'helpers.tmh');
 // A name declared in an included file is not unknown.

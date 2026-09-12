@@ -17,6 +17,8 @@ export interface BindingRef {
   action: string;
   /** Primary or Secondary, as the game calls its two slots. */
   slot: string;
+  /** The game's own key name, e.g. Key_U. */
+  key: string;
   modifiers: string[];
   file: string;
 }
@@ -149,14 +151,14 @@ export function parseBinds(file: string): BindingRef[] {
     // closing tag must not be optional: with a lazy body and an optional close, the
     // body matches empty and every modifier is lost.
     for (const slot of body.matchAll(
-      /<(Primary|Secondary)\s+Device="Keyboard"\s+Key="(Key_[A-Za-z0-9_]+)"\s*(?:\/>|>([\s\S]*?)<\/\1>)/g
+      /<(Primary|Secondary)\s+(?=[^>]*Device="Keyboard")(?=[^>]*Key="(Key_[A-Za-z0-9_]+)")[^>]*?(?:\/>|>([\s\S]*?)<\/\1>)/g
     )) {
       const modifiers: string[] = [];
-      for (const mod of (slot[3] ?? '').matchAll(/<Modifier\s+Device="Keyboard"\s+Key="Key_([A-Za-z0-9_]+)"/g)) {
+      for (const mod of (slot[3] ?? '').matchAll(/<Modifier\s+(?=[^>]*Device="Keyboard")[^>]*Key="Key_([A-Za-z0-9_]+)"/g)) {
         const flag = own(ED_MODIFIERS, mod[1]);
         if (flag) modifiers.push(flag);
       }
-      out.push({ action, slot: slot[1], modifiers, file: base, ...({ key: slot[2] } as object) } as BindingRef & { key: string });
+      out.push({ action, slot: slot[1], key: slot[2], modifiers, file: base });
     }
   }
   return out;
@@ -172,8 +174,7 @@ export function buildBindsIndex(files: string[]): BindsIndex {
     if (refs.length) used.push(file);
     for (const ref of refs) {
       actions.add(ref.action);
-      const key = (ref as BindingRef & { key: string }).key;
-      const hex = usbCodeForEdKey(key);
+      const hex = usbCodeForEdKey(ref.key);
       if (!hex) continue;
       if (!byUsbCode.has(hex)) byUsbCode.set(hex, []);
       byUsbCode.get(hex)!.push(ref);

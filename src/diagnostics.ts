@@ -171,6 +171,12 @@ export interface DiagnosticOptions {
    */
   knownSymbols?: Set<string>;
   /**
+   * True when this document is a `.tmc` entry script - the unit the compiler actually
+   * sees. A header opened on its own has no includes of its own, so its closure is
+   * structurally incomplete however well it resolves.
+   */
+  isEntryScript?: boolean;
+  /**
    * True only when every `include` in the graph was resolved. When a file could not
    * be found, the symbol table is incomplete and the checks that rely on it are
    * skipped rather than reporting names that are declared in a file we cannot see.
@@ -587,7 +593,12 @@ export function computeDiagnostics(
   // ---- calls to functions that do not exist ---------------------------------
   // Worth checking precisely because the compiler will not: the failure surfaces at
   // runtime, mid-flight, as a cryptic "Symbol not found".
-  if (opts.knownSymbols && opts.closureComplete) {
+  // Only for an entry script. A project is one .tmc including N headers that do not
+  // include each other, so a header analysed alone is missing the rest of the project
+  // and every call into it looks undefined - 39 false positives on the known-good
+  // corpus. closureComplete does not catch this: a header with no includes trivially
+  // has nothing that failed to resolve.
+  if (opts.knownSymbols && opts.closureComplete && opts.isEntryScript) {
     const known = opts.knownSymbols;
     const reported = new Set<string>();
     for (const call of model.allCalls) {

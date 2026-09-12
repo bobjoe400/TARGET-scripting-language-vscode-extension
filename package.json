@@ -111,7 +111,8 @@
           "when": "editorLangId == target"
         },
         {
-          "command": "targetScript.stop"
+          "command": "targetScript.stop",
+          "when": "editorLangId == target"
         }
       ],
       "editor/title": [
@@ -143,5 +144,15 @@
     "typescript": "^5.4.0",
     "vscode-textmate": "^9.0.0",
     "vscode-oniguruma": "^2.0.1"
+  },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "Compiling and running a script executes the TARGET tools against files in the workspace, so those commands are unavailable in an untrusted workspace. Highlighting, completion, hover and diagnostics work normally."
+    },
+    "virtualWorkspaces": {
+      "supported": false,
+      "description": "Scripts are read from disk and compiled by a local TARGET installation, so a virtual workspace cannot be used."
+    }
   }
 }
