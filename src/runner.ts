@@ -614,7 +614,11 @@ export function isWindowsLocalPath(p: string): boolean {
   // every single Run.
   const root = windowsSystemRoot();
   if (root) {
-    const mountBase = path.dirname(path.resolve(root)); // /mnt/c -> /mnt
+    // /mnt/c/ -> /mnt/ ; /c/ -> / . Taking dirname of the resolved path gave '/' for
+    // the second case and built the regex '^//[a-z]/', which matches nothing - so the
+    // configuration this exists to support was the one it failed on.
+    const base = path.resolve(root).replace(/\/+$/, ''); // /mnt/c  or  /c
+    const mountBase = base.slice(0, Math.max(0, base.lastIndexOf('/'))); // /mnt  or  ''
     const escaped = mountBase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     if (new RegExp(`^${escaped}/[a-z]/`, 'i').test(p)) return true;
   }

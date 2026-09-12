@@ -276,6 +276,45 @@ for (const [label, src, needle] of [
   } else fail('banner as doc', `got ${JSON.stringify((h3 || '').slice(0, 100))}`);
 }
 
+// ---- only device-taking builtins offer device names -------------------------
+// `alias` is not the signal: target.tmh declares strings, code fragments and variable
+// references that way too, so testing the type made Init(&, EXEC(" and strlen( all
+// offer 38 joystick names and suppress everything else - including EventHandle, which
+// is what Init(& actually wants.
+{
+  const deviceTaking = complete('int f() { MapKey(|); }').map((i) => i.label);
+  const initArg = complete('int f() { if(Init(&|)) return 1; }').map((i) => i.label);
+  const execArg = complete('int f() { MapKey(&Joystick, TG1, EXEC(|)); }').map((i) => i.label);
+  void execArg;
+  // Devices are valid identifiers generally, so their presence in the wider list is
+  // fine; what matters is that the wider list is offered at all, and that EventHandle
+  // - the thing Init actually wants - is reachable.
+  const ok =
+    deviceTaking.includes('Joystick') &&
+    deviceTaking.length < 60 &&
+    initArg.length > 200 &&
+    execArg.length > 200;
+  if (ok) {
+    pass++;
+    console.log(`  ok    MapKey(& offers ${deviceTaking.length} devices; Init(& offers ${initArg.length} general items`);
+  } else {
+    failures.push(`device gating: MapKey=${deviceTaking.length} Init=${initArg.length} EXEC=${execArg.length}`);
+  }
+}
+
+// ---- completion stays out of ordinary strings -------------------------------
+{
+  const inAlias = complete('alias A = "VID_044F&|";');
+  const inFormat = complete('int f() { printf("a,| b"); }');
+  const inExec = complete('int f() { MapKey(&Joystick, TG1, EXEC("fn|")); }');
+  if (inAlias.length === 0 && inFormat.length === 0 && inExec.length > 0) {
+    pass++;
+    console.log(`  ok    strings stay quiet, EXEC code still completes (${inExec.length} items)`);
+  } else {
+    failures.push(`string completion: alias=${inAlias.length} format=${inFormat.length} exec=${inExec.length}`);
+  }
+}
+
 // ---- go-to-definition must respect scope ------------------------------------
 // A local inside some other file's function is not a definition of this name. Any
 // short name - i, x, temp, counter - used to open a peek list of unrelated locals.

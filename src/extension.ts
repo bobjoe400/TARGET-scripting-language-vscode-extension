@@ -91,6 +91,8 @@ export function activate(context: vscode.ExtensionContext): void {
     }
     if (!vscode.workspace.getConfiguration('targetScript').get<boolean>('diagnostics.enable', true)) {
       diagnostics.delete(doc.uri);
+      // "Turn diagnostics off entirely" has to include the compile results.
+      compileDiags.delete(doc.uri);
       return;
     }
     const model = index.getModel(doc);
@@ -133,6 +135,20 @@ export function activate(context: vscode.ExtensionContext): void {
       debounces.delete(key);
     }
   };
+  /** Re-runs the live rules for a dependent file, leaving its compile results alone. */
+  const refreshDependent = (doc: vscode.TextDocument) => {
+    const key = `dep:${doc.uri.toString()}`;
+    const prev = debounces.get(key);
+    if (prev) clearTimeout(prev);
+    debounces.set(
+      key,
+      setTimeout(() => {
+        debounces.delete(key);
+        refresh(doc);
+      }, 250)
+    );
+  };
+
   const refreshSoon = (doc: vscode.TextDocument) => {
     // Typing in any document in the window fires this; only real TARGET files need it.
     if (doc.languageId !== 'target' || doc.uri.scheme !== 'file') return;
@@ -171,7 +187,9 @@ export function activate(context: vscode.ExtensionContext): void {
       for (const other of vscode.workspace.textDocuments) {
         if (other.uri.toString() === doc.uri.toString()) continue;
         if (other.languageId !== 'target' || other.uri.scheme !== 'file') continue;
-        refreshSoon(other);
+        // Not refreshSoon: that clears compileDiags, so saving one file wiped the
+        // compile results of every other open script.
+        refreshDependent(other);
       }
     }),
     vscode.workspace.onDidCloseTextDocument((doc) => {
@@ -200,6 +218,9 @@ export function activate(context: vscode.ExtensionContext): void {
   const rememberTarget = (ed?: vscode.TextEditor) => {
     if (ed && ed.document.languageId === 'target') lastTargetDoc = ed.document;
   };
+  // The context key survives an extension host restart otherwise, leaving the stop
+  // command offered when nothing is running.
+  vscode.commands.executeCommand('setContext', 'targetScript.running', false);
   rememberTarget(vscode.window.activeTextEditor);
   context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(rememberTarget));
 

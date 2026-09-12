@@ -7,7 +7,12 @@ import * as fs from 'fs';
 export function decodeBuffer(buf: Buffer): string {
   if (buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xfe) return buf.subarray(2).toString('utf16le');
   if (buf.length >= 2 && buf[0] === 0xfe && buf[1] === 0xff) {
-    const swapped = Buffer.from(buf.subarray(2));
+    // swap16 throws on an odd byte count, and readTextFile would turn that into null -
+    // making the file invisible to the include graph rather than merely truncated.
+    // A trailing odd byte is damage either way; drop it and read what is there.
+    const body = buf.subarray(2);
+    const even = body.length % 2 === 0 ? body : body.subarray(0, body.length - 1);
+    const swapped = Buffer.from(even);
     swapped.swap16();
     return swapped.toString('utf16le');
   }

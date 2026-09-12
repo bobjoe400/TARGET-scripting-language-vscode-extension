@@ -29,6 +29,7 @@ import {
   keywords,
   NOT_IN_TARGET,
   own,
+  takesDeviceFirst,
   usbKeyName,
   VARIADIC,
 } from './builtins';
@@ -132,9 +133,18 @@ export class TargetCompletionProvider implements vscode.CompletionItemProvider {
     const model = this.index.getModel(doc);
     const offset = doc.offsetAt(pos);
 
-    // Stay quiet inside comments; a string is different, because EXEC's argument is code.
     const tok = tokenContaining(model, offset);
     if (tok?.kind === TokKind.Comment) return [];
+
+    // A string is only code when it is EXEC's or REXEC's argument. Everywhere else -
+    // a file path, a printf format, a VID/PID alias - it is text, and offering the
+    // whole symbol table inside it is noise. '&' and ',' are trigger characters, so
+    // this fired on `alias A = "VID_044F&"` and on any comma in a format string.
+    if (tok?.kind === TokKind.String) {
+      const enclosing = callContextAt(model, offset);
+      const isExecCode = enclosing?.call.name === 'EXEC' || enclosing?.call.name === 'REXEC';
+      if (!isExecCode) return [];
+    }
 
     // Inside USB[...] the only sensible content is a scancode, and the hex is
     // meaningless on its own, so offer the key names instead.
@@ -158,7 +168,7 @@ export class TargetCompletionProvider implements vscode.CompletionItemProvider {
       const linePrefix = doc.lineAt(pos).text.slice(0, pos.character);
 
       // First argument of a device-taking builtin: offer the devices.
-      if (fn && fn.params[0]?.type === 'alias' && ctx.argIndex === 0) {
+      if (fn && takesDeviceFirst(fn.name) && ctx.argIndex === 0) {
         const wroteAmp = /&\s*\w*$/.test(linePrefix);
         for (const d of devices) {
           const it = new vscode.CompletionItem(d.alias, vscode.CompletionItemKind.Class);
@@ -235,7 +245,7 @@ export class TargetCompletionProvider implements vscode.CompletionItemProvider {
 
       // Second argument: the control on whichever device the first argument names.
       // This is the completion nobody can do from memory.
-      if (fn && fn.params[0]?.type === 'alias' && ctx.argIndex === 1 && ctx.call.args[0]) {
+      if (fn && takesDeviceFirst(fn.name) && ctx.argIndex === 1 && ctx.call.args[0]) {
         const m = ctx.call.args[0].text.match(/^&\s*([A-Za-z_]\w*)$/);
         if (m) {
           const bindings = aliasBindingsFor(this.index, doc);
@@ -499,7 +509,16 @@ export class TargetSymbolProvider implements vscode.DocumentSymbolProvider {
     const out: vscode.DocumentSymbol[] = [];
     for (const d of model.decls) {
       if (!d.global) continue;
-      const full = new vscode.Range(doc.positionAt(d.fullStart), doc.positionAt(d.fullEnd));
+      // `int a, b, c;` gives every name the same fullStart, so sibling ranges nested
+      // inside one another. DocumentSymbol expects nesting through children, not
+      // overlapping ranges, so a name's range is its own span when it shares a
+      // statement with others.
+      const sharesStatement = model.decls.some(
+        (o) => o !== d && o.fullStart === d.fullStart && o.start !== d.start
+      );
+      const full = sharesStatement
+        ? new vscode.Range(doc.positionAt(d.start), doc.positionAt(d.fullEnd))
+        : new vscode.Range(doc.positionAt(d.fullStart), doc.positionAt(d.fullEnd));
       const sel = new vscode.Range(doc.positionAt(d.start), doc.positionAt(d.end));
       out.push(
         new vscode.DocumentSymbol(d.name, d.detail, SYMBOL_KIND[d.kind], full, sel.start.isBefore(full.start) ? full : sel)

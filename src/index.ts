@@ -29,6 +29,24 @@ export class TargetIndex {
   /** Bumped whenever anything cached changes, so derived caches expire together. */
   private generation = 0;
   private resolveCache = new Map<string, string | null>();
+  /**
+   * Existence checks, briefly cached. The revalidation above is what keeps a deleted
+   * header from lingering, but every keystroke bumps the generation and re-walks the
+   * graph, so without this it re-stats the TARGET headers across the WSL mount on
+   * each one - tens of milliseconds of the extension host's single thread, for files
+   * whose state changes on the scale of minutes.
+   */
+  private existsCache = new Map<string, { at: number; ok: boolean }>();
+
+  private stillExists(p: string): boolean {
+    const now = Date.now();
+    const hit = this.existsCache.get(p);
+    if (hit && now - hit.at < 2000) return hit.ok;
+    const ok = fs.existsSync(p);
+    if (this.existsCache.size > 256) this.existsCache.clear();
+    this.existsCache.set(p, { at: now, ok });
+    return ok;
+  }
   private closureCache = new Map<string, { file: string; model: DocModel }[]>();
 
   /** The model for an open document, reparsed only when its version changes. */
@@ -58,7 +76,12 @@ export class TargetIndex {
     // `ed_macros.tmh` resolving to ED_Macros.tmh would otherwise miss the open dirty
     // buffer and parse the saved file instead.
     const open = vscode.workspace.textDocuments.find(
-      (d) => d.uri.fsPath === p || d.uri.fsPath.toLowerCase() === p.toLowerCase()
+      (d) =>
+        // Uri.fsPath ignores the scheme, so a git: diff of a header has the same
+        // fsPath as the file itself. Reading the committed content in place of the
+        // working copy would silently change what every dependent file sees.
+        d.uri.scheme === 'file' &&
+        (d.uri.fsPath === p || d.uri.fsPath.toLowerCase() === p.toLowerCase())
     );
     if (open) return this.getModel(open);
 
@@ -85,6 +108,7 @@ export class TargetIndex {
   /** Called when settings change: include resolution depends on them. */
   clearResolutionCache(): void {
     this.resolveCache.clear();
+    this.existsCache.clear();
     this.closureCache.clear();
     this.bindsCache.clear();
     this.generation++;
@@ -181,7 +205,7 @@ export class TargetIndex {
     // the closure, so the entry script filled with "not defined" for every symbol that
     // lived in it - the exact false positive the cache was meant to avoid.
     if (cached !== undefined) {
-      if (cached === null || fs.existsSync(cached)) return cached;
+      if (cached === null || this.stillExists(cached)) return cached;
       this.resolveCache.delete(key);
       this.closureCache.clear();
     }
@@ -271,7 +295,15 @@ export class TargetIndex {
     for (const { file, model: m } of closure) {
       for (const d of m.decls) symbols.add(d.name);
       for (const inc of m.includes) {
-        if (!this.resolveInclude(file, inc.path)) complete = false;
+        const resolved = this.resolveInclude(file, inc.path);
+        if (!resolved) {
+          complete = false;
+          continue;
+        }
+        // Resolving is not the same as reading. A header that exists but cannot be
+        // decoded is dropped from the closure, and calling the table complete then
+        // re-enables the very check this flag exists to gate.
+        if (!closure.some((c) => c.file === resolved)) complete = false;
       }
     }
     return { symbols, complete };

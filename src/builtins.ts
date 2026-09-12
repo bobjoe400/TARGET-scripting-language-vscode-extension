@@ -111,7 +111,10 @@ export function controlLabel(deviceAlias: string, control: string): string | nul
 const usbData = rawUsb as unknown as { codes: Record<string, string> };
 
 export function usbKeyName(hex: string): string | null {
-  return own(usbData.codes, hex.toUpperCase().replace(/^0X/, '').padStart(2, '0')) ?? null;
+  // Strip leading zeroes first: USB[0x004] is the same key as USB[0x04], and padding
+  // without trimming produced '004', which matches nothing.
+  const bare = hex.toUpperCase().replace(/^0X/, '').replace(/^0+(?=.)/, '');
+  return own(usbData.codes, bare.padStart(2, '0')) ?? null;
 }
 
 export function allUsbCodes(): { hex: string; name: string }[] {
@@ -260,6 +263,26 @@ export function argumentDomain(fnName: string, index: number): ArgDomain {
  * layer, activated from a button used as a kind of Shift" - the one named by
  * SetShiftButton.
  */
+/**
+ * Builtins whose first argument is a device.
+ *
+ * `alias` is not the signal: target.tmh also declares strings, code fragments and
+ * variable references that way, so 57 builtins have an alias first parameter while
+ * only 25 take a device. Testing the type alone made `Init(&`, `EXEC("`, `strlen(`
+ * and `fopen(` all offer 38 joystick names and suppress everything else - including
+ * `EventHandle`, which is what `Init(&` actually wants.
+ *
+ * The parameter *name* is the reliable signal, and it comes from the header: device
+ * parameters are named dev, o, a or id; the others are h, cmdon, handle_func, s, var,
+ * dst, name and so on.
+ */
+const DEVICE_PARAM_NAMES = new Set(['dev', 'o', 'a', 'id']);
+
+export function takesDeviceFirst(fnName: string): boolean {
+  const f = functionsByName.get(fnName);
+  return !!f && f.params[0]?.type === 'alias' && DEVICE_PARAM_NAMES.has(f.params[0].name);
+}
+
 export function describeParam(fnName: string, paramName: string): string | null {
   const SHIFT_IN = 'shift button held';
   const SHIFT_OUT = 'shift button not held';
